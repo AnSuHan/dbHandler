@@ -50,3 +50,16 @@ fvm flutter run -d macos
 ```bash
 fvm flutter run -d ios
 ```
+
+### Android
+기본적으로 연결된 Android 기기에서 앱을 실행합니다.
+```bash
+fvm flutter run -d android
+```
+
+만약 여러 기기가 연결되어 있거나 특정 기기를 선택하고 싶다면, 기기 ID를 사용해야 합니다.
+먼저 `fvm flutter devices` 명령어로 연결된 기기와 ID를 확인합니다.
+```bash
+# 예시: SM G981N 기기의 ID가 R3CN40CQQVA일 경우
+fvm flutter run -d R3CN40CQQVA
+```
