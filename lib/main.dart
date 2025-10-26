@@ -25,7 +25,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const SplashScreen(),
         '/server-selection': (context) => const ServerSelectionScreen(),
         '/database-selection': (context) {
-          final server = ModalRoute.of(context)!.settings.arguments;
+          final server = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
           return DatabaseSelectionScreen(server: server);
         },
         '/table-selection': (context) {

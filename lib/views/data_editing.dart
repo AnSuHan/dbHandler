@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class DataEditingScreen extends StatefulWidget {
-  final dynamic server;
+  final Map<String, dynamic> server;
   final dynamic database;
-  final dynamic table;
+  final Map<String, dynamic> table;
 
   const DataEditingScreen({
     super.key,
@@ -31,7 +31,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.table.name} - 데이터 편집'),
+        title: Text('${widget.table['name']} - 데이터 편집'),
         backgroundColor: const Color(0xFF3B82F6),
         foregroundColor: Colors.white,
         actions: [
@@ -76,7 +76,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                 Icon(Icons.dns, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(
-                  widget.server.name,
+                  widget.server['name'],
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
                 const Icon(Icons.chevron_right, size: 16),
@@ -90,7 +90,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                 Icon(Icons.table_chart, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 4),
                 Text(
-                  widget.table.name,
+                  widget.table['name'],
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ],

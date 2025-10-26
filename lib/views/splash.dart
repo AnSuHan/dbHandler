@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:db_handler/views/server_selection.dart';
+import '../sqflite/database.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -40,6 +41,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   void _startAnimation() async {
+    // 데이터베이스 FFI 초기화 (Windows, macOS, Linux용)
+    await AppDatabase.initializeFfi();
+    await AppDatabase().database;
+    
     await _animationController.forward();
     
     // 2초 후 서버 선택 화면으로 이동

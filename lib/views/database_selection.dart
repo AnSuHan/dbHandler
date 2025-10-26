@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class DatabaseSelectionScreen extends StatefulWidget {
-  final dynamic server;
+  final Map<String, dynamic> server;
 
   const DatabaseSelectionScreen({super.key, required this.server});
 
@@ -22,7 +22,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('데이터베이스 선택 - ${widget.server.name}'),
+        title: Text('데이터베이스 선택 - ${widget.server['name']}'),
         backgroundColor: const Color(0xFF8B5CF6),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -60,7 +60,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                               ),
                             ),
                             Text(
-                              widget.server.name,
+                              widget.server['name'],
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -71,7 +71,6 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                       ),
                       ElevatedButton.icon(
                         onPressed: () {
-                          // 새 데이터베이스 생성 로직
                           _showCreateDatabaseDialog();
                         },
                         icon: const Icon(Icons.add),
@@ -106,62 +105,47 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                           },
                         );
                       },
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: const Color(0xFF8B5CF6),
-                              radius: 24,
-                              child: const Icon(
-                                Icons.storage,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: const Color(0xFF8B5CF6),
+                          radius: 24,
+                          child: const Icon(
+                            Icons.storage,
+                            color: Colors.white,
+                          ),
+                        ),
+                        title: Text(database.name),
+                        subtitle: Text('${database.tables} 개의 테이블'),
+                        trailing: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (value) {
+                            if (value == 'edit') {
+                              _showEditDatabaseDialog(database);
+                            } else if (value == 'delete') {
+                              _showDeleteDatabaseDialog(database);
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => [
+                            const PopupMenuItem<String>(
+                              value: 'edit',
+                              child: Row(
                                 children: [
-                                  Text(
-                                    database.name,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${database.tables} 개의 테이블',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
+                                  Icon(Icons.edit, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('수정'),
                                 ],
                               ),
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  database.size,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Text(
-                                  '크기',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
+                            const PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, size: 20, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('삭제', style: TextStyle(color: Colors.red)),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.arrow_forward_ios, color: Colors.grey),
                           ],
                         ),
                       ),
@@ -172,6 +156,74 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showEditDatabaseDialog(Database database) {
+    final nameController = TextEditingController(text: database.name);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('데이터베이스 수정'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            labelText: '데이터베이스 이름',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('데이터베이스가 수정되었습니다.'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteDatabaseDialog(Database database) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('데이터베이스 삭제'),
+        content: Text('${database.name} 데이터베이스를 삭제하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('데이터베이스가 삭제되었습니다.'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('삭제'),
+          ),
+        ],
       ),
     );
   }
@@ -218,4 +270,3 @@ class Database {
     required this.size,
   });
 }
-
