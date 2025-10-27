@@ -63,3 +63,11 @@ fvm flutter run -d android
 # 예시: SM G981N 기기의 ID가 R3CN40CQQVA일 경우
 fvm flutter run -d R3CN40CQQVA
 ```
+---
+postgreSQL 로컬
+PostgreSQL Version: 18.0
+http://localhost:5432
+
+user: postgres
+password: 0000
+접속 명령: psql -U postgres -h 127.0.0.1

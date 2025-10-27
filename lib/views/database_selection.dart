@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:postgres/postgres.dart';
 
 class DatabaseSelectionScreen extends StatefulWidget {
   final Map<String, dynamic> server;
@@ -10,13 +11,124 @@ class DatabaseSelectionScreen extends StatefulWidget {
 }
 
 class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
-  final List<Database> databases = [
-    Database(name: 'ecommerce', tables: 12, size: '2.3 GB'),
-    Database(name: 'analytics', tables: 45, size: '15.7 GB'),
-    Database(name: 'users', tables: 8, size: '850 MB'),
-    Database(name: 'logs', tables: 23, size: '8.1 GB'),
-    Database(name: 'test_db', tables: 3, size: '150 MB'),
-  ];
+  List<Map<String, dynamic>> _databases = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDatabases();
+  }
+
+  Future<PostgreSQLConnection> _getConnection(String database) async {
+    final host = widget.server['address'].split(':')[0];
+    final port = int.parse(widget.server['address'].split(':')[1]);
+    final connection = PostgreSQLConnection(
+      host,
+      port,
+      database,
+      username: 'postgres',
+      password: '0000',
+    );
+    await connection.open();
+    return connection;
+  }
+
+  Future<void> _loadDatabases() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
+    try {
+      final connection = await _getConnection('postgres');
+      final results = await connection.query('''
+        SELECT d.datname, pg_size_pretty(pg_database_size(d.datname)) AS size
+        FROM pg_database d
+        WHERE d.datistemplate = false;
+      ''');
+
+      if (mounted) {
+        setState(() {
+          _databases = results.map((row) {
+            return {
+              'name': row[0] as String,
+              'size': row[1] as String,
+            };
+          }).toList();
+          _isLoading = false;
+        });
+      }
+      await connection.close();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('데이터베이스 목록을 불러오는데 실패했습니다: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _performDbOperation(
+    Future<void> Function(PostgreSQLConnection) operation,
+    String successMessage,
+    String failureMessage,
+  ) async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final connection = await _getConnection('postgres');
+      await operation(connection);
+      await connection.close();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$failureMessage: $e')),
+        );
+      }
+    }
+
+    if (mounted) {
+      await _loadDatabases();
+    }
+  }
+
+  Future<void> _createDatabase(String dbName) async {
+    await _performDbOperation(
+      (conn) => conn.query('CREATE DATABASE "$dbName"'),
+      '데이터베이스 $dbName 생성 완료',
+      '데이터베이스 생성 실패',
+    );
+  }
+
+  Future<void> _renameDatabase(String oldName, String newName) async {
+    await _performDbOperation(
+      (conn) => conn.query('ALTER DATABASE "$oldName" RENAME TO "$newName"'),
+      '데이터베이스 이름이 $newName (으)로 변경되었습니다.',
+      '데이터베이스 이름 변경 실패',
+    );
+  }
+
+  Future<void> _deleteDatabase(String dbName) async {
+    await _performDbOperation(
+      (conn) => conn.query('DROP DATABASE "$dbName"'),
+      '$dbName 데이터베이스가 삭제되었습니다.',
+      '데이터베이스 삭제 실패',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,73 +198,77 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                itemCount: databases.length,
-                itemBuilder: (context, index) {
-                  final database = databases[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    elevation: 2,
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/table-selection',
-                          arguments: {
-                            'server': widget.server,
-                            'database': database,
-                          },
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                      itemCount: _databases.length,
+                      itemBuilder: (context, index) {
+                        final db = _databases[index];
+                        final dbName = db['name'] as String;
+                        final dbSize = db['size'] as String;
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          elevation: 2,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/table-selection',
+                                arguments: {
+                                  'server': widget.server,
+                                  'database': dbName,
+                                },
+                              );
+                            },
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: const Color(0xFF8B5CF6),
+                                radius: 24,
+                                child: const Icon(
+                                  Icons.storage,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              title: Text(dbName),
+                              subtitle: Text(dbSize),
+                              trailing: PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert),
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _showEditDatabaseDialog(dbName);
+                                  } else if (value == 'delete') {
+                                    _showDeleteDatabaseDialog(dbName);
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => [
+                                  const PopupMenuItem<String>(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit, size: 20),
+                                        SizedBox(width: 8),
+                                        Text('수정'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem<String>(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete, size: 20, color: Colors.red),
+                                        SizedBox(width: 8),
+                                        Text('삭제', style: TextStyle(color: Colors.red)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         );
                       },
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: const Color(0xFF8B5CF6),
-                          radius: 24,
-                          child: const Icon(
-                            Icons.storage,
-                            color: Colors.white,
-                          ),
-                        ),
-                        title: Text(database.name),
-                        subtitle: Text('${database.tables} 개의 테이블'),
-                        trailing: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              _showEditDatabaseDialog(database);
-                            } else if (value == 'delete') {
-                              _showDeleteDatabaseDialog(database);
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => [
-                            const PopupMenuItem<String>(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.edit, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('수정'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete, size: 20, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text('삭제', style: TextStyle(color: Colors.red)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),
@@ -160,15 +276,15 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     );
   }
 
-  void _showEditDatabaseDialog(Database database) {
-    final nameController = TextEditingController(text: database.name);
-
+  void _showCreateDatabaseDialog() {
+    final nameController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('데이터베이스 수정'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('새 데이터베이스 생성'),
         content: TextField(
           controller: nameController,
+          autofocus: true,
           decoration: const InputDecoration(
             labelText: '데이터베이스 이름',
             border: OutlineInputBorder(),
@@ -176,18 +292,50 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('취소'),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('데이터베이스가 수정되었습니다.'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              final dbName = nameController.text.trim();
+              if (dbName.isNotEmpty) {
+                Navigator.pop(dialogContext);
+                _createDatabase(dbName);
+              }
+            },
+            child: const Text('생성'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditDatabaseDialog(String oldName) {
+    final nameController = TextEditingController(text: oldName);
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('데이터베이스 이름 수정'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '새 데이터베이스 이름',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newName = nameController.text.trim();
+              if (newName.isNotEmpty && newName != oldName) {
+                Navigator.pop(dialogContext);
+                _renameDatabase(oldName, newName);
+              }
             },
             child: const Text('저장'),
           ),
@@ -196,26 +344,21 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     );
   }
 
-  void _showDeleteDatabaseDialog(Database database) {
+  void _showDeleteDatabaseDialog(String dbName) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('데이터베이스 삭제'),
-        content: Text('${database.name} 데이터베이스를 삭제하시겠습니까?'),
+        content: Text('$dbName 데이터베이스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('취소'),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('데이터베이스가 삭제되었습니다.'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              Navigator.pop(dialogContext);
+              _deleteDatabase(dbName);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -227,46 +370,4 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
       ),
     );
   }
-
-  void _showCreateDatabaseDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('새 데이터베이스 생성'),
-        content: const TextField(
-          decoration: InputDecoration(
-            labelText: '데이터베이스 이름',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('데이터베이스가 생성되었습니다.')),
-              );
-            },
-            child: const Text('생성'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class Database {
-  final String name;
-  final int tables;
-  final String size;
-
-  Database({
-    required this.name,
-    required this.tables,
-    required this.size,
-  });
 }

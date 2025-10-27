@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'database_selection.dart';
+import 'package:postgres/postgres.dart';
 
 class TableSelectionScreen extends StatefulWidget {
   final Map<String, dynamic> server;
-  final dynamic database;
+  final String database;
 
   const TableSelectionScreen({
     super.key,
@@ -16,20 +16,77 @@ class TableSelectionScreen extends StatefulWidget {
 }
 
 class _TableSelectionScreenState extends State<TableSelectionScreen> {
-  final List<TableInfo> tables = [
-    TableInfo(name: 'users', rows: 15234, columns: 8),
-    TableInfo(name: 'orders', rows: 52341, columns: 12),
-    TableInfo(name: 'products', rows: 4523, columns: 15),
-    TableInfo(name: 'categories', rows: 234, columns: 5),
-    TableInfo(name: 'payments', rows: 89234, columns: 10),
-    TableInfo(name: 'reviews', rows: 11234, columns: 7),
-  ];
+  List<Map<String, dynamic>> _tables = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTables();
+  }
+
+  Future<void> _loadTables() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final host = widget.server['address'].split(':')[0];
+      final port = int.parse(widget.server['address'].split(':')[1]);
+
+      final connection = PostgreSQLConnection(
+        host,
+        port,
+        widget.database, // 선택된 데이터베이스 사용
+        username: 'postgres',
+        password: '0000',
+      );
+      await connection.open();
+
+      final results = await connection.query('''
+        SELECT
+            t.table_name,
+            COUNT(c.column_name) AS column_count
+        FROM
+            information_schema.tables AS t
+        LEFT JOIN
+            information_schema.columns AS c ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+        WHERE
+            t.table_schema NOT IN ('pg_catalog', 'information_schema') AND t.table_type = 'BASE TABLE'
+        GROUP BY
+            t.table_name
+        ORDER BY
+            t.table_name;
+      ''');
+
+      setState(() {
+        _tables = results.map((row) {
+          return {
+            'name': row[0] as String,
+            'columns': row[1] as int,
+          };
+        }).toList();
+        _isLoading = false;
+      });
+
+      await connection.close();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('테이블 목록을 불러오는데 실패했습니다: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${(widget.database as Database).name} - 테이블 선택'),
+        title: Text('${widget.database} - 테이블 선택'),
         backgroundColor: const Color(0xFF10B981),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -67,7 +124,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                               ),
                             ),
                             Text(
-                              (widget.database as Database).name,
+                              widget.database,
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -93,161 +150,92 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                itemCount: tables.length,
-                itemBuilder: (context, index) {
-                  final table = tables[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    elevation: 2,
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/data-editing',
-                          arguments: {
-                            'server': widget.server,
-                            'database': widget.database,
-                            'table': {
-                              'name': table.name,
-                              'rows': table.rows,
-                              'columns': table.columns,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                      itemCount: _tables.length,
+                      itemBuilder: (context, index) {
+                        final table = _tables[index];
+                        final tableName = table['name'] as String;
+                        final columnCount = table['columns'] as int;
+
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          elevation: 2,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.pushNamed(
+                                context,
+                                '/data-editing',
+                                arguments: {
+                                  'server': widget.server,
+                                  'database': widget.database,
+                                  'table': tableName,
+                                },
+                              );
                             },
-                          },
+                            child: ListTile(
+                              leading: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: const Color(0x1A10B981),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.table_chart,
+                                  color: Color(0xFF10B981),
+                                ),
+                              ),
+                              title: Text(
+                                tableName,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Text('$columnCount 개의 컬럼'),
+                              trailing: PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert),
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    // _showEditTableDialog(table);
+                                  } else if (value == 'delete') {
+                                    // _showDeleteTableDialog(table);
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => [
+                                  const PopupMenuItem<String>(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit, size: 20),
+                                        SizedBox(width: 8),
+                                        Text('수정'),
+                                      ],
+                                    ),
+                                  ),
+                                  const PopupMenuItem<String>(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete, size: 20, color: Colors.red),
+                                        SizedBox(width: 8),
+                                        Text('삭제', style: TextStyle(color: Colors.red)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         );
                       },
-                      child: ListTile(
-                        leading: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: const Color(0x1A10B981),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.table_chart,
-                            color: Color(0xFF10B981),
-                          ),
-                        ),
-                        title: Text(
-                          table.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${table.rows.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')} 행 • ${table.columns} 열',
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (value) {
-                            if (value == 'edit') {
-                              _showEditTableDialog(table);
-                            } else if (value == 'delete') {
-                              _showDeleteTableDialog(table);
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => [
-                            const PopupMenuItem<String>(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.edit, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('수정'),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete, size: 20, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text('삭제', style: TextStyle(color: Colors.red)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showEditTableDialog(TableInfo table) {
-    final nameController = TextEditingController(text: table.name);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('테이블 수정'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            labelText: '테이블 이름',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('테이블이 수정되었습니다.'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteTableDialog(TableInfo table) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('테이블 삭제'),
-        content: Text('${table.name} 테이블을 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('테이블이 삭제되었습니다.'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('삭제'),
-          ),
-        ],
       ),
     );
   }
@@ -294,16 +282,4 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
       ),
     );
   }
-}
-
-class TableInfo {
-  final String name;
-  final int rows;
-  final int columns;
-
-  TableInfo({
-    required this.name,
-    required this.rows,
-    required this.columns,
-  });
 }

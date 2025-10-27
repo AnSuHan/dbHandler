@@ -217,7 +217,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _addServer() async {
-    // 입력값 가져오기
     final name = _nameController.text.trim();
     final host = _hostController.text.trim();
     final port = _portController.text.trim();
@@ -225,7 +224,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         ? 'PostgreSQL' 
         : _typeController.text.trim();
 
-    // 유효성 검사
     if (name.isEmpty || host.isEmpty || port.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -238,14 +236,10 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
       return;
     }
 
-    // 주소 생성
     final address = '$host:$port';
-
-    // 중복 체크
     final isDuplicate = _servers.any((server) => server.address == address);
     
     if (isDuplicate) {
-      // 알림 다이얼로그 표시
       if (mounted) {
         await showDialog(
           context: context,
@@ -264,7 +258,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
       return;
     }
 
-    // 서버 추가
     final newServer = ServerModel(
       name: name,
       address: address,
@@ -275,18 +268,15 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     try {
       await _serverDao.insertServer(newServer);
       
-      // 입력 필드 초기화
       _nameController.clear();
       _hostController.clear();
       _portController.clear();
       _typeController.clear();
 
-      // 폼 숨김
       setState(() {
         _showAddForm = false;
       });
 
-      // 목록 새로고침
       _loadServers();
 
       if (mounted) {
@@ -308,6 +298,55 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
       }
     }
   }
+
+  Future<void> _addTestLocalServer() async {
+    const name = 'Test Local Server';
+    const address = '127.0.0.1:5432';
+    const type = 'PostgreSQL';
+
+    final isDuplicate = _servers.any((s) => s.name == name || s.address == address);
+    if (isDuplicate) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('테스트 서버가 이미 목록에 존재합니다.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final newServer = ServerModel(
+      name: name,
+      address: address,
+      type: type,
+      isConnected: false,
+    );
+
+     try {
+      await _serverDao.insertServer(newServer);
+      _loadServers();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('테스트 서버가 추가되었습니다.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('테스트 서버 추가 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +381,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            '서버 추가',
+                            '서버 목록',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -362,18 +401,32 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                               },
                             )
                           else
-                            IconButton(
-                              icon: const Icon(Icons.add),
-                              onPressed: () {
-                                setState(() {
-                                  _showAddForm = true;
-                                });
-                              },
-                            ),
+                             PopupMenuButton<String>(
+                                icon: const Icon(Icons.add),
+                                onSelected: (value) {
+                                  if (value == 'manual') {
+                                    setState(() {
+                                      _showAddForm = true;
+                                    });
+                                  } else if (value == 'test') {
+                                    _addTestLocalServer();
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => [
+                                  const PopupMenuItem<String>(
+                                    value: 'manual',
+                                    child: Text('직접 추가'),
+                                  ),
+                                  const PopupMenuItem<String>(
+                                    value: 'test',
+                                    child: Text('테스트 서버 추가'),
+                                  ),
+                                ],
+                              ),
                         ],
                       ),
-                      const SizedBox(height: 16),
                       if (_showAddForm) ...[
+                        const SizedBox(height: 16),
                         TextField(
                           controller: _nameController,
                           decoration: const InputDecoration(
@@ -441,12 +494,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                       itemCount: _servers.length,
                       itemBuilder: (context, index) {
                         final server = _servers[index];
+                        final isTestServer = server.name == 'Test Local Server';
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           elevation: 2,
                           child: InkWell(
                             onTap: () {
-                              // 카드 전체를 클릭하면 데이터베이스 선택 페이지로 이동
                               Navigator.pushNamed(
                                 context,
                                 '/database-selection',
@@ -455,9 +508,9 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                             },
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: server.isConnected
-                                    ? const Color(0xFF10B981)
-                                    : const Color(0xFFEF4444),
+                                backgroundColor: isTestServer
+                                    ? Colors.grey
+                                    : (server.isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
                                 child: const Icon(
                                   Icons.dns,
                                   color: Colors.white,
