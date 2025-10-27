@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:postgres/postgres.dart';
 
 class DataEditingScreen extends StatefulWidget {
   final Map<String, dynamic> server;
-  final dynamic database;
-  final Map<String, dynamic> table;
+  final String database;
+  final String table;
 
   const DataEditingScreen({
     super.key,
@@ -17,294 +18,235 @@ class DataEditingScreen extends StatefulWidget {
 }
 
 class _DataEditingScreenState extends State<DataEditingScreen> {
-  final List<Map<String, dynamic>> data = [
-    {'id': 1, 'name': 'John Doe', 'email': 'john@example.com', 'age': 28, 'city': 'Seoul', 'status': 'Active'},
-    {'id': 2, 'name': 'Jane Smith', 'email': 'jane@example.com', 'age': 32, 'city': 'Busan', 'status': 'Active'},
-    {'id': 3, 'name': 'Bob Johnson', 'email': 'bob@example.com', 'age': 45, 'city': 'Incheon', 'status': 'Inactive'},
-    {'id': 4, 'name': 'Alice Williams', 'email': 'alice@example.com', 'age': 29, 'city': 'Seoul', 'status': 'Active'},
-    {'id': 5, 'name': 'Charlie Brown', 'email': 'charlie@example.com', 'age': 35, 'city': 'Daegu', 'status': 'Active'},
-  ];
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _rows = [];
+  List<Map<String, String>> _columns = [];
+  String? _primaryKeyColumn;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTableData();
+  }
+
+  Future<PostgreSQLConnection> _getConnection() async {
+    final host = widget.server['address'].split(':')[0];
+    final port = int.parse(widget.server['address'].split(':')[1]);
+    final connection = PostgreSQLConnection(
+      host,
+      port,
+      widget.database,
+      username: 'postgres',
+      password: '0000',
+    );
+    await connection.open();
+    return connection;
+  }
+
+  Future<void> _loadTableData() async {
+    if (mounted) setState(() => _isLoading = true);
+
+    try {
+      final connection = await _getConnection();
+
+      // Fetch columns
+      final columnResults = await connection.query(
+        "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = @tableName ORDER BY ordinal_position",
+        substitutionValues: {'tableName': widget.table},
+      );
+      final columns = columnResults
+          .map((row) => {'name': row[0] as String, 'type': row[1] as String})
+          .toList();
+
+      // Fetch primary key
+      final pkResult = await connection.query(
+        "SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = @tableName",
+        substitutionValues: {'tableName': widget.table},
+      );
+      final primaryKey = pkResult.isNotEmpty ? pkResult.first[0] as String : null;
+
+      // Fetch rows
+      String query = 'SELECT * FROM "${widget.table}"';
+      if (primaryKey != null) {
+        query += ' ORDER BY "$primaryKey" ASC';
+      }
+      final dataResult = await connection.query(query);
+      final dataRows = dataResult.map((row) => row.toColumnMap()).toList();
+
+      if (mounted) {
+        setState(() {
+          _columns = columns;
+          _primaryKeyColumn = primaryKey;
+          _rows = dataRows;
+          _isLoading = false;
+        });
+      }
+
+      await connection.close();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('데이터 로딩 실패: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _performOperation(
+    Future<void> Function(PostgreSQLConnection) operation,
+    String successMessage,
+  ) async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      final connection = await _getConnection();
+      await operation(connection);
+      await connection.close();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('작업 실패: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+
+    if (mounted) {
+      await _loadTableData();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final columns = data.isEmpty ? [] : data[0].keys.toList();
-
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.table['name']} - 데이터 편집'),
+        title: Text('${widget.table} - 데이터 편집'),
         backgroundColor: const Color(0xFF3B82F6),
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '행 추가',
-            onPressed: () {
-              _showAddRowDialog();
-            },
+            icon: const Icon(Icons.refresh),
+            tooltip: '새로고침',
+            onPressed: _loadTableData,
           ),
           IconButton(
-            icon: const Icon(Icons.save),
-            tooltip: '저장',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('변경사항이 저장되었습니다.'),
-                  backgroundColor: Color(0xFF10B981),
-                ),
-              );
-            },
+            icon: const Icon(Icons.add),
+            tooltip: '행 추가',
+            onPressed: () => _showEditRowDialog(null),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Breadcrumb
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FA),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.dns, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(
-                  widget.server['name'],
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-                const Icon(Icons.chevron_right, size: 16),
-                Icon(Icons.storage, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(
-                  widget.database.name,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-                const Icon(Icons.chevron_right, size: 16),
-                Icon(Icons.table_chart, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 4),
-                Text(
-                  widget.table['name'],
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-          // Table
-          Expanded(
-            child: data.isEmpty
-                ? const Center(
-                    child: Text('데이터가 없습니다.'),
-                  )
-                : SingleChildScrollView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _rows.isEmpty
+              ? const Center(child: Text('데이터가 없습니다. 행을 추가하세요.'))
+              : SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: SingleChildScrollView(
-                      child: DataTable(
-                        columnSpacing: 40,
-                        headingRowColor: MaterialStateProperty.all(
-                          Colors.grey[100],
-                        ),
-                        columns: [
-                          const DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-                          ...columns.map(
-                            (column) => DataColumn(
-                              label: Text(
-                                column,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                    child: DataTable(
+                      columnSpacing: 20,
+                      columns: _columns
+                          .map((c) => DataColumn(label: Text(c['name']!)))
+                          .toList()
+                        ..add(const DataColumn(label: Text('작업'))),
+                      rows: _rows.map((row) {
+                        return DataRow(
+                          cells: _columns.map((col) {
+                            final value = row[col['name']!];
+                            return DataCell(Text(value?.toString() ?? 'NULL'));
+                          }).toList()
+                            ..add(DataCell(
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 20),
+                                    onPressed: () => _showEditRowDialog(row),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                                    onPressed: () => _showDeleteConfirmDialog(row),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ),
-                          const DataColumn(label: Text('작업', style: TextStyle(fontWeight: FontWeight.bold))),
-                        ],
-                        rows: data.map((row) {
-                          return DataRow(
-                            cells: [
-                              DataCell(
-                                Text(
-                                  row['id'].toString(),
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              ...columns.map(
-                                (column) => DataCell(
-                                  _buildEditableCell(row, column),
-                                ),
-                              ),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, size: 18),
-                                      color: const Color(0xFF3B82F6),
-                                      onPressed: () {
-                                        _showEditRowDialog(row);
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, size: 18),
-                                      color: const Color(0xFFEF4444),
-                                      onPressed: () {
-                                        _showDeleteConfirmDialog(row);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          );
-                        }).toList(),
-                      ),
+                            )),
+                        );
+                      }).toList(),
                     ),
                   ),
-          ),
-        ],
-      ),
+                ),
     );
   }
 
-  Widget _buildEditableCell(Map<String, dynamic> row, String column) {
-    final value = row[column];
-    if (value == null) {
-      return const Text('-');
+  void _showEditRowDialog(Map<String, dynamic>? rowData) {
+    final isNewRow = rowData == null;
+    final controllers = <String, TextEditingController>{};
+    final pkColName = _primaryKeyColumn;
+
+    for (var col in _columns) {
+      final colName = col['name']!;
+      // Don't create an input for a serial primary key on new rows
+      if (isNewRow && colName == pkColName && (col['type']!.contains('int') || col['type']!.contains('serial'))) {
+        continue;
+      }
+      final value = isNewRow ? '' : (rowData[colName]?.toString() ?? '');
+      controllers[colName] = TextEditingController(text: value);
     }
 
-    return GestureDetector(
-      onTap: () {
-        _showEditCellDialog(row, column);
-      },
-      child: Text(
-        value.toString(),
-        style: const TextStyle(color: Color(0xFF3B82F6)),
-      ),
-    );
-  }
-
-  void _showEditCellDialog(Map<String, dynamic> row, String column) {
-    final controller = TextEditingController(text: row[column].toString());
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('$column 수정'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                row[column] = controller.text;
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAddRowDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('새 행 추가'),
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isNewRow ? '새 행 추가' : '행 편집'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              const TextField(
-                decoration: InputDecoration(labelText: '이름'),
-              ),
-              const SizedBox(height: 8),
-              const TextField(
-                decoration: InputDecoration(labelText: '이메일'),
-              ),
-              const SizedBox(height: 8),
-              const TextField(
-                decoration: InputDecoration(labelText: '나이'),
-                keyboardType: TextInputType.number,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                data.add({
-                  'id': data.length + 1,
-                  'name': 'New User',
-                  'email': 'new@example.com',
-                  'age': 0,
-                  'city': 'Seoul',
-                  'status': 'Active',
-                });
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('새 행이 추가되었습니다.'),
-                  backgroundColor: Color(0xFF10B981),
-                ),
-              );
-            },
-            child: const Text('추가'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEditRowDialog(Map<String, dynamic> row) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('행 편집'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: row.keys.map((key) {
-              final controller = TextEditingController(text: row[key].toString());
+            children: controllers.entries.map((entry) {
               return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
                 child: TextField(
-                  controller: controller,
-                  decoration: InputDecoration(
-                    labelText: key,
-                    border: const OutlineInputBorder(),
-                  ),
+                  controller: entry.value,
+                  decoration: InputDecoration(labelText: entry.key, border: const OutlineInputBorder()),
                 ),
               );
             }).toList(),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('취소')),
           ElevatedButton(
             onPressed: () {
-              setState(() {});
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
+              final values = controllers.map<String, dynamic>((key, value) {
+                final text = value.text;
+                return MapEntry(key, text.isEmpty ? null : text);
+              });
+
+              if (isNewRow) {
+                final query = values.isEmpty
+                    ? 'INSERT INTO "${widget.table}" DEFAULT VALUES'
+                    : 'INSERT INTO "${widget.table}" (${values.keys.map((k) => '"$k"').join(',')}) VALUES (${values.keys.map((k) => '@$k').join(',')})';
+                _performOperation(
+                    (conn) => conn.query(query, substitutionValues: values.isEmpty ? null : values),
+                    '행이 추가되었습니다.');
+              } else {
+                if (pkColName == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('오류: 기본 키가 없어 수정할 수 없습니다.'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+                final setClauses = values.keys.map((k) => '"$k" = @$k').join(',');
+                final query = 'UPDATE "${widget.table}" SET $setClauses WHERE "$pkColName" = @primaryKeyValue';
+                values['primaryKeyValue'] = rowData![pkColName];
+                _performOperation((conn) => conn.query(query, substitutionValues: values), '행이 수정되었습니다.');
+              }
             },
             child: const Text('저장'),
           ),
@@ -314,33 +256,31 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
   }
 
   void _showDeleteConfirmDialog(Map<String, dynamic> row) {
+    if (_primaryKeyColumn == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('오류: 기본 키가 없어 삭제할 수 없습니다.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final pkValue = row[_primaryKeyColumn!];
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('행 삭제'),
-        content: const Text('이 행을 삭제하시겠습니까?'),
+        content: Text('이 행을 삭제하시겠습니까? (기본 키: $pkValue)'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('취소')),
           ElevatedButton(
             onPressed: () {
-              setState(() {
-                data.remove(row);
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('행이 삭제되었습니다.'),
-                  backgroundColor: Color(0xFFEF4444),
-                ),
+              Navigator.pop(dialogContext);
+              final query = 'DELETE FROM "${widget.table}" WHERE "$_primaryKeyColumn" = @pkValue';
+              _performOperation(
+                (conn) => conn.query(query, substitutionValues: {'pkValue': pkValue}),
+                '행이 삭제되었습니다.',
               );
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              foregroundColor: Colors.white,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             child: const Text('삭제'),
           ),
         ],
@@ -348,4 +288,3 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 }
-

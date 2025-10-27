@@ -13,6 +13,7 @@ class DatabaseSelectionScreen extends StatefulWidget {
 class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   List<Map<String, dynamic>> _databases = [];
   bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -38,6 +39,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     if (mounted) {
       setState(() {
         _isLoading = true;
+        _error = null;
       });
     }
 
@@ -65,10 +67,8 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _error = '서버에 연결할 수 없습니다. 주소와 포트를 확인하거나 서버 상태를 점검하세요.\n오류: $e';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('데이터베이스 목록을 불러오는데 실패했습니다: $e')),
-        );
       }
     }
   }
@@ -148,130 +148,151 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
             stops: [0.0, 0.1],
           ),
         ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 2,
+        child: _error != null
+            ? Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.info_outline, size: 24, color: Color(0xFF8B5CF6)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              '연결된 서버',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            Text(
-                              widget.server['name'],
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                      Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red, fontSize: 16),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          _showCreateDatabaseDialog();
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('새 데이터베이스'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF8B5CF6),
-                          foregroundColor: Colors.white,
-                        ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('뒤로 가기'),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                      itemCount: _databases.length,
-                      itemBuilder: (context, index) {
-                        final db = _databases[index];
-                        final dbName = db['name'] as String;
-                        final dbSize = db['size'] as String;
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          elevation: 2,
-                          child: InkWell(
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/table-selection',
-                                arguments: {
-                                  'server': widget.server,
-                                  'database': dbName,
-                                },
-                              );
-                            },
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: const Color(0xFF8B5CF6),
-                                radius: 24,
-                                child: const Icon(
-                                  Icons.storage,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              title: Text(dbName),
-                              subtitle: Text(dbSize),
-                              trailing: PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert),
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showEditDatabaseDialog(dbName);
-                                  } else if (value == 'delete') {
-                                    _showDeleteDatabaseDialog(dbName);
-                                  }
-                                },
-                                itemBuilder: (BuildContext context) => [
-                                  const PopupMenuItem<String>(
-                                    value: 'edit',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.edit, size: 20),
-                                        SizedBox(width: 8),
-                                        Text('수정'),
-                                      ],
+              )
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Card(
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 24, color: Color(0xFF8B5CF6)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    '연결된 서버',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
                                     ),
                                   ),
-                                  const PopupMenuItem<String>(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete, size: 20, color: Colors.red),
-                                        SizedBox(width: 8),
-                                        Text('삭제', style: TextStyle(color: Colors.red)),
-                                      ],
+                                  Text(
+                                    widget.server['name'],
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                        );
-                      },
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                _showCreateDatabaseDialog();
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('새 데이터베이스'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF8B5CF6),
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-            ),
-          ],
-        ),
+                  ),
+                  Expanded(
+                    child: _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                            itemCount: _databases.length,
+                            itemBuilder: (context, index) {
+                              final db = _databases[index];
+                              final dbName = db['name'] as String;
+                              final dbSize = db['size'] as String;
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                elevation: 2,
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.pushNamed(
+                                      context,
+                                      '/table-selection',
+                                      arguments: {
+                                        'server': widget.server,
+                                        'database': dbName,
+                                      },
+                                    );
+                                  },
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: const Color(0xFF8B5CF6),
+                                      radius: 24,
+                                      child: const Icon(
+                                        Icons.storage,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    title: Text(dbName),
+                                    subtitle: Text(dbSize),
+                                    trailing: PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert),
+                                      onSelected: (value) {
+                                        if (value == 'edit') {
+                                          _showEditDatabaseDialog(dbName);
+                                        } else if (value == 'delete') {
+                                          _showDeleteDatabaseDialog(dbName);
+                                        }
+                                      },
+                                      itemBuilder: (BuildContext context) => [
+                                        const PopupMenuItem<String>(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.edit, size: 20),
+                                              SizedBox(width: 8),
+                                              Text('수정'),
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuItem<String>(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete, size: 20, color: Colors.red),
+                                              SizedBox(width: 8),
+                                              Text('삭제', style: TextStyle(color: Colors.red)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
       ),
     );
   }

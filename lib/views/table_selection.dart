@@ -25,24 +25,29 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
     _loadTables();
   }
 
+  Future<PostgreSQLConnection> _getConnection() async {
+    final host = widget.server['address'].split(':')[0];
+    final port = int.parse(widget.server['address'].split(':')[1]);
+    final connection = PostgreSQLConnection(
+      host,
+      port,
+      widget.database,
+      username: 'postgres',
+      password: '0000',
+    );
+    await connection.open();
+    return connection;
+  }
+
   Future<void> _loadTables() async {
-    setState(() {
-      _isLoading = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
-      final host = widget.server['address'].split(':')[0];
-      final port = int.parse(widget.server['address'].split(':')[1]);
-
-      final connection = PostgreSQLConnection(
-        host,
-        port,
-        widget.database, // 선택된 데이터베이스 사용
-        username: 'postgres',
-        password: '0000',
-      );
-      await connection.open();
-
+      final connection = await _getConnection();
       final results = await connection.query('''
         SELECT
             t.table_name,
@@ -59,27 +64,85 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
             t.table_name;
       ''');
 
-      setState(() {
-        _tables = results.map((row) {
-          return {
-            'name': row[0] as String,
-            'columns': row[1] as int,
-          };
-        }).toList();
-        _isLoading = false;
-      });
-
+      if (mounted) {
+        setState(() {
+          _tables = results.map((row) {
+            return {
+              'name': row[0] as String,
+              'columns': row[1] as int,
+            };
+          }).toList();
+          _isLoading = false;
+        });
+      }
       await connection.close();
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('테이블 목록을 불러오는데 실패했습니다: $e')),
         );
       }
     }
+  }
+
+  Future<void> _performTableOperation(
+    Future<void> Function(PostgreSQLConnection) operation,
+    String successMessage,
+    String failureMessage,
+  ) async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final connection = await _getConnection();
+      await operation(connection);
+      await connection.close();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$failureMessage: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+
+    if (mounted) {
+      await _loadTables();
+    }
+  }
+
+  Future<void> _createTable(String tableName) async {
+    await _performTableOperation(
+      (conn) => conn.query('CREATE TABLE "$tableName" (id SERIAL PRIMARY KEY);'),
+      '테이블 $tableName 생성 완료',
+      '테이블 생성 실패',
+    );
+  }
+
+  Future<void> _renameTable(String oldName, String newName) async {
+    await _performTableOperation(
+      (conn) => conn.query('ALTER TABLE "$oldName" RENAME TO "$newName"'),
+      '테이블 이름이 $newName (으)로 변경되었습니다.',
+      '테이블 이름 변경 실패',
+    );
+  }
+
+  Future<void> _deleteTable(String tableName) async {
+    await _performTableOperation(
+      (conn) => conn.query('DROP TABLE "$tableName"'),
+      '$tableName 테이블이 삭제되었습니다.',
+      '테이블 삭제 실패',
+    );
   }
 
   @override
@@ -200,9 +263,9 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                                 icon: const Icon(Icons.more_vert),
                                 onSelected: (value) {
                                   if (value == 'edit') {
-                                    // _showEditTableDialog(table);
+                                    _showEditTableDialog(tableName);
                                   } else if (value == 'delete') {
-                                    // _showDeleteTableDialog(table);
+                                    _showDeleteTableDialog(tableName);
                                   }
                                 },
                                 itemBuilder: (BuildContext context) => [
@@ -241,42 +304,94 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
   }
 
   void _showCreateTableDialog() {
+    final nameController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('새 테이블 생성'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const TextField(
-              decoration: InputDecoration(
-                labelText: '테이블 이름',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () {
-                // 컬럼 추가 로직
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('컬럼 추가'),
-            ),
-          ],
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '테이블 이름',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('취소'),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('테이블이 생성되었습니다.')),
-              );
+              final tableName = nameController.text.trim();
+              if (tableName.isNotEmpty) {
+                Navigator.pop(dialogContext);
+                _createTable(tableName);
+              }
             },
             child: const Text('생성'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditTableDialog(String oldName) {
+    final nameController = TextEditingController(text: oldName);
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('테이블 이름 수정'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '새 테이블 이름',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newName = nameController.text.trim();
+              if (newName.isNotEmpty && newName != oldName) {
+                Navigator.pop(dialogContext);
+                _renameTable(oldName, newName);
+              }
+            },
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteTableDialog(String tableName) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('테이블 삭제'),
+        content: Text('$tableName 테이블을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _deleteTable(tableName);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('삭제'),
           ),
         ],
       ),

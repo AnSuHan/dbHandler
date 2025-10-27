@@ -14,6 +14,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   List<ServerModel> _servers = [];
   bool _isLoading = true;
   bool _showAddForm = false;
+  bool _isTestServer = false;
 
   // 폼 입력 컨트롤러
   final TextEditingController _nameController = TextEditingController();
@@ -275,6 +276,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       setState(() {
         _showAddForm = false;
+        _isTestServer = false;
       });
 
       _loadServers();
@@ -298,55 +300,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
       }
     }
   }
-
-  Future<void> _addTestLocalServer() async {
-    const name = 'Test Local Server';
-    const address = '127.0.0.1:5432';
-    const type = 'PostgreSQL';
-
-    final isDuplicate = _servers.any((s) => s.name == name || s.address == address);
-    if (isDuplicate) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('테스트 서버가 이미 목록에 존재합니다.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-      return;
-    }
-
-    final newServer = ServerModel(
-      name: name,
-      address: address,
-      type: type,
-      isConnected: false,
-    );
-
-     try {
-      await _serverDao.insertServer(newServer);
-      _loadServers();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('테스트 서버가 추가되었습니다.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('테스트 서버 추가 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
 
   @override
   Widget build(BuildContext context) {
@@ -387,45 +340,51 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          if (_showAddForm)
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: () {
-                                setState(() {
-                                  _showAddForm = false;
+                          IconButton(
+                            icon: Icon(_showAddForm ? Icons.close : Icons.add),
+                            onPressed: () {
+                              setState(() {
+                                _showAddForm = !_showAddForm;
+                                // 폼을 닫을 때 컨트롤러와 상태 초기화
+                                if (!_showAddForm) {
+                                  _isTestServer = false;
                                   _nameController.clear();
                                   _hostController.clear();
                                   _portController.clear();
                                   _typeController.clear();
-                                });
-                              },
-                            )
-                          else
-                             PopupMenuButton<String>(
-                                icon: const Icon(Icons.add),
-                                onSelected: (value) {
-                                  if (value == 'manual') {
-                                    setState(() {
-                                      _showAddForm = true;
-                                    });
-                                  } else if (value == 'test') {
-                                    _addTestLocalServer();
-                                  }
-                                },
-                                itemBuilder: (BuildContext context) => [
-                                  const PopupMenuItem<String>(
-                                    value: 'manual',
-                                    child: Text('직접 추가'),
-                                  ),
-                                  const PopupMenuItem<String>(
-                                    value: 'test',
-                                    child: Text('테스트 서버 추가'),
-                                  ),
-                                ],
-                              ),
+                                }
+                              });
+                            },
+                          ),
                         ],
                       ),
                       if (_showAddForm) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('테스트 서버 추가', style: TextStyle(fontSize: 16)),
+                            Switch(
+                              value: _isTestServer,
+                              onChanged: (value) {
+                                setState(() {
+                                  _isTestServer = value;
+                                  if (_isTestServer) {
+                                    _nameController.text = 'Test Server';
+                                    _hostController.text = '127.0.0.1';
+                                    _portController.text = '5432';
+                                    _typeController.text = 'PostgreSQL';
+                                  } else {
+                                    _nameController.clear();
+                                    _hostController.clear();
+                                    _portController.clear();
+                                    _typeController.clear();
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 16),
                         TextField(
                           controller: _nameController,
@@ -494,7 +453,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                       itemCount: _servers.length,
                       itemBuilder: (context, index) {
                         final server = _servers[index];
-                        final isTestServer = server.name == 'Test Local Server';
+                        final isTestServer = server.address == '127.0.0.1:5432';
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           elevation: 2,

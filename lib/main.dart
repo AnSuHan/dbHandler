@@ -29,19 +29,17 @@ class MyApp extends StatelessWidget {
           return DatabaseSelectionScreen(server: server);
         },
         '/table-selection': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map;
-          return TableSelectionScreen(
-            server: args['server'],
-            database: args['database'],
-          );
+          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final server = args['server'] as Map<String, dynamic>;
+          final database = args['database'] as String;
+          return TableSelectionScreen(server: server, database: database);
         },
         '/data-editing': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map;
-          return DataEditingScreen(
-            server: args['server'],
-            database: args['database'],
-            table: args['table'],
-          );
+          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final server = args['server'] as Map<String, dynamic>;
+          final database = args['database'] as String;
+          final table = args['table'] as String;
+          return DataEditingScreen(server: server, database: database, table: table);
         },
       },
     );
