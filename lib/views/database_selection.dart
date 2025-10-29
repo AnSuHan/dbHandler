@@ -262,75 +262,83 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                   Expanded(
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                            itemCount: _databases.length,
-                            itemBuilder: (context, index) {
-                              final db = _databases[index];
-                              final dbName = db['name'] as String;
-                              final tableCount = db['table_count'];
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                elevation: 2,
-                                child: InkWell(
-                                  onTap: () {
-                                    Navigator.pushNamed(
-                                      context,
-                                      '/table-selection',
-                                      arguments: {
-                                        'server': widget.server,
-                                        'database': dbName,
+                        : _databases.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  '데이터베이스가 없습니다. 새 데이터베이스를 추가해주세요.',
+                                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                                  textAlign: TextAlign.center,
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                itemCount: _databases.length,
+                                itemBuilder: (context, index) {
+                                  final db = _databases[index];
+                                  final dbName = db['name'] as String;
+                                  final tableCount = db['table_count'];
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    elevation: 2,
+                                    child: InkWell(
+                                      onTap: () {
+                                        Navigator.pushNamed(
+                                          context,
+                                          '/table-selection',
+                                          arguments: {
+                                            'server': widget.server,
+                                            'database': dbName,
+                                          },
+                                        );
                                       },
-                                    );
-                                  },
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: const Color(0xFF8B5CF6),
-                                      radius: 24,
-                                      child: const Icon(
-                                        Icons.storage,
-                                        color: Colors.white,
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: const Color(0xFF8B5CF6),
+                                          radius: 24,
+                                          child: const Icon(
+                                            Icons.storage,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        title: Text(dbName),
+                                        subtitle: Text('테이블: $tableCount'),
+                                        trailing: PopupMenuButton<String>(
+                                          icon: const Icon(Icons.more_vert),
+                                          onSelected: (value) {
+                                            if (value == 'edit') {
+                                              _showEditDatabaseDialog(dbName);
+                                            } else if (value == 'delete') {
+                                              _showDeleteDatabaseDialog(dbName);
+                                            }
+                                          },
+                                          itemBuilder: (BuildContext context) => [
+                                            const PopupMenuItem<String>(
+                                              value: 'edit',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.edit, size: 20),
+                                                  SizedBox(width: 8),
+                                                  Text('수정'),
+                                                ],
+                                              ),
+                                            ),
+                                            const PopupMenuItem<String>(
+                                              value: 'delete',
+                                              child: Row(
+                                                children: [
+                                                  Icon(Icons.delete, size: 20, color: Colors.red),
+                                                  SizedBox(width: 8),
+                                                  Text('삭제', style: TextStyle(color: Colors.red)),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                    title: Text(dbName),
-                                    subtitle: Text('테이블: $tableCount'),
-                                    trailing: PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_vert),
-                                      onSelected: (value) {
-                                        if (value == 'edit') {
-                                          _showEditDatabaseDialog(dbName);
-                                        } else if (value == 'delete') {
-                                          _showDeleteDatabaseDialog(dbName);
-                                        }
-                                      },
-                                      itemBuilder: (BuildContext context) => [
-                                        const PopupMenuItem<String>(
-                                          value: 'edit',
-                                          child: Row(
-                                            children: [
-                                              Icon(Icons.edit, size: 20),
-                                              SizedBox(width: 8),
-                                              Text('수정'),
-                                            ],
-                                          ),
-                                        ),
-                                        const PopupMenuItem<String>(
-                                          value: 'delete',
-                                          child: Row(
-                                            children: [
-                                              Icon(Icons.delete, size: 20, color: Colors.red),
-                                              SizedBox(width: 8),
-                                              Text('삭제', style: TextStyle(color: Colors.red)),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                                  );
+                                },
+                              ),
                   ),
                 ],
               ),

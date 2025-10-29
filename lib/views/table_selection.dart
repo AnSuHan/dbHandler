@@ -249,88 +249,96 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                      itemCount: _tables.length,
-                      itemBuilder: (context, index) {
-                        final table = _tables[index];
-                        final tableName = table['name'] as String;
-                        final columnCount = table['columns'] as int;
-                        final rowCount = table['rows'];
-
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          elevation: 2,
-                          child: InkWell(
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/data-editing',
-                                arguments: {
-                                  'server': widget.server,
-                                  'database': widget.database,
-                                  'table': tableName,
-                                },
-                              );
-                            },
-                            child: ListTile(
-                              leading: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: const Color(0x1A10B981),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.table_chart,
-                                  color: Color(0xFF10B981),
-                                ),
-                              ),
-                              title: Text(
-                                tableName,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              subtitle: Text('컬럼: $columnCount, 행: $rowCount'),
-                              trailing: PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert),
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showEditTableDialog(tableName);
-                                  } else if (value == 'delete') {
-                                    _showDeleteTableDialog(tableName);
-                                  }
-                                },
-                                itemBuilder: (BuildContext context) => [
-                                  const PopupMenuItem<String>(
-                                    value: 'edit',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.edit, size: 20),
-                                        SizedBox(width: 8),
-                                        Text('수정'),
-                                      ],
-                                    ),
-                                  ),
-                                  const PopupMenuItem<String>(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete, size: 20, color: Colors.red),
-                                        SizedBox(width: 8),
-                                        Text('삭제', style: TextStyle(color: Colors.red)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                  : _tables.isEmpty
+                      ? const Center(
+                          child: Text(
+                            '테이블이 없습니다. 새 테이블을 추가해주세요.',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                            textAlign: TextAlign.center,
                           ),
-                        );
-                      },
-                    ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                          itemCount: _tables.length,
+                          itemBuilder: (context, index) {
+                            final table = _tables[index];
+                            final tableName = table['name'] as String;
+                            final columnCount = table['columns'] as int;
+                            final rowCount = table['rows'];
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              elevation: 2,
+                              child: InkWell(
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/data-editing',
+                                    arguments: {
+                                      'server': widget.server,
+                                      'database': widget.database,
+                                      'table': tableName,
+                                    },
+                                  );
+                                },
+                                child: ListTile(
+                                  leading: Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0x1A10B981),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.table_chart,
+                                      color: Color(0xFF10B981),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    tableName,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  subtitle: Text('컬럼: $columnCount, 행: $rowCount'),
+                                  trailing: PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert),
+                                    onSelected: (value) {
+                                      if (value == 'edit') {
+                                        _showEditTableDialog(tableName);
+                                      } else if (value == 'delete') {
+                                        _showDeleteTableDialog(tableName);
+                                      }
+                                    },
+                                    itemBuilder: (BuildContext context) => [
+                                      const PopupMenuItem<String>(
+                                        value: 'edit',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.edit, size: 20),
+                                            SizedBox(width: 8),
+                                            Text('수정'),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuItem<String>(
+                                        value: 'delete',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.delete, size: 20, color: Colors.red),
+                                            SizedBox(width: 8),
+                                            Text('삭제', style: TextStyle(color: Colors.red)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
             ),
           ],
         ),

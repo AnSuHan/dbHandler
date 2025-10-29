@@ -94,7 +94,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       if (mounted && createdServer != null) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('서버가 추가되었습니다.'), backgroundColor: Colors.green));
-        await _showAuthDialog(createdServer, isTest: _isTestServer);
+        await _showAuthDialog(createdServer, isTest: _isTestServer, isInitialSetup: true);
       }
     } catch (e) {
       if (mounted) {
@@ -103,7 +103,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     }
   }
 
-  Future<ServerModel?> _showAuthDialog(ServerModel server, {bool isTest = false}) async {
+  Future<ServerModel?> _showAuthDialog(ServerModel server, {bool isTest = false, bool isInitialSetup = false}) async {
     final usernameController = TextEditingController(text: server.username);
     final passwordController = TextEditingController(text: server.password);
     final keyFilePathController = TextEditingController(text: server.keyFilePath);
@@ -115,47 +115,75 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
     return await showDialog<ServerModel?>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('계정 정보 입력'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: usernameController, decoration: const InputDecoration(labelText: '계정', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person))),
-              const SizedBox(height: 16),
-              TextField(controller: passwordController, obscureText: true, decoration: const InputDecoration(labelText: '비밀번호', border: OutlineInputBorder(), prefixIcon: Icon(Icons.lock))),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: keyFilePathController, decoration: const InputDecoration(labelText: '키 파일 경로', border: OutlineInputBorder(), prefixIcon: Icon(Icons.vpn_key)))),
-                  IconButton(icon: const Icon(Icons.attach_file), onPressed: () async {
-                    FilePickerResult? result = await FilePicker.platform.pickFiles();
-                    if (result != null) {
-                      keyFilePathController.text = result.files.single.path ?? '';
-                    }
-                  }),
-                ],
+      builder: (dialogContext) {
+        bool isPasswordObscured = true;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('계정 정보 입력'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(controller: usernameController, decoration: const InputDecoration(labelText: '계정', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person))),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: isPasswordObscured,
+                      decoration: InputDecoration(
+                        labelText: '비밀번호',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(isPasswordObscured ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () {
+                            setState(() {
+                              isPasswordObscured = !isPasswordObscured;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: TextField(controller: keyFilePathController, decoration: const InputDecoration(labelText: '키 파일 경로', border: OutlineInputBorder(), prefixIcon: Icon(Icons.vpn_key)))),
+                        IconButton(
+                            icon: const Icon(Icons.attach_file),
+                            onPressed: () async {
+                              FilePickerResult? result = await FilePicker.platform.pickFiles();
+                              if (result != null) {
+                                keyFilePathController.text = result.files.single.path ?? '';
+                              }
+                            }),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, null), child: const Text('건너뛰기')),
-          ElevatedButton(
-            onPressed: () async {
-              final updatedServer = server.copyWith(
-                username: usernameController.text.trim(),
-                password: passwordController.text.trim(),
-                keyFilePath: keyFilePathController.text.trim(),
-              );
-              await _serverDao.updateServer(updatedServer);
-              await _loadServers();
-              if (dialogContext.mounted) Navigator.pop(dialogContext, updatedServer);
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, null),
+                  child: Text(isInitialSetup ? '건너뛰기' : '취소'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final updatedServer = server.copyWith(
+                      username: usernameController.text.trim(),
+                      password: passwordController.text.trim(),
+                      keyFilePath: keyFilePathController.text.trim(),
+                    );
+                    await _serverDao.updateServer(updatedServer);
+                    await _loadServers();
+                    if (dialogContext.mounted) Navigator.pop(dialogContext, updatedServer);
+                  },
+                  child: const Text('저장'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -352,64 +380,76 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                      itemCount: _servers.length,
-                      itemBuilder: (context, index) {
-                        final server = _servers[index];
-                        final isTestServer = server.address == '127.0.0.1:5432';
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          elevation: 2,
-                          child: InkWell(
-                            onTap: () async {
-                              ServerModel? targetServer = server;
-                              bool needsAuth = (targetServer.username == null || targetServer.username!.isEmpty) && (targetServer.password == null || targetServer.password!.isEmpty);
+                  : _servers.isEmpty
+                      ? const Center(
+                          child: Text(
+                            '서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                          itemCount: _servers.length,
+                          itemBuilder: (context, index) {
+                            final server = _servers[index];
+                            final isTestServer = server.address == '127.0.0.1:5432';
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              elevation: 2,
+                              child: InkWell(
+                                onTap: () async {
+                                  // await 호출 전에 context를 사용하여 NavigatorState를 미리 가져옵니다.
+                                  final navigator = Navigator.of(context);
+                                  ServerModel? targetServer = server;
+                                  bool needsAuth = (targetServer.username == null || targetServer.username!.isEmpty) && (targetServer.password == null || targetServer.password!.isEmpty);
 
-                              if (needsAuth) {
-                                targetServer = await _showAuthDialog(server, isTest: isTestServer);
-                              }
+                                  if (needsAuth) {
+                                    targetServer = await _showAuthDialog(server, isTest: isTestServer, isInitialSetup: true);
+                                  }
 
-                              if (!mounted || targetServer == null) return;
+                                  // await 호출 후, 위젯이 여전히 화면에 있는지 확인합니다.
+                                  if (!mounted || targetServer == null) return;
 
-                              Navigator.pushNamed(context, '/database-selection', arguments: targetServer.toMap());
-                            },
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: isTestServer ? Colors.grey : (server.isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
-                                child: const Icon(Icons.dns, color: Colors.white),
-                              ),
-                              title: Text(server.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text(server.address),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Chip(label: Text(server.type), backgroundColor: const Color(0xFFEDE9FE), labelStyle: const TextStyle(color: Color(0xFF6366F1))),
-                                  const SizedBox(width: 8),
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_vert),
-                                    onSelected: (value) async {
-                                      if (value == 'edit_server') {
-                                        _showEditServerDialog(server);
-                                      } else if (value == 'edit_auth') {
-                                        _showAuthDialog(server);
-                                      } else if (value == 'delete') {
-                                        _showDeleteServerDialog(server);
-                                      }
-                                    },
-                                    itemBuilder: (BuildContext context) => [
-                                      const PopupMenuItem<String>(value: 'edit_server', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('서버 정보 수정')])),
-                                      const PopupMenuItem<String>(value: 'edit_auth', child: Row(children: [Icon(Icons.security, size: 20), SizedBox(width: 8), Text('인증 정보 수정')])),
-                                      const PopupMenuItem<String>(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), SizedBox(width: 8), Text('삭제', style: TextStyle(color: Colors.red))])),
+                                  // 미리 가져온 navigator를 사용하여 화면을 전환합니다.
+                                  navigator.pushNamed('/database-selection', arguments: targetServer.toMap());
+                                },
+                                child: ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: isTestServer ? Colors.grey : (server.isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                                    child: const Icon(Icons.dns, color: Colors.white),
+                                  ),
+                                  title: Text(server.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: Text(server.address),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Chip(label: Text(server.type), backgroundColor: const Color(0xFFEDE9FE), labelStyle: const TextStyle(color: Color(0xFF6366F1))),
+                                      const SizedBox(width: 8),
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert),
+                                        onSelected: (value) {
+                                          if (value == 'edit_server') {
+                                            _showEditServerDialog(server);
+                                          } else if (value == 'edit_auth') {
+                                            _showAuthDialog(server, isInitialSetup: false);
+                                          } else if (value == 'delete') {
+                                            _showDeleteServerDialog(server);
+                                          }
+                                        },
+                                        itemBuilder: (BuildContext context) => [
+                                          const PopupMenuItem<String>(value: 'edit_server', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('서버 정보 수정')])),
+                                          const PopupMenuItem<String>(value: 'edit_auth', child: Row(children: [Icon(Icons.security, size: 20), SizedBox(width: 8), Text('인증 정보 수정')])),
+                                          const PopupMenuItem<String>(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), SizedBox(width: 8), Text('삭제', style: TextStyle(color: Colors.red))])),
+                                        ],
+                                      ),
                                     ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                            );
+                          },
+                        ),
             ),
           ],
         ),
