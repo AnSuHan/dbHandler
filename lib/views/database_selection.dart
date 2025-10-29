@@ -48,7 +48,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
       final results = await connection.query('''
         SELECT d.datname
         FROM pg_database d
-        WHERE d.datistemplate = false;
+        WHERE d.datistemplate = false AND d.datallowconn = true;
       ''');
       await connection.close();
 
@@ -58,13 +58,13 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
         _databases = results.map((row) {
           return {
             'name': row[0] as String,
-            'size': '조회 중...',
+            'table_count': '조회 중...',
           };
         }).toList();
         _isLoading = false;
       });
       
-      _fetchAllSizes();
+      _fetchAllTableCounts();
 
     } catch (e) {
       if (mounted) {
@@ -76,34 +76,37 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     }
   }
 
-  Future<void> _fetchAllSizes() async {
-    if (!mounted || _databases.isEmpty) return;
-
-    List<Future> futures = [];
+  Future<void> _fetchAllTableCounts() async {
+    if (!mounted) return;
     for (int i = 0; i < _databases.length; i++) {
-        futures.add(_updateSizeForIndex(i));
+      if (!mounted) return;
+      await _updateTableCountForIndex(i);
     }
-    await Future.wait(futures);
   }
 
-  Future<void> _updateSizeForIndex(int index) async {
+  Future<void> _updateTableCountForIndex(int index) async {
     PostgreSQLConnection? connection;
     final dbName = _databases[index]['name'] as String;
     try {
-        connection = await _getConnection('postgres');
-        final result = await connection.query(
-            "SELECT pg_size_pretty(pg_database_size(@dbName:text))",
-            substitutionValues: {'dbName': dbName},
-        );
+        connection = await _getConnection(dbName);
+        final result = await connection.query('''
+          SELECT count(*)
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relkind = 'r'
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+            AND n.nspname NOT LIKE 'pg_toast%';
+        ''');
+        
         if (mounted) {
             setState(() {
-                _databases[index]['size'] = result.first[0] as String;
+                _databases[index]['table_count'] = result.first[0] as int;
             });
         }
     } catch (e) {
         if (mounted) {
             setState(() {
-                _databases[index]['size'] = '오류';
+                _databases[index]['table_count'] = '오류';
             });
         }
     } finally {
@@ -265,7 +268,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                             itemBuilder: (context, index) {
                               final db = _databases[index];
                               final dbName = db['name'] as String;
-                              final dbSize = db['size'] as String;
+                              final tableCount = db['table_count'];
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 12),
                                 elevation: 2,
@@ -290,7 +293,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                       ),
                                     ),
                                     title: Text(dbName),
-                                    subtitle: Text(dbSize),
+                                    subtitle: Text('테이블: $tableCount'),
                                     trailing: PopupMenuButton<String>(
                                       icon: const Icon(Icons.more_vert),
                                       onSelected: (value) {

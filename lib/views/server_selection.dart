@@ -160,11 +160,66 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _showEditServerDialog(ServerModel server) async {
-    // This can be simplified to reuse _showAuthDialog if the UI is identical
-    final updatedServer = await _showAuthDialog(server);
-    if (updatedServer != null) {
-      _loadServers();
-    }
+    final nameController = TextEditingController(text: server.name);
+    final hostController = TextEditingController(text: server.address.split(':')[0]);
+    final portController = TextEditingController(text: server.address.split(':')[1]);
+    final typeController = TextEditingController(text: server.type);
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('서버 정보 수정'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: '서버 이름', border: OutlineInputBorder(), prefixIcon: Icon(Icons.dns))),
+              const SizedBox(height: 16),
+              TextField(controller: hostController, decoration: const InputDecoration(labelText: '호스트 주소', border: OutlineInputBorder(), prefixIcon: Icon(Icons.link), hintText: 'localhost')),
+              const SizedBox(height: 16),
+              TextField(controller: portController, decoration: const InputDecoration(labelText: '포트', border: OutlineInputBorder(), prefixIcon: Icon(Icons.numbers), hintText: '5432'), keyboardType: TextInputType.number),
+              const SizedBox(height: 16),
+              TextField(controller: typeController, decoration: const InputDecoration(labelText: 'DB 타입', border: OutlineInputBorder(), prefixIcon: Icon(Icons.storage), hintText: 'PostgreSQL')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              final host = hostController.text.trim();
+              final port = portController.text.trim();
+              final type = typeController.text.trim().isEmpty ? 'PostgreSQL' : typeController.text.trim();
+
+              if (name.isEmpty || host.isEmpty || port.isEmpty) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('이름, 호스트, 포트는 필수입니다.'), backgroundColor: Colors.red));
+                }
+                return;
+              }
+
+              final address = '$host:$port';
+              final updatedServer = server.copyWith(name: name, address: address, type: type);
+
+              try {
+                await _serverDao.updateServer(updatedServer);
+                _loadServers();
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('서버 정보가 수정되었습니다.'), backgroundColor: Colors.green));
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('서버 정보 수정 실패: $e'), backgroundColor: Colors.red));
+                }
+              }
+            },
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showDeleteServerDialog(ServerModel server) async {
@@ -334,14 +389,17 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                   PopupMenuButton<String>(
                                     icon: const Icon(Icons.more_vert),
                                     onSelected: (value) async {
-                                      if (value == 'edit') {
+                                      if (value == 'edit_server') {
                                         _showEditServerDialog(server);
+                                      } else if (value == 'edit_auth') {
+                                        _showAuthDialog(server);
                                       } else if (value == 'delete') {
                                         _showDeleteServerDialog(server);
                                       }
                                     },
                                     itemBuilder: (BuildContext context) => [
-                                      const PopupMenuItem<String>(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('수정')])),
+                                      const PopupMenuItem<String>(value: 'edit_server', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('서버 정보 수정')])),
+                                      const PopupMenuItem<String>(value: 'edit_auth', child: Row(children: [Icon(Icons.security, size: 20), SizedBox(width: 8), Text('인증 정보 수정')])),
                                       const PopupMenuItem<String>(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), SizedBox(width: 8), Text('삭제', style: TextStyle(color: Colors.red))])),
                                     ],
                                   ),
