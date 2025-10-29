@@ -46,23 +46,26 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     try {
       final connection = await _getConnection('postgres');
       final results = await connection.query('''
-        SELECT d.datname, pg_size_pretty(pg_database_size(d.datname)) AS size
+        SELECT d.datname
         FROM pg_database d
         WHERE d.datistemplate = false;
       ''');
-
-      if (mounted) {
-        setState(() {
-          _databases = results.map((row) {
-            return {
-              'name': row[0] as String,
-              'size': row[1] as String,
-            };
-          }).toList();
-          _isLoading = false;
-        });
-      }
       await connection.close();
+
+      if (!mounted) return;
+
+      setState(() {
+        _databases = results.map((row) {
+          return {
+            'name': row[0] as String,
+            'size': '조회 중...',
+          };
+        }).toList();
+        _isLoading = false;
+      });
+      
+      _fetchAllSizes();
+
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -70,6 +73,41 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
           _error = '서버에 연결할 수 없습니다. 주소와 포트를 확인하거나 서버 상태를 점검하세요.\n오류: $e';
         });
       }
+    }
+  }
+
+  Future<void> _fetchAllSizes() async {
+    if (!mounted || _databases.isEmpty) return;
+
+    List<Future> futures = [];
+    for (int i = 0; i < _databases.length; i++) {
+        futures.add(_updateSizeForIndex(i));
+    }
+    await Future.wait(futures);
+  }
+
+  Future<void> _updateSizeForIndex(int index) async {
+    PostgreSQLConnection? connection;
+    final dbName = _databases[index]['name'] as String;
+    try {
+        connection = await _getConnection('postgres');
+        final result = await connection.query(
+            "SELECT pg_size_pretty(pg_database_size(@dbName:text))",
+            substitutionValues: {'dbName': dbName},
+        );
+        if (mounted) {
+            setState(() {
+                _databases[index]['size'] = result.first[0] as String;
+            });
+        }
+    } catch (e) {
+        if (mounted) {
+            setState(() {
+                _databases[index]['size'] = '오류';
+            });
+        }
+    } finally {
+        await connection?.close();
     }
   }
 

@@ -70,10 +70,12 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
             return {
               'name': row[0] as String,
               'columns': row[1] as int,
+              'rows': '조회 중...',
             };
           }).toList();
           _isLoading = false;
         });
+        _loadAllRowCounts();
       }
       await connection.close();
     } catch (e) {
@@ -87,6 +89,38 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
       }
     }
   }
+
+  Future<void> _loadAllRowCounts() async {
+    List<Future> futures = [];
+    for (int i = 0; i < _tables.length; i++) {
+      futures.add(_loadRowCount(i));
+    }
+    await Future.wait(futures);
+  }
+
+  Future<void> _loadRowCount(int index) async {
+    final tableName = _tables[index]['name'] as String;
+    PostgreSQLConnection? connection;
+    try {
+      connection = await _getConnection();
+      final rowCountResult = await connection.query('SELECT COUNT(*) FROM \"$tableName\"');
+      
+      if (mounted) {
+        setState(() {
+          _tables[index]['rows'] = rowCountResult.first[0] as int;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _tables[index]['rows'] = '오류';
+        });
+      }
+    } finally {
+      await connection?.close();
+    }
+  }
+
 
   Future<void> _performTableOperation(
     Future<void> Function(PostgreSQLConnection) operation,
@@ -222,6 +256,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                         final table = _tables[index];
                         final tableName = table['name'] as String;
                         final columnCount = table['columns'] as int;
+                        final rowCount = table['rows'];
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -258,7 +293,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              subtitle: Text('$columnCount 개의 컬럼'),
+                              subtitle: Text('컬럼: $columnCount, 행: $rowCount'),
                               trailing: PopupMenuButton<String>(
                                 icon: const Icon(Icons.more_vert),
                                 onSelected: (value) {
