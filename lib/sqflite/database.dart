@@ -41,8 +41,9 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -58,6 +59,7 @@ class AppDatabase {
         isConnected INTEGER NOT NULL,
         username TEXT,
         password TEXT,
+        keyFilePath TEXT,
         notes TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
@@ -72,10 +74,18 @@ class AppDatabase {
       'isConnected': 0,
       'username': null,
       'password': null,
+      'keyFilePath': null,
       'notes': '테스트 서버입니다.',
       'createdAt': DateTime.now().toIso8601String(),
       'updatedAt': DateTime.now().toIso8601String(),
     });
+  }
+
+  // 데이터베이스 업그레이드
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE servers ADD COLUMN keyFilePath TEXT');
+    }
   }
 
   // 데이터베이스 닫기
@@ -93,4 +103,3 @@ class AppDatabase {
     _database = null;
   }
 }
-

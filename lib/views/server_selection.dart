@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../sqflite/models/server_model.dart';
 import '../sqflite/dao/server_dao.dart';
 
@@ -16,7 +17,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   bool _showAddForm = false;
   bool _isTestServer = false;
 
-  // 폼 입력 컨트롤러
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
@@ -38,9 +38,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _loadServers() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
     try {
       final servers = await _serverDao.getAllServers();
       setState(() {
@@ -48,227 +46,40 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('서버 목록을 불러오는데 실패했습니다: $e')),
-        );
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('서버 목록 로딩 실패: $e')));
       }
     }
-  }
-
-  Future<void> _showEditServerDialog(ServerModel server) async {
-    final nameController = TextEditingController(text: server.name);
-    final hostController = TextEditingController(text: server.address.split(':')[0]);
-    final portController = TextEditingController(text: server.address.split(':')[1]);
-    final typeController = TextEditingController(text: server.type);
-
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('서버 수정'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: '서버 이름',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: hostController,
-                decoration: const InputDecoration(
-                  labelText: '호스트 주소',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: portController,
-                decoration: const InputDecoration(
-                  labelText: '포트',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: typeController,
-                decoration: const InputDecoration(
-                  labelText: '데이터베이스 타입',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final host = hostController.text.trim();
-              final port = portController.text.trim();
-              final type = typeController.text.trim();
-
-              if (name.isEmpty || host.isEmpty || port.isEmpty) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('모든 필드를 입력해주세요.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-                return;
-              }
-
-              final address = '$host:$port';
-              final updatedServer = server.copyWith(
-                name: name,
-                address: address,
-                type: type,
-                updatedAt: DateTime.now(),
-              );
-
-              try {
-                await _serverDao.updateServer(updatedServer);
-                _loadServers();
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('서버가 수정되었습니다.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('서버 수정 중 오류가 발생했습니다: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showDeleteServerDialog(ServerModel server) async {
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('서버 삭제'),
-        content: Text('${server.name} 서버를 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                await _serverDao.deleteServer(server.id!);
-                _loadServers();
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('서버가 삭제되었습니다.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('서버 삭제 중 오류가 발생했습니다: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _addServer() async {
     final name = _nameController.text.trim();
     final host = _hostController.text.trim();
     final port = _portController.text.trim();
-    final type = _typeController.text.trim().isEmpty 
-        ? 'PostgreSQL' 
-        : _typeController.text.trim();
+    final type = _typeController.text.trim().isEmpty ? 'PostgreSQL' : _typeController.text.trim();
 
     if (name.isEmpty || host.isEmpty || port.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('모든 필드를 입력해주세요.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('이름, 호스트, 포트는 필수입니다.'), backgroundColor: Colors.red));
       }
       return;
     }
 
     final address = '$host:$port';
-    final isDuplicate = _servers.any((server) => server.address == address);
-    
-    if (isDuplicate) {
+    if (_servers.any((s) => s.address == address)) {
       if (mounted) {
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('서버 추가 실패'),
-            content: const Text('이미 같은 주소와 포트의 서버가 존재합니다.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('확인'),
-              ),
-            ],
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('이미 동일한 주소의 서버가 존재합니다.'), backgroundColor: Colors.orange));
       }
       return;
     }
 
-    final newServer = ServerModel(
-      name: name,
-      address: address,
-      type: type,
-      isConnected: false,
-    );
+    final newServer = ServerModel(name: name, address: address, type: type, isConnected: false);
 
     try {
-      await _serverDao.insertServer(newServer);
-      
+      final newId = await _serverDao.insertServer(newServer);
+      final createdServer = await _serverDao.getServerById(newId);
+
       _nameController.clear();
       _hostController.clear();
       _portController.clear();
@@ -279,26 +90,112 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         _isTestServer = false;
       });
 
-      _loadServers();
+      await _loadServers();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('서버가 추가되었습니다.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      if (mounted && createdServer != null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('서버가 추가되었습니다.'), backgroundColor: Colors.green));
+        await _showAuthDialog(createdServer, isTest: _isTestServer);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('서버 추가 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('서버 추가 실패: $e'), backgroundColor: Colors.red));
       }
     }
+  }
+
+  Future<ServerModel?> _showAuthDialog(ServerModel server, {bool isTest = false}) async {
+    final usernameController = TextEditingController(text: server.username);
+    final passwordController = TextEditingController(text: server.password);
+    final keyFilePathController = TextEditingController(text: server.keyFilePath);
+
+    if (isTest && server.username == null) {
+      usernameController.text = 'postgres';
+      passwordController.text = '0000';
+    }
+
+    return await showDialog<ServerModel?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('계정 정보 입력'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: usernameController, decoration: const InputDecoration(labelText: '계정', border: OutlineInputBorder(), prefixIcon: Icon(Icons.person))),
+              const SizedBox(height: 16),
+              TextField(controller: passwordController, obscureText: true, decoration: const InputDecoration(labelText: '비밀번호', border: OutlineInputBorder(), prefixIcon: Icon(Icons.lock))),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: TextField(controller: keyFilePathController, decoration: const InputDecoration(labelText: '키 파일 경로', border: OutlineInputBorder(), prefixIcon: Icon(Icons.vpn_key)))),
+                  IconButton(icon: const Icon(Icons.attach_file), onPressed: () async {
+                    FilePickerResult? result = await FilePicker.platform.pickFiles();
+                    if (result != null) {
+                      keyFilePathController.text = result.files.single.path ?? '';
+                    }
+                  }),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, null), child: const Text('건너뛰기')),
+          ElevatedButton(
+            onPressed: () async {
+              final updatedServer = server.copyWith(
+                username: usernameController.text.trim(),
+                password: passwordController.text.trim(),
+                keyFilePath: keyFilePathController.text.trim(),
+              );
+              await _serverDao.updateServer(updatedServer);
+              await _loadServers();
+              if (dialogContext.mounted) Navigator.pop(dialogContext, updatedServer);
+            },
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditServerDialog(ServerModel server) async {
+    // This can be simplified to reuse _showAuthDialog if the UI is identical
+    final updatedServer = await _showAuthDialog(server);
+    if (updatedServer != null) {
+      _loadServers();
+    }
+  }
+
+  Future<void> _showDeleteServerDialog(ServerModel server) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('서버 삭제'),
+        content: Text('${server.name} 서버를 삭제하시겠습니까?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await _serverDao.deleteServer(server.id!);
+                _loadServers();
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('서버가 삭제되었습니다.'), backgroundColor: Colors.green));
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('서버 삭제 중 오류: $e'), backgroundColor: Colors.red));
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -312,12 +209,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
       ),
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF6366F1), Color(0xFFF8F9FA)],
-            stops: [0.0, 0.1],
-          ),
+          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF6366F1), Color(0xFFF8F9FA)], stops: [0.0, 0.1]),
         ),
         child: Column(
           children: [
@@ -333,19 +225,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            '서버 목록',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          const Text('서버 목록', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                           IconButton(
                             icon: Icon(_showAddForm ? Icons.close : Icons.add),
                             onPressed: () {
                               setState(() {
                                 _showAddForm = !_showAddForm;
-                                // 폼을 닫을 때 컨트롤러와 상태 초기화
                                 if (!_showAddForm) {
                                   _isTestServer = false;
                                   _nameController.clear();
@@ -386,45 +271,13 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        TextField(
-                          controller: _nameController,
-                          decoration: const InputDecoration(
-                            labelText: '서버 이름',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.dns),
-                          ),
-                        ),
+                        TextField(controller: _nameController, decoration: const InputDecoration(labelText: '서버 이름', border: OutlineInputBorder(), prefixIcon: Icon(Icons.dns))),
                         const SizedBox(height: 16),
-                        TextField(
-                          controller: _hostController,
-                          decoration: const InputDecoration(
-                            labelText: '호스트 주소 (IP 또는 도메인)',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.link),
-                            hintText: 'localhost',
-                          ),
-                        ),
+                        TextField(controller: _hostController, decoration: const InputDecoration(labelText: '호스트 주소', border: OutlineInputBorder(), prefixIcon: Icon(Icons.link), hintText: 'localhost')),
                         const SizedBox(height: 16),
-                        TextField(
-                          controller: _portController,
-                          decoration: const InputDecoration(
-                            labelText: '포트',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.numbers),
-                            hintText: '5432',
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
+                        TextField(controller: _portController, decoration: const InputDecoration(labelText: '포트', border: OutlineInputBorder(), prefixIcon: Icon(Icons.numbers), hintText: '5432'), keyboardType: TextInputType.number),
                         const SizedBox(height: 16),
-                        TextField(
-                          controller: _typeController,
-                          decoration: const InputDecoration(
-                            labelText: '데이터베이스 타입',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.storage),
-                            hintText: 'PostgreSQL',
-                          ),
-                        ),
+                        TextField(controller: _typeController, decoration: const InputDecoration(labelText: 'DB 타입', border: OutlineInputBorder(), prefixIcon: Icon(Icons.storage), hintText: 'PostgreSQL')),
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -432,11 +285,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                             onPressed: _addServer,
                             icon: const Icon(Icons.add),
                             label: const Text('서버 추가'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF6366F1),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.all(16),
-                            ),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white, padding: const EdgeInsets.all(16)),
                           ),
                         ),
                       ],
@@ -458,36 +307,29 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                           margin: const EdgeInsets.only(bottom: 12),
                           elevation: 2,
                           child: InkWell(
-                            onTap: () {
-                              Navigator.pushNamed(
-                                context,
-                                '/database-selection',
-                                arguments: server.toMap(),
-                              );
+                            onTap: () async {
+                              ServerModel? targetServer = server;
+                              bool needsAuth = (targetServer.username == null || targetServer.username!.isEmpty) && (targetServer.password == null || targetServer.password!.isEmpty);
+
+                              if (needsAuth) {
+                                targetServer = await _showAuthDialog(server, isTest: isTestServer);
+                              }
+
+                              if (!mounted || targetServer == null) return;
+
+                              Navigator.pushNamed(context, '/database-selection', arguments: targetServer.toMap());
                             },
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: isTestServer
-                                    ? Colors.grey
-                                    : (server.isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
-                                child: const Icon(
-                                  Icons.dns,
-                                  color: Colors.white,
-                                ),
+                                backgroundColor: isTestServer ? Colors.grey : (server.isConnected ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                                child: const Icon(Icons.dns, color: Colors.white),
                               ),
-                              title: Text(
-                                server.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
+                              title: Text(server.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Text(server.address),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Chip(
-                                    label: Text(server.type),
-                                    backgroundColor: const Color(0xFFEDE9FE),
-                                    labelStyle: const TextStyle(color: Color(0xFF6366F1)),
-                                  ),
+                                  Chip(label: Text(server.type), backgroundColor: const Color(0xFFEDE9FE), labelStyle: const TextStyle(color: Color(0xFF6366F1))),
                                   const SizedBox(width: 8),
                                   PopupMenuButton<String>(
                                     icon: const Icon(Icons.more_vert),
@@ -499,26 +341,8 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                       }
                                     },
                                     itemBuilder: (BuildContext context) => [
-                                      const PopupMenuItem<String>(
-                                        value: 'edit',
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.edit, size: 20),
-                                            SizedBox(width: 8),
-                                            Text('수정'),
-                                          ],
-                                        ),
-                                      ),
-                                      const PopupMenuItem<String>(
-                                        value: 'delete',
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.delete, size: 20, color: Colors.red),
-                                            SizedBox(width: 8),
-                                            Text('삭제', style: TextStyle(color: Colors.red)),
-                                          ],
-                                        ),
-                                      ),
+                                      const PopupMenuItem<String>(value: 'edit', child: Row(children: [Icon(Icons.edit, size: 20), SizedBox(width: 8), Text('수정')])),
+                                      const PopupMenuItem<String>(value: 'delete', child: Row(children: [Icon(Icons.delete, size: 20, color: Colors.red), SizedBox(width: 8), Text('삭제', style: TextStyle(color: Colors.red))])),
                                     ],
                                   ),
                                 ],

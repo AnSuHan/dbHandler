@@ -6,6 +6,7 @@ class ServerModel {
   final bool isConnected;
   final String? username;
   final String? password;
+  final String? keyFilePath;
   final String? notes;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -18,6 +19,7 @@ class ServerModel {
     required this.isConnected,
     this.username,
     this.password,
+    this.keyFilePath,
     this.notes,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -34,6 +36,7 @@ class ServerModel {
       'isConnected': isConnected ? 1 : 0,
       'username': username,
       'password': password,
+      'keyFilePath': keyFilePath,
       'notes': notes,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -50,6 +53,7 @@ class ServerModel {
       isConnected: (json['isConnected'] as int) == 1,
       username: json['username'] as String?,
       password: json['password'] as String?,
+      keyFilePath: json['keyFilePath'] as String?,
       notes: json['notes'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -59,10 +63,14 @@ class ServerModel {
   // Server 모델로 변환 (UI 호환성)
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'name': name,
       'address': address,
       'type': type,
       'isConnected': isConnected,
+      'username': username,
+      'password': password,
+      'keyFilePath': keyFilePath,
     };
   }
 
@@ -75,6 +83,7 @@ class ServerModel {
     bool? isConnected,
     String? username,
     String? password,
+    String? keyFilePath,
     String? notes,
     DateTime? updatedAt,
   }) {
@@ -86,10 +95,10 @@ class ServerModel {
       isConnected: isConnected ?? this.isConnected,
       username: username ?? this.username,
       password: password ?? this.password,
+      keyFilePath: keyFilePath ?? this.keyFilePath,
       notes: notes ?? this.notes,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
     );
   }
 }
-
