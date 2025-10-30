@@ -3,6 +3,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 
+import '../sqflite/platform_check.dart';
+
 class DataEditingScreen extends StatefulWidget {
   final Map<String, dynamic> server;
   final String database;
@@ -243,9 +245,68 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                       bottom: BorderSide(color: Colors.grey.shade300, width: 2),
                     ),
                   ),
-                  child: Text(
-                    col['name']!,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  child: GestureDetector(
+                    onTap: () {
+                      _selectColumn(i);
+                    },
+                    onLongPressStart: (LongPressStartDetails details) async {
+                      if (PlatformCheck.isMouseAvailable) {
+                        return;
+                      }
+
+                      final tapPosition = details.globalPosition;
+                      final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+
+                      final selected = await showMenu(
+                        context: context,
+                        position: RelativeRect.fromRect(
+                          Rect.fromLTWH(
+                            tapPosition.dx,
+                            tapPosition.dy,
+                            0,
+                            0,
+                          ),
+                          Offset.zero & overlay.size,
+                        ),
+                        items: [
+                          PopupMenuItem(value: 'edit', child: Text('수정')),
+                          // 다른 메뉴 항목들...
+                        ],
+                      );
+
+                      if (selected == 'edit') {
+                        _showModifyColumnDialog(_columns[i]);
+                      }
+                    },
+                    onSecondaryTapDown: (TapDownDetails details) async {
+                      if (!PlatformCheck.isMouseAvailable) {
+                        return;
+                      }
+
+                      final tapPosition = details.globalPosition;
+                      final screenSize = MediaQuery.of(context).size;
+
+                      final selected = await showMenu(
+                        context: context,
+                        position: RelativeRect.fromLTRB(
+                          tapPosition.dx,
+                          tapPosition.dy,
+                          screenSize.width - tapPosition.dx,
+                          screenSize.height - tapPosition.dy,
+                        ),
+                        items: [
+                          PopupMenuItem(value: 'edit', child: Text('수정')),
+                        ],
+                      );
+
+                      if (selected == 'edit') {
+                        _showModifyColumnDialog(_columns[i]);
+                      }
+                    },
+                    child: Text(
+                      col['name']!,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -286,6 +347,20 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
+  int? _selectedColumnIndex;
+
+  void _selectColumn(int index) {
+    setState(() {
+      if (_selectedColumnIndex == index) {
+        // 같은 컬럼을 다시 클릭하면 선택 해제
+        _selectedColumnIndex = null;
+      } else {
+        // 다른 컬럼 클릭 시 선택 변경
+        _selectedColumnIndex = index;
+      }
+    });
+  }
+
   Widget _buildBody() {
     return Expanded(
       child: SingleChildScrollView(
@@ -319,10 +394,13 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             final colIndex = entry.key;
             final col = entry.value;
             final value = rowData[col['name']];
+            final bool isSelected = _selectedColumnIndex == colIndex; // 컬럼 선택 상태
+
             return Container(
               width: _columnWidths[colIndex],
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
+                color: isSelected ? Colors.blue.withOpacity(0.2) : null,
                 border: Border(right: BorderSide(color: Colors.grey.shade200)),
               ),
               child: Text(value?.toString() ?? 'NULL'),
@@ -353,6 +431,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
   void _showAddColumnDialog() {
     final nameController = TextEditingController();
     String? selectedDataType;
+    final List<Map<String, dynamic>> constraints = [];
 
     final List<String> dataTypes = [
       'VARCHAR(255)', 'TEXT', 'INTEGER', 'BIGINT', 'NUMERIC',
@@ -363,102 +442,47 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) {
-        List<Map<String, dynamic>> dialogConstraints = [];
-
         return StatefulBuilder(
           builder: (context, setStateInDialog) {
-            void addConstraint(String constraint) {
+            void addConstraint(String type) {
               setStateInDialog(() {
-                dialogConstraints.add({
-                  'type': constraint,
-                  'value': '',
-                  'controller': TextEditingController(), // 컨트롤러를 데이터에 포함
+                constraints.add({
+                  'type': type,
+                  'controller': TextEditingController(),
                 });
               });
             }
 
             void removeConstraint(int index) {
               setStateInDialog(() {
-                dialogConstraints[index]['controller']?.dispose();
-                dialogConstraints.removeAt(index);
+                constraints[index]['controller'].dispose();
+                constraints.removeAt(index);
               });
             }
 
-            void updateConstraintValue(int index, String newValue) {
-              dialogConstraints[index]['value'] = newValue;
-              // setState 호출하지 않음 - 컨트롤러가 자동으로 처리
+            bool needsInput(String type) {
+              return ['DEFAULT', 'CHECK', 'REFERENCES'].contains(type);
             }
 
-            bool needsAdditionalInput(String constraintType) {
-              return ['DEFAULT', 'CHECK', 'REFERENCES'].contains(constraintType);
-            }
-
-            String buildConstraintString(Map<String, dynamic> constraint) {
-              final type = constraint['type']!;
-              final value = constraint['value'] ?? '';
-
+            String getHintFor(String type) {
               switch (type) {
-                case 'NOT NULL':
-                  return 'NOT NULL';
-                case 'UNIQUE':
-                  return 'UNIQUE';
-                case 'PRIMARY KEY':
-                  return 'PRIMARY KEY';
-                case 'DEFAULT':
-                  return value.isNotEmpty ? 'DEFAULT $value' : 'DEFAULT';
-                case 'CHECK':
-                  return value.isNotEmpty ? 'CHECK ($value)' : 'CHECK';
-                case 'REFERENCES':
-                  return value.isNotEmpty ? 'REFERENCES $value' : 'REFERENCES';
-                default:
-                  return type;
+                case 'DEFAULT': return '기본값';
+                case 'CHECK': return '조건 (예: price > 0)';
+                case 'REFERENCES': return '참조 테이블(열)';
+                default: return '';
               }
             }
 
-            bool validateConstraints() {
-              for (var constraint in dialogConstraints) {
-                final type = constraint['type']!;
-                final value = constraint['value'] ?? '';
-
-                if (needsAdditionalInput(type) && value.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('$type 제약조건은 추가 값이 필요합니다.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return false;
+            String buildConstraintsString() {
+              return constraints.map((c) {
+                final type = c['type'] as String;
+                if (needsInput(type)) {
+                  final value = (c['controller'] as TextEditingController).text.trim();
+                  if (type == 'CHECK') return 'CHECK ($value)';
+                  return '$type $value';
                 }
-
-                // CHECK 문법 검증
-                if (type == 'CHECK' && value.isNotEmpty) {
-                  if (!value.contains('>') && !value.contains('<') &&
-                      !value.contains('=') && !value.contains('IN') &&
-                      !value.contains('LIKE') && !value.contains('BETWEEN')) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('CHECK 제약조건에 유효한 조건식을 입력하세요. (예: age > 18)'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return false;
-                  }
-                }
-
-                // REFERENCES 문법 검증
-                if (type == 'REFERENCES' && value.isNotEmpty) {
-                  if (!value.contains('(') || !value.contains(')')) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('REFERENCES 형식이 올바르지 않습니다. (예: table_name(column_name))'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return false;
-                  }
-                }
-              }
-              return true;
+                return type;
+              }).join(' ');
             }
 
             return AlertDialog(
@@ -468,105 +492,60 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: '열 이름',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
+                    TextField(controller: nameController, decoration: const InputDecoration(labelText: '열 이름', border: OutlineInputBorder())),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedDataType,
                       hint: const Text('데이터 타입 선택'),
-                      items: dataTypes.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        setStateInDialog(() => selectedDataType = newValue);
-                      },
+                      items: dataTypes.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                      onChanged: (newValue) => setStateInDialog(() => selectedDataType = newValue),
                       decoration: const InputDecoration(border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 16),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          "제약조건",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 8),
+                        const Text('제약조건', style: TextStyle(fontWeight: FontWeight.bold)),
                         DropdownButton<String>(
-                          hint: const Icon(Icons.add_circle_outline),
-                          underline: const SizedBox(),
-                          items: commonConstraints.map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            if (newValue != null) {
-                              addConstraint(newValue);
+                          hint: const Text('추가'),
+                          icon: const Icon(Icons.add_circle_outline),
+                          items: commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                          onChanged: (value) {
+                            if (value != null && !constraints.any((c) => c['type'] == value)) {
+                              addConstraint(value);
                             }
                           },
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    ...List.generate(dialogConstraints.length, (index) {
-                      final constraint = dialogConstraints[index];
-                      final constraintType = constraint['type']!;
-                      final needsInput = needsAdditionalInput(constraintType);
+                    ...constraints.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final constraint = entry.value;
+                      final type = constraint['type'] as String;
                       final controller = constraint['controller'] as TextEditingController;
 
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      constraintType,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () => removeConstraint(index),
-                                  ),
-                                ],
-                              ),
-                              if (needsInput) ...[
-                                const SizedBox(height: 8),
-                                TextField(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            if (needsInput(type))
+                              Expanded(
+                                child: TextField(
                                   controller: controller,
                                   decoration: InputDecoration(
-                                    labelText: _getInputLabel(constraintType),
-                                    hintText: _getInputHint(constraintType),
+                                    labelText: type,
+                                    hintText: getHintFor(type),
                                     border: const OutlineInputBorder(),
-                                    isDense: true,
                                   ),
-                                  onChanged: (newValue) {
-                                    updateConstraintValue(index, newValue);
-                                  },
                                 ),
-                              ],
-                            ],
-                          ),
+                              )
+                            else
+                              Expanded(child: Text(type)),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                              onPressed: () => removeConstraint(index),
+                            ),
+                          ],
                         ),
                       );
                     }),
@@ -574,49 +553,17 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: () {
-                    // 컨트롤러 정리
-                    for (var constraint in dialogConstraints) {
-                      constraint['controller']?.dispose();
-                    }
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text('취소'),
-                ),
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('취소')),
                 ElevatedButton(
                   onPressed: () {
                     final columnName = nameController.text.trim();
-                    final columnType = selectedDataType;
-
-                    if (columnName.isEmpty || columnType == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('열 이름과 데이터 타입은 필수입니다.'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
+                    if (columnName.isEmpty || selectedDataType == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('열 이름과 데이터 타입은 필수입니다.'), backgroundColor: Colors.red));
                       return;
                     }
-
-                    if (!validateConstraints()) {
-                      return;
-                    }
-
-                    final allConstraints = dialogConstraints
-                        .map((c) => buildConstraintString(c))
-                        .join(' ');
-
-                    // 컨트롤러 정리
-                    for (var constraint in dialogConstraints) {
-                      constraint['controller']?.dispose();
-                    }
-
                     Navigator.pop(dialogContext);
-                    String query = 'ALTER TABLE "${widget.table}" ADD COLUMN "$columnName" $columnType';
-                    if (allConstraints.isNotEmpty) {
-                      query += ' $allConstraints';
-                    }
+                    final constraintsString = buildConstraintsString();
+                    final query = 'ALTER TABLE "${widget.table}" ADD COLUMN "$columnName" $selectedDataType $constraintsString';
                     _performOperation((conn) => conn.query(query), '열이 추가되었습니다.');
                   },
                   child: const Text('추가'),
@@ -629,30 +576,170 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  String _getInputLabel(String constraintType) {
-    switch (constraintType) {
-      case 'DEFAULT':
-        return '기본값';
-      case 'CHECK':
-        return '조건식';
-      case 'REFERENCES':
-        return '참조 테이블(컬럼)';
-      default:
-        return '값';
-    }
-  }
+  void _showModifyColumnDialog(Map<String, dynamic> columnData) {
+    final nameController = TextEditingController(text: columnData['name']);
+    final List<String> dataTypes = [
+      'VARCHAR(255)', 'TEXT', 'INTEGER', 'BIGINT', 'NUMERIC',
+      'BOOLEAN', 'DATE', 'TIMESTAMP', 'JSON', 'JSONB'
+    ];
+    String? selectedDataType = columnData['type'] as String?;
+    selectedDataType = (selectedDataType != null && dataTypes.contains(selectedDataType))
+        ? selectedDataType
+        : dataTypes.first;
 
-  String _getInputHint(String constraintType) {
-    switch (constraintType) {
-      case 'DEFAULT':
-        return "예: 0, 'default', CURRENT_TIMESTAMP";
-      case 'CHECK':
-        return '예: age > 18, status IN (\'active\', \'inactive\')';
-      case 'REFERENCES':
-        return '예: users(id)';
-      default:
-        return '';
+    final List<Map<String, dynamic>> constraints = [];
+
+    // 기존 제약조건이 있다면 초기화 (null 체크 후 적용 필요)
+    if (columnData['constraints'] != null) {
+      for (var c in columnData['constraints'] as List<Map<String, dynamic>>) {
+        constraints.add({
+          'type': c['type'],
+          'controller': TextEditingController(text: c['value'] ?? ''),
+        });
+      }
     }
+
+    final List<String> commonConstraints = ['NOT NULL', 'UNIQUE', 'PRIMARY KEY', 'DEFAULT', 'CHECK', 'REFERENCES'];
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateInDialog) {
+            void addConstraint(String type) {
+              setStateInDialog(() {
+                constraints.add({
+                  'type': type,
+                  'controller': TextEditingController(),
+                });
+              });
+            }
+
+            void removeConstraint(int index) {
+              setStateInDialog(() {
+                constraints[index]['controller'].dispose();
+                constraints.removeAt(index);
+              });
+            }
+
+            bool needsInput(String type) {
+              return ['DEFAULT', 'CHECK', 'REFERENCES'].contains(type);
+            }
+
+            String getHintFor(String type) {
+              switch (type) {
+                case 'DEFAULT': return '기본값';
+                case 'CHECK': return '조건 (예: price > 0)';
+                case 'REFERENCES': return '참조 테이블(열)';
+                default: return '';
+              }
+            }
+
+            String buildConstraintsString() {
+              // 수정 시 제약조건 변경을 위한 구문 생성 참고용 (실제 쿼리는 더 복잡할 수 있음)
+              return constraints.map((c) {
+                final type = c['type'] as String;
+                final value = (c['controller'] as TextEditingController).text.trim();
+                if (needsInput(type)) {
+                  if (type == 'CHECK') return 'CHECK ($value)';
+                  return '$type $value';
+                }
+                return type;
+              }).join(' ');
+            }
+
+            return AlertDialog(
+              title: const Text('열 수정'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(controller: nameController, decoration: const InputDecoration(labelText: '열 이름', border: OutlineInputBorder())),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedDataType,
+                      hint: const Text('데이터 타입 선택'),
+                      items: dataTypes.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                      onChanged: (newValue) => setStateInDialog(() => selectedDataType = newValue),
+                      decoration: const InputDecoration(border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('제약조건', style: TextStyle(fontWeight: FontWeight.bold)),
+                        DropdownButton<String>(
+                          hint: const Text('추가'),
+                          icon: const Icon(Icons.add_circle_outline),
+                          items: commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                          onChanged: (value) {
+                            if (value != null && !constraints.any((c) => c['type'] == value)) {
+                              addConstraint(value);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    ...constraints.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final constraint = entry.value;
+                      final type = constraint['type'] as String;
+                      final controller = constraint['controller'] as TextEditingController;
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            if (needsInput(type))
+                              Expanded(
+                                child: TextField(
+                                  controller: controller,
+                                  decoration: InputDecoration(
+                                    labelText: type,
+                                    hintText: getHintFor(type),
+                                    border: const OutlineInputBorder(),
+                                  ),
+                                ),
+                              )
+                            else
+                              Expanded(child: Text(type)),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                              onPressed: () => removeConstraint(index),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('취소')),
+                ElevatedButton(
+                  onPressed: () {
+                    final columnName = nameController.text.trim();
+                    if (columnName.isEmpty || selectedDataType == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('열 이름과 데이터 타입은 필수입니다.'), backgroundColor: Colors.red));
+                      return;
+                    }
+                    Navigator.pop(dialogContext);
+                    final constraintsString = buildConstraintsString();
+                    // 수정 쿼리 예시 (데이터 타입 변경과 제약조건 적용)
+                    final query =
+                        'ALTER TABLE "${widget.table}" ALTER COLUMN "$columnName" TYPE $selectedDataType, '
+                        'ALTER COLUMN "$columnName" SET $constraintsString';
+                    _performOperation((conn) => conn.query(query), '열이 수정되었습니다.');
+                  },
+                  child: const Text('수정'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _showEditRowDialog(Map<String, dynamic>? rowData) {
