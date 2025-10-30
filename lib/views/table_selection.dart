@@ -183,7 +183,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.database} - 테이블 선택'),
+        title: Text('데이터베이스 - ${widget.database}'),
         backgroundColor: const Color(0xFF10B981),
         foregroundColor: Colors.white,
         elevation: 0,

@@ -54,6 +54,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _addServer() async {
+    final isTest = _isTestServer;
     final name = _nameController.text.trim();
     final host = _hostController.text.trim();
     final port = _portController.text.trim();
@@ -94,7 +95,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
       if (mounted && createdServer != null) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('서버가 추가되었습니다.'), backgroundColor: Colors.green));
-        await _showAuthDialog(createdServer, isTest: _isTestServer, isInitialSetup: true);
+        await _showAuthDialog(createdServer, isTest: isTest, isInitialSetup: true);
       }
     } catch (e) {
       if (mounted) {
@@ -285,7 +286,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('서버 선택'),
+        title: const Text('서버 목록'),
         backgroundColor: const Color(0xFF6366F1),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -308,7 +309,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('서버 목록', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const Text('서버 추가', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                           IconButton(
                             icon: Icon(_showAddForm ? Icons.close : Icons.add),
                             onPressed: () {

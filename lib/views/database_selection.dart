@@ -24,12 +24,15 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Future<PostgreSQLConnection> _getConnection(String database) async {
     final host = widget.server['address'].split(':')[0];
     final port = int.parse(widget.server['address'].split(':')[1]);
+    final username = widget.server['username'] as String?;
+    final password = widget.server['password'] as String?;
+    
     final connection = PostgreSQLConnection(
       host,
       port,
       database,
-      username: 'postgres',
-      password: '0000',
+      username: username,
+      password: password,
     );
     await connection.open();
     return connection;
@@ -58,13 +61,10 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
         _databases = results.map((row) {
           return {
             'name': row[0] as String,
-            'table_count': '조회 중...',
           };
         }).toList();
         _isLoading = false;
       });
-      
-      _fetchAllTableCounts();
 
     } catch (e) {
       if (mounted) {
@@ -73,44 +73,6 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
           _error = '서버에 연결할 수 없습니다. 주소와 포트를 확인하거나 서버 상태를 점검하세요.\n오류: $e';
         });
       }
-    }
-  }
-
-  Future<void> _fetchAllTableCounts() async {
-    if (!mounted) return;
-    for (int i = 0; i < _databases.length; i++) {
-      if (!mounted) return;
-      await _updateTableCountForIndex(i);
-    }
-  }
-
-  Future<void> _updateTableCountForIndex(int index) async {
-    PostgreSQLConnection? connection;
-    final dbName = _databases[index]['name'] as String;
-    try {
-        connection = await _getConnection(dbName);
-        final result = await connection.query('''
-          SELECT count(*)
-          FROM pg_class c
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE c.relkind = 'r'
-            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-            AND n.nspname NOT LIKE 'pg_toast%';
-        ''');
-        
-        if (mounted) {
-            setState(() {
-                _databases[index]['table_count'] = result.first[0] as int;
-            });
-        }
-    } catch (e) {
-        if (mounted) {
-            setState(() {
-                _databases[index]['table_count'] = '오류';
-            });
-        }
-    } finally {
-        await connection?.close();
     }
   }
 
@@ -175,7 +137,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('데이터베이스 선택 - ${widget.server['name']}'),
+        title: Text("서버 - ${widget.server['name']}"),
         backgroundColor: const Color(0xFF8B5CF6),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -276,7 +238,6 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                 itemBuilder: (context, index) {
                                   final db = _databases[index];
                                   final dbName = db['name'] as String;
-                                  final tableCount = db['table_count'];
                                   return Card(
                                     margin: const EdgeInsets.only(bottom: 12),
                                     elevation: 2,
@@ -301,7 +262,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                           ),
                                         ),
                                         title: Text(dbName),
-                                        subtitle: Text('테이블: $tableCount'),
+                                        subtitle: const Text(' '),
                                         trailing: PopupMenuButton<String>(
                                           icon: const Icon(Icons.more_vert),
                                           onSelected: (value) {
