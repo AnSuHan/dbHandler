@@ -1,5 +1,6 @@
+import 'package:db_handler/db/database_handler.dart';
+import 'package:db_handler/db/postgres_handler.dart';
 import 'package:flutter/material.dart';
-import 'package:postgres/postgres.dart';
 
 class DatabaseSelectionScreen extends StatefulWidget {
   final Map<String, dynamic> server;
@@ -11,6 +12,7 @@ class DatabaseSelectionScreen extends StatefulWidget {
 }
 
 class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
+  late final DatabaseHandler _dbHandler;
   List<Map<String, dynamic>> _databases = [];
   bool _isLoading = true;
   String? _error;
@@ -18,24 +20,18 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   @override
   void initState() {
     super.initState();
+    _dbHandler = _getDbHandler();
     _loadDatabases();
   }
 
-  Future<PostgreSQLConnection> _getConnection(String database) async {
-    final host = widget.server['address'].split(':')[0];
-    final port = int.parse(widget.server['address'].split(':')[1]);
-    final username = widget.server['username'] as String?;
-    final password = widget.server['password'] as String?;
-    
-    final connection = PostgreSQLConnection(
-      host,
-      port,
-      database,
-      username: username,
-      password: password,
-    );
-    await connection.open();
-    return connection;
+  DatabaseHandler _getDbHandler() {
+    // In the future, you can add more database types here.
+    switch (widget.server['type']) {
+      case 'PostgreSQL':
+        return PostgresHandler(widget.server);
+      default:
+        throw Exception('Unsupported database type: ${widget.server['type']}');
+    }
   }
 
   Future<void> _loadDatabases() async {
@@ -47,37 +43,25 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     }
 
     try {
-      final connection = await _getConnection('postgres');
-      final results = await connection.query('''
-        SELECT d.datname
-        FROM pg_database d
-        WHERE d.datistemplate = false AND d.datallowconn = true;
-      ''');
-      await connection.close();
-
+      final databases = await _dbHandler.getDatabases();
       if (!mounted) return;
 
       setState(() {
-        _databases = results.map((row) {
-          return {
-            'name': row[0] as String,
-          };
-        }).toList();
+        _databases = databases;
         _isLoading = false;
       });
-
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _error = '서버에 연결할 수 없습니다. 주소와 포트를 확인하거나 서버 상태를 점검하세요.\n오류: $e';
+          _error = 'Failed to load databases: $e';
         });
       }
     }
   }
 
   Future<void> _performDbOperation(
-    Future<void> Function(PostgreSQLConnection) operation,
+    Future<void> Function() operation,
     String successMessage,
     String failureMessage,
   ) async {
@@ -87,9 +71,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     });
 
     try {
-      final connection = await _getConnection('postgres');
-      await operation(connection);
-      await connection.close();
+      await operation();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -111,25 +93,25 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
 
   Future<void> _createDatabase(String dbName) async {
     await _performDbOperation(
-      (conn) => conn.query('CREATE DATABASE "$dbName"'),
-      '데이터베이스 $dbName 생성 완료',
-      '데이터베이스 생성 실패',
+      () => _dbHandler.createDatabase(dbName),
+      'Database $dbName created successfully.',
+      'Failed to create database.',
     );
   }
 
   Future<void> _renameDatabase(String oldName, String newName) async {
     await _performDbOperation(
-      (conn) => conn.query('ALTER DATABASE "$oldName" RENAME TO "$newName"'),
-      '데이터베이스 이름이 $newName (으)로 변경되었습니다.',
-      '데이터베이스 이름 변경 실패',
+      () => _dbHandler.renameDatabase(oldName, newName),
+      'Database renamed to $newName.',
+      'Failed to rename database.',
     );
   }
 
   Future<void> _deleteDatabase(String dbName) async {
     await _performDbOperation(
-      (conn) => conn.query('DROP DATABASE "$dbName"'),
-      '$dbName 데이터베이스가 삭제되었습니다.',
-      '데이터베이스 삭제 실패',
+      () => _dbHandler.deleteDatabase(dbName),
+      'Database $dbName deleted successfully.',
+      'Failed to delete database.',
     );
   }
 
@@ -137,7 +119,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("서버 - ${widget.server['name']}"),
+        title: Text("Server - ${widget.server['name']}"),
         backgroundColor: const Color(0xFF8B5CF6),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -166,7 +148,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('뒤로 가기'),
+                        child: const Text('Go Back'),
                       ),
                     ],
                   ),
@@ -189,7 +171,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    '연결된 서버',
+                                    'Connected Server',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey,
@@ -210,7 +192,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                 _showCreateDatabaseDialog();
                               },
                               icon: const Icon(Icons.add),
-                              label: const Text('새 데이터베이스'),
+                              label: const Text('New Database'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF8B5CF6),
                                 foregroundColor: Colors.white,
@@ -227,7 +209,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                         : _databases.isEmpty
                             ? const Center(
                                 child: Text(
-                                  '데이터베이스가 없습니다. 새 데이터베이스를 추가해주세요.',
+                                  'No databases found. Please add a new one.',
                                   style: TextStyle(fontSize: 16, color: Colors.grey),
                                   textAlign: TextAlign.center,
                                 ),
@@ -279,7 +261,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                                 children: [
                                                   Icon(Icons.edit, size: 20),
                                                   SizedBox(width: 8),
-                                                  Text('수정'),
+                                                  Text('Edit'),
                                                 ],
                                               ),
                                             ),
@@ -289,7 +271,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                                 children: [
                                                   Icon(Icons.delete, size: 20, color: Colors.red),
                                                   SizedBox(width: 8),
-                                                  Text('삭제', style: TextStyle(color: Colors.red)),
+                                                  Text('Delete', style: TextStyle(color: Colors.red)),
                                                 ],
                                               ),
                                             ),
@@ -312,19 +294,19 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('새 데이터베이스 생성'),
+        title: const Text('Create New Database'),
         content: TextField(
           controller: nameController,
           autofocus: true,
           decoration: const InputDecoration(
-            labelText: '데이터베이스 이름',
+            labelText: 'Database Name',
             border: OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -334,7 +316,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                 _createDatabase(dbName);
               }
             },
-            child: const Text('생성'),
+            child: const Text('Create'),
           ),
         ],
       ),
@@ -346,19 +328,19 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('데이터베이스 이름 수정'),
+        title: const Text('Edit Database Name'),
         content: TextField(
           controller: nameController,
           autofocus: true,
           decoration: const InputDecoration(
-            labelText: '새 데이터베이스 이름',
+            labelText: 'New Database Name',
             border: OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -368,7 +350,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                 _renameDatabase(oldName, newName);
               }
             },
-            child: const Text('저장'),
+            child: const Text('Save'),
           ),
         ],
       ),
@@ -379,12 +361,12 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('데이터베이스 삭제'),
-        content: Text('$dbName 데이터베이스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
+        title: const Text('Delete Database'),
+        content: Text('Are you sure you want to delete the database $dbName? This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
@@ -395,7 +377,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
             ),
-            child: const Text('삭제'),
+            child: const Text('Delete'),
           ),
         ],
       ),
