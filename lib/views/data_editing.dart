@@ -159,11 +159,11 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          CopyIntent: CallbackAction<CopyIntent>((intent) {
+          CopyIntent: CallbackAction<CopyIntent>(onInvoke: (intent) {
             _copyCell();
             return null;
           }),
-          PasteIntent: CallbackAction<PasteIntent>((intent) {
+          PasteIntent: CallbackAction<PasteIntent>(onInvoke: (intent) {
             _pasteCell();
             return null;
           }),
