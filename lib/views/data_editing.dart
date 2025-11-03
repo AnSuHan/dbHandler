@@ -1,9 +1,9 @@
-import 'dart:math';
-import 'package:db_handler/db/database_handler.dart';
-import 'package:db_handler/db/postgres_handler.dart';
+import 'package:db_handler/stateManagement/riverpod/data_editing_provider.dart';
+import 'package:db_handler/views/widgets/cell_item.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../sqflite/platform_check.dart';
 
@@ -11,11 +11,7 @@ class CopyIntent extends Intent {}
 
 class PasteIntent extends Intent {}
 
-class DataEditingScreen extends StatefulWidget {
-  final Map<String, dynamic> server;
-  final String database;
-  final String table;
-
+class DataEditingScreen extends ConsumerStatefulWidget {
   const DataEditingScreen({
     super.key,
     required this.server,
@@ -23,44 +19,39 @@ class DataEditingScreen extends StatefulWidget {
     required this.table,
   });
 
+  final Map<String, dynamic> server;
+  final String database;
+  final String table;
+
   @override
-  State<DataEditingScreen> createState() => _DataEditingScreenState();
+  ConsumerState<DataEditingScreen> createState() => _DataEditingScreenState();
 }
 
-class _DataEditingScreenState extends State<DataEditingScreen> {
-  late final DatabaseHandler _dbHandler;
-  bool _isLoading = true;
-  String? _error;
-  List<Map<String, dynamic>> _rows = [];
-  List<Map<String, String>> _columns = [];
-  String? _primaryKeyColumn;
-  List<double> _columnWidths = [];
-  List<double> _minColumnWidths = [];
-
-  int? _selectedColumnIndex;
-  int? _selectedRowIndex;
-  Map<String, int>? _selectedCell; // { 'rowIndex': int, 'colIndex': int }
+class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
+  late DataEditingArgs _args;
   final FocusNode _focusNode = FocusNode();
-
   late final ScrollController _horizontalHeadController;
   late final ScrollController _horizontalBodyController;
 
   @override
   void initState() {
     super.initState();
-    _dbHandler = _getDbHandler();
+    _args = DataEditingArgs(server: widget.server, database: widget.database, table: widget.table);
     _horizontalHeadController = ScrollController();
     _horizontalBodyController = ScrollController();
     _syncScroll();
-    _loadTableData();
   }
 
-  DatabaseHandler _getDbHandler() {
-    switch (widget.server['type']) {
-      case 'PostgreSQL':
-        return PostgresHandler(widget.server, database: widget.database);
-      default:
-        throw Exception('Unsupported database type: ${widget.server['type']}');
+  @override
+  void didUpdateWidget(covariant DataEditingScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.server != oldWidget.server ||
+        widget.database != oldWidget.database ||
+        widget.table != oldWidget.table) {
+      final previousArgs = _args;
+      _args = DataEditingArgs(server: widget.server, database: widget.database, table: widget.table);
+      ref.invalidate(dataEditingProvider(previousArgs));
+      ref.invalidate(dataEditingSelectionProvider(previousArgs));
     }
   }
 
@@ -87,156 +78,78 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     super.dispose();
   }
 
-  Future<void> _loadTableData() async {
-    if (mounted) setState(() => _isLoading = true);
+  DataEditingNotifier _notifier() => ref.read(dataEditingProvider(_args).notifier);
 
-    try {
-      final columns = await _dbHandler.getColumns(widget.table);
-      final primaryKey = await _dbHandler.getPrimaryKey(widget.table);
-      final dataRows = await _dbHandler.getData(widget.table);
-
-      final minWidths = columns.map<double>((col) {
-        return _getTextWidth(col['name']!, const TextStyle(fontWeight: FontWeight.bold)) + 34.0;
-      }).toList();
-
-      final initialWidths = _calculateColumnWidths(columns, dataRows, minWidths);
-
-      // Add width for the row number column
-      initialWidths.insert(0, 60.0);
-      minWidths.insert(0, 60.0);
-
-      if (mounted) {
-        setState(() {
-          _columns = columns.map((c) => {'name': c['name'] as String, 'type': c['type'] as String}).toList();
-          _primaryKeyColumn = primaryKey;
-          _rows = dataRows;
-          _minColumnWidths = minWidths;
-          _columnWidths = initialWidths;
-          _isLoading = false;
-          _error = null;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'Failed to load table data: $e';
-        });
-      }
-    }
-  }
-
-  List<double> _calculateColumnWidths(
-      List<Map<String, dynamic>> columns, List<Map<String, dynamic>> rows, List<double> minWidths) {
-    final List<double> widths = [];
-    final columnsAndActions = [...columns, {'name': 'Actions'}];
-
-    for (int i = 0; i < columnsAndActions.length; i++) {
-      if (i < columns.length) {
-        // Regular column
-        double maxWidth = minWidths[i]; // Start with min width (header width + padding)
-        final colName = columns[i]['name']!;
-        for (var row in rows) {
-          final value = row[colName]?.toString() ?? 'NULL';
-          final cellWidth = _getTextWidth(value, const TextStyle()) + 34.0; // Increased buffer
-          maxWidth = max(maxWidth, cellWidth);
-        }
-        widths.add(maxWidth);
-      } else {
-        // Actions column
-        widths.add(100.0);
-      }
-    }
-    return widths;
-  }
-
-  double _getTextWidth(String text, TextStyle style) {
-    final textPainter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      maxLines: 1,
-      textDirection: TextDirection.ltr,
-    )..layout(minWidth: 0, maxWidth: double.infinity);
-    return textPainter.size.width;
-  }
-
-  Future<void> _performOperation(
-    Future<void> Function() operation,
-    String successMessage,
-  ) async {
+  void _showSnack(String message, Color color) {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: color),
+    );
+  }
 
+  Future<void> _runDbAction({
+    required Future<void> Function(DataEditingNotifier notifier) action,
+    required String successMessage,
+  }) async {
     try {
-      await operation();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMessage), backgroundColor: Colors.green),
-        );
-      }
+      await action(_notifier());
+      _showSnack(successMessage, Colors.green);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-
-    if (mounted) {
-      await _loadTableData();
+      _showSnack('Operation failed: $e', Colors.red);
     }
   }
 
   void _copyCell() {
-    if (_selectedCell == null) return;
+    final selection = ref.read(dataEditingSelectionProvider(_args));
+    final cell = selection.selectedCell;
+    if (cell == null) return;
 
-    final rowIndex = _selectedCell!['rowIndex']!;
-    final colIndex = _selectedCell!['colIndex']!;
-    final value = _rows[rowIndex][_columns[colIndex]['name']!];
+    final state = ref.read(dataEditingProvider(_args));
+    if (cell.rowIndex >= state.rows.length || cell.colIndex >= state.columns.length) return;
 
+    final value = state.cellValue(cell.rowIndex, cell.colIndex);
     Clipboard.setData(ClipboardData(text: value?.toString() ?? ''));
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cell copied to clipboard'), duration: Duration(seconds: 1)),
-    );
+    _showSnack('Cell copied to clipboard', Colors.blueGrey.shade700);
   }
 
-  void _pasteCell() async {
-    if (_selectedCell == null) return;
-    if (_primaryKeyColumn == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Error: Cannot paste without a primary key.'), backgroundColor: Colors.red));
+  Future<void> _pasteCell() async {
+    final selection = ref.read(dataEditingSelectionProvider(_args));
+    final cell = selection.selectedCell;
+    if (cell == null) return;
+
+    final state = ref.read(dataEditingProvider(_args));
+    final pkColumn = state.primaryKeyColumn;
+    if (pkColumn == null) {
+      _showSnack('Error: Cannot paste without a primary key.', Colors.red);
       return;
     }
+
+    if (cell.rowIndex >= state.rows.length || cell.colIndex >= state.columns.length) return;
 
     final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
     final newValue = clipboardData?.text;
 
     if (newValue == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Nothing to paste from clipboard.'), backgroundColor: Colors.orange));
+      _showSnack('Nothing to paste from clipboard.', Colors.orange);
       return;
     }
 
-    final rowIndex = _selectedCell!['rowIndex']!;
-    final colIndex = _selectedCell!['colIndex']!;
-    final targetColumnName = _columns[colIndex]['name']!;
-    final pkValue = _rows[rowIndex][_primaryKeyColumn!];
-
-    await _performOperation(
-      () => _dbHandler.updateCell(
-        widget.table,
-        targetColumnName,
-        newValue,
-        _primaryKeyColumn!,
-        pkValue,
+    final columnName = state.columns[cell.colIndex].name;
+    await _runDbAction(
+      action: (notifier) => notifier.updateCellValue(
+        rowIndex: cell.rowIndex,
+        columnIndex: cell.colIndex,
+        columnName: columnName,
+        newValue: newValue,
       ),
-      'Cell updated successfully.',
+      successMessage: 'Cell updated successfully.',
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(dataEditingProvider(_args));
+
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyC): CopyIntent(),
@@ -246,11 +159,11 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
-          CopyIntent: CallbackAction<CopyIntent>(onInvoke: (intent) {
+          CopyIntent: CallbackAction<CopyIntent>((intent) {
             _copyCell();
             return null;
           }),
-          PasteIntent: CallbackAction<PasteIntent>(onInvoke: (intent) {
+          PasteIntent: CallbackAction<PasteIntent>((intent) {
             _pasteCell();
             return null;
           }),
@@ -264,13 +177,24 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
               actions: [
-                IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh', onPressed: _loadTableData),
                 IconButton(
-                    icon: const Icon(Icons.add), tooltip: 'Add Row', onPressed: () => _showEditRowDialog(null)),
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                  onPressed: () {
+                    ref.read(dataEditingSelectionProvider(_args).notifier).clear();
+                    _notifier().refresh();
+                  },
+                ),
                 IconButton(
-                    icon: const Icon(Icons.add_box_outlined),
-                    tooltip: 'Add Column',
-                    onPressed: _showAddColumnDialog),
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Add Row',
+                  onPressed: () => _showEditRowDialog(null),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_box_outlined),
+                  tooltip: 'Add Column',
+                  onPressed: _showAddColumnDialog,
+                ),
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'copy') {
@@ -282,12 +206,16 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                     PopupMenuItem<String>(
                       value: 'copy',
-                      enabled: _selectedCell != null,
+                      enabled: ref.watch(
+                        dataEditingSelectionProvider(_args).select((s) => s.selectedCell != null),
+                      ),
                       child: const Text('Copy Cell'),
                     ),
                     PopupMenuItem<String>(
                       value: 'paste',
-                      enabled: _selectedCell != null,
+                      enabled: ref.watch(
+                        dataEditingSelectionProvider(_args).select((s) => s.selectedCell != null),
+                      ),
                       child: const Text('Paste Cell'),
                     ),
                   ],
@@ -295,16 +223,16 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                 ),
               ],
             ),
-            body: _isLoading
+            body: state.isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
-                    : _columns.isEmpty
+                : state.error != null
+                    ? Center(child: Text(state.error!, style: const TextStyle(color: Colors.red)))
+                    : !state.hasColumns
                         ? const Center(child: Text('Table has no columns. Please add one.'))
                         : Column(
                             children: [
-                              _buildHeader(),
-                              _buildBody(),
+                              _buildHeader(state),
+                              _buildBody(state),
                             ],
                           ),
           ),
@@ -313,16 +241,15 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(DataEditingState state) {
     return SingleChildScrollView(
       controller: _horizontalHeadController,
       scrollDirection: Axis.horizontal,
       physics: const ClampingScrollPhysics(),
       child: Row(
         children: [
-          // Row number column header
           Container(
-            width: _columnWidths.first,
+            width: state.widthAt(0),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               border: Border(
@@ -332,26 +259,27 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             ),
             child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          ..._columns.asMap().entries.map((entry) {
-            final i = entry.key;
-            final col = entry.value;
+          ...List.generate(state.columns.length, (index) {
+            final column = state.columns[index];
+            final isSelected = ref.watch(
+              dataEditingSelectionProvider(_args).select((selection) => selection.isColumnSelected(index)),
+            );
+
             return Stack(
               children: [
                 Container(
-                  width: _columnWidths[i + 1],
+                  width: state.widthAt(index + 1),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: _selectedColumnIndex == i ? Colors.blue.withOpacity(0.2) : null,
+                    color: isSelected ? Colors.blue.withOpacity(0.2) : null,
                     border: Border(
                       right: BorderSide(color: Colors.grey.shade300),
                       bottom: BorderSide(color: Colors.grey.shade300, width: 2),
                     ),
                   ),
                   child: GestureDetector(
-                    onTap: () {
-                      _selectColumn(i);
-                    },
-                    onLongPressStart: (LongPressStartDetails details) async {
+                    onTap: () => ref.read(dataEditingSelectionProvider(_args).notifier).toggleColumn(index),
+                    onLongPressStart: (details) async {
                       if (PlatformCheck.isMouseAvailable) {
                         return;
                       }
@@ -359,28 +287,22 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                       final tapPosition = details.globalPosition;
                       final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
 
-                      final selected = await showMenu(
+                      final selected = await showMenu<String>(
                         context: context,
                         position: RelativeRect.fromRect(
-                          Rect.fromLTWH(
-                            tapPosition.dx,
-                            tapPosition.dy,
-                            0,
-                            0,
-                          ),
+                          Rect.fromLTWH(tapPosition.dx, tapPosition.dy, 0, 0),
                           Offset.zero & overlay.size,
                         ),
-                        items: [
+                        items: const [
                           PopupMenuItem(value: 'edit', child: Text('Modify')),
-                          // other menu items...
                         ],
                       );
 
                       if (selected == 'edit') {
-                        _showModifyColumnDialog(_columns[i]);
+                        _showModifyColumnDialog(column);
                       }
                     },
-                    onSecondaryTapDown: (TapDownDetails details) async {
+                    onSecondaryTapDown: (details) async {
                       if (!PlatformCheck.isMouseAvailable) {
                         return;
                       }
@@ -388,7 +310,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                       final tapPosition = details.globalPosition;
                       final screenSize = MediaQuery.of(context).size;
 
-                      final selected = await showMenu(
+                      final selected = await showMenu<String>(
                         context: context,
                         position: RelativeRect.fromLTRB(
                           tapPosition.dx,
@@ -396,17 +318,17 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                           screenSize.width - tapPosition.dx,
                           screenSize.height - tapPosition.dy,
                         ),
-                        items: [
+                        items: const [
                           PopupMenuItem(value: 'edit', child: Text('Modify')),
                         ],
                       );
 
                       if (selected == 'edit') {
-                        _showModifyColumnDialog(_columns[i]);
+                        _showModifyColumnDialog(column);
                       }
                     },
                     child: Text(
-                      col['name']!,
+                      column.name,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -417,25 +339,21 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   bottom: 0,
                   child: GestureDetector(
                     onHorizontalDragUpdate: (details) {
-                      setState(() {
-                        final newWidth = _columnWidths[i + 1] + details.delta.dx;
-                        _columnWidths[i + 1] = max(newWidth, _minColumnWidths[i + 1]);
-                      });
+                      final currentWidth = ref.read(dataEditingProvider(_args)).widthAt(index + 1);
+                      final newWidth = currentWidth + details.delta.dx;
+                      ref.read(dataEditingProvider(_args).notifier).updateColumnWidth(index + 1, newWidth);
                     },
                     child: MouseRegion(
                       cursor: SystemMouseCursors.resizeLeftRight,
-                      child: Container(
-                        width: 8,
-                        color: Colors.transparent,
-                      ),
+                      child: Container(width: 8, color: Colors.transparent),
                     ),
                   ),
                 ),
               ],
             );
-          }).toList(),
+          }),
           Container(
-            width: _columnWidths.last,
+            width: state.widthAt(state.columnWidths.length - 1),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               border: Border(
@@ -449,46 +367,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _selectColumn(int index) {
-    setState(() {
-      if (_selectedColumnIndex == index) {
-        _selectedColumnIndex = null; // deselect
-      } else {
-        _selectedColumnIndex = index;
-        _selectedRowIndex = null;
-        _selectedCell = null;
-      }
-    });
-  }
-
-  void _selectRow(int index) {
-    setState(() {
-      if (_selectedRowIndex == index) {
-        _selectedRowIndex = null; // deselect
-      } else {
-        _selectedRowIndex = index;
-        _selectedColumnIndex = null;
-        _selectedCell = null;
-      }
-    });
-  }
-
-  void _selectCell(int rowIndex, int colIndex) {
-    setState(() {
-      final currentCell = _selectedCell;
-      if (currentCell != null &&
-          currentCell['rowIndex'] == rowIndex &&
-          currentCell['colIndex'] == colIndex) {
-        _selectedCell = null; // deselect
-      } else {
-        _selectedCell = {'rowIndex': rowIndex, 'colIndex': colIndex};
-        _selectedRowIndex = null;
-        _selectedColumnIndex = null;
-      }
-    });
-  }
-
-  Widget _buildBody() {
+  Widget _buildBody(DataEditingState state) {
     return Expanded(
       child: SingleChildScrollView(
         scrollDirection: Axis.vertical,
@@ -498,86 +377,49 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
           physics: const ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: _rows.asMap().entries.map((entry) {
-              final index = entry.key;
-              final rowData = entry.value;
-              return _buildRow(rowData, index);
-            }).toList(),
+            children: List.generate(state.rows.length, (index) => _buildRow(state, index)),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildRow(Map<String, dynamic> rowData, int rowIndex) {
-    final isRowSelectedForColor = _selectedRowIndex == rowIndex;
+  Widget _buildRow(DataEditingState state, int rowIndex) {
+    final isRowSelected = ref.watch(
+      dataEditingSelectionProvider(_args).select((selection) => selection.isRowSelected(rowIndex)),
+    );
 
     return Container(
       decoration: BoxDecoration(
-        color: rowIndex.isOdd && !isRowSelectedForColor ? Colors.grey.withOpacity(0.1) : null,
+        color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Row(
         children: [
-          // Row number cell
           GestureDetector(
-            onTap: () => _selectRow(rowIndex),
+            onTap: () => ref.read(dataEditingSelectionProvider(_args).notifier).toggleRow(rowIndex),
             child: Container(
-              width: _columnWidths.first,
+              width: state.widthAt(0),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: isRowSelectedForColor ? Colors.blue.withOpacity(0.2) : null,
+                color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
                 border: Border(right: BorderSide(color: Colors.grey.shade200)),
               ),
               child: Text('${rowIndex + 1}'),
             ),
           ),
-          ..._columns.asMap().entries.map((entry) {
-            final colIndex = entry.key;
-            final col = entry.value;
-            final value = rowData[col['name']];
-
-            final isColSelected = _selectedColumnIndex == colIndex;
-            final isCellSelected = _selectedCell != null &&
-                _selectedCell!['rowIndex'] == rowIndex &&
-                _selectedCell!['colIndex'] == colIndex;
-
-            Color? cellColor;
-            if (isCellSelected) {
-              cellColor = Colors.green.withOpacity(0.4);
-            } else if (isRowSelectedForColor || isColSelected) {
-              cellColor = Colors.blue.withOpacity(0.2);
-            }
-
-            return GestureDetector(
-              onTap: () => _selectCell(rowIndex, colIndex),
-              onDoubleTap: () {
-                setState(() {
-                  _selectedCell = {'rowIndex': rowIndex, 'colIndex': colIndex};
-                  _selectedRowIndex = null;
-                  _selectedColumnIndex = null;
-                });
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    _showEditCellDialog(rowData, col['name']!);
-                  }
-                });
-              },
-              child: Container(
-                width: _columnWidths[colIndex + 1],
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: cellColor,
-                  border: Border(right: BorderSide(color: Colors.grey.shade200)),
-                ),
-                child: Text(value?.toString() ?? 'NULL'),
-              ),
+          ...List.generate(state.columns.length, (colIndex) {
+            return CellItem(
+              args: _args,
+              rowIndex: rowIndex,
+              columnIndex: colIndex,
+              onEditRequested: () => _showEditCellDialog(rowIndex, colIndex),
             );
-          }).toList(),
+          }),
           Container(
-            width: _columnWidths.last,
+            width: state.widthAt(state.columnWidths.length - 1),
             decoration: BoxDecoration(
-              color: isRowSelectedForColor ? Colors.blue.withOpacity(0.2) : null,
+              color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -585,11 +427,11 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
-                  onPressed: () => _showEditRowDialog(rowData),
+                  onPressed: () => _showEditRowDialog(rowIndex),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                  onPressed: () => _showDeleteConfirmDialog(rowData),
+                  onPressed: () => _showDeleteConfirmDialog(rowIndex),
                 ),
               ],
             ),
@@ -604,7 +446,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     String? selectedDataType;
     final List<Map<String, dynamic>> constraints = [];
 
-    final List<String> dataTypes = [
+    const dataTypes = [
       'VARCHAR(255)',
       'TEXT',
       'INTEGER',
@@ -616,7 +458,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
       'JSON',
       'JSONB'
     ];
-    final List<String> commonConstraints = [
+    const commonConstraints = [
       'NOT NULL',
       'UNIQUE',
       'PRIMARY KEY',
@@ -632,10 +474,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
           builder: (context, setStateInDialog) {
             void addConstraint(String type) {
               setStateInDialog(() {
-                constraints.add({
-                  'type': type,
-                  'controller': TextEditingController(),
-                });
+                constraints.add({'type': type, 'controller': TextEditingController()});
               });
             }
 
@@ -646,9 +485,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
               });
             }
 
-            bool needsInput(String type) {
-              return ['DEFAULT', 'CHECK', 'REFERENCES'].contains(type);
-            }
+            bool needsInput(String type) => ['DEFAULT', 'CHECK', 'REFERENCES'].contains(type);
 
             String getHintFor(String type) {
               switch (type) {
@@ -683,8 +520,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Column Name', border: OutlineInputBorder())),
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Column Name',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedDataType,
@@ -701,8 +542,9 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                         DropdownButton<String>(
                           hint: const Text('Add'),
                           icon: const Icon(Icons.add_circle_outline),
-                          items:
-                              commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                          items: commonConstraints
+                              .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                              .toList(),
                           onChanged: (value) {
                             if (value != null && !constraints.any((c) => c['type'] == value)) {
                               addConstraint(value);
@@ -751,15 +593,14 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   onPressed: () {
                     final columnName = nameController.text.trim();
                     if (columnName.isEmpty || selectedDataType == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Column name and data type are required.'), backgroundColor: Colors.red));
+                      _showSnack('Column name and data type are required.', Colors.red);
                       return;
                     }
                     Navigator.pop(dialogContext);
                     final constraintsString = buildConstraintsString();
-                    _performOperation(
-                      () => _dbHandler.addColumn(widget.table, columnName, selectedDataType!, constraintsString),
-                      'Column added successfully.',
+                    _runDbAction(
+                      action: (notifier) => notifier.addColumn(columnName, selectedDataType!, constraintsString),
+                      successMessage: 'Column added successfully.',
                     );
                   },
                   child: const Text('Add'),
@@ -772,9 +613,9 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showModifyColumnDialog(Map<String, dynamic> columnData) {
-    final nameController = TextEditingController(text: columnData['name']);
-    final List<String> dataTypes = [
+  void _showModifyColumnDialog(DataColumnInfo column) {
+    final nameController = TextEditingController(text: column.name);
+    const dataTypes = [
       'VARCHAR(255)',
       'TEXT',
       'INTEGER',
@@ -786,23 +627,11 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
       'JSON',
       'JSONB'
     ];
-    String? selectedDataType = columnData['type'] as String?;
-    selectedDataType = (selectedDataType != null && dataTypes.contains(selectedDataType))
-        ? selectedDataType
-        : dataTypes.first;
 
+    String? selectedDataType = dataTypes.contains(column.type) ? column.type : dataTypes.first;
     final List<Map<String, dynamic>> constraints = [];
 
-    if (columnData['constraints'] != null) {
-      for (var c in columnData['constraints'] as List<Map<String, dynamic>>) {
-        constraints.add({
-          'type': c['type'],
-          'controller': TextEditingController(text: c['value'] ?? ''),
-        });
-      }
-    }
-
-    final List<String> commonConstraints = [
+    const commonConstraints = [
       'NOT NULL',
       'UNIQUE',
       'PRIMARY KEY',
@@ -818,10 +647,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
           builder: (context, setStateInDialog) {
             void addConstraint(String type) {
               setStateInDialog(() {
-                constraints.add({
-                  'type': type,
-                  'controller': TextEditingController(),
-                });
+                constraints.add({'type': type, 'controller': TextEditingController()});
               });
             }
 
@@ -832,9 +658,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
               });
             }
 
-            bool needsInput(String type) {
-              return ['DEFAULT', 'CHECK', 'REFERENCES'].contains(type);
-            }
+            bool needsInput(String type) => ['DEFAULT', 'CHECK', 'REFERENCES'].contains(type);
 
             String getHintFor(String type) {
               switch (type) {
@@ -869,8 +693,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Column Name', border: OutlineInputBorder())),
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Column Name',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedDataType,
@@ -887,8 +715,9 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                         DropdownButton<String>(
                           hint: const Text('Add'),
                           icon: const Icon(Icons.add_circle_outline),
-                          items:
-                              commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                          items: commonConstraints
+                              .map((value) => DropdownMenuItem(value: value, child: Text(value)))
+                              .toList(),
                           onChanged: (value) {
                             if (value != null && !constraints.any((c) => c['type'] == value)) {
                               addConstraint(value);
@@ -937,16 +766,19 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   onPressed: () {
                     final newColumnName = nameController.text.trim();
                     if (newColumnName.isEmpty || selectedDataType == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Column name and data type are required.'), backgroundColor: Colors.red));
+                      _showSnack('Column name and data type are required.', Colors.red);
                       return;
                     }
                     Navigator.pop(dialogContext);
                     final constraintsString = buildConstraintsString();
-                    _performOperation(
-                      () => _dbHandler.modifyColumn(
-                          widget.table, columnData['name'], newColumnName, selectedDataType!, constraintsString),
-                      'Column modified successfully.',
+                    _runDbAction(
+                      action: (notifier) => notifier.modifyColumn(
+                        column.name,
+                        newColumnName,
+                        selectedDataType!,
+                        constraintsString,
+                      ),
+                      successMessage: 'Column modified successfully.',
                     );
                   },
                   child: const Text('Modify'),
@@ -959,28 +791,28 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showEditCellDialog(Map<String, dynamic> rowData, String columnName) {
-    if (_primaryKeyColumn == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Error: Cannot edit cell without a primary key.'),
-          backgroundColor: Colors.red));
+  void _showEditCellDialog(int rowIndex, int columnIndex) {
+    final state = ref.read(dataEditingProvider(_args));
+    final pkColumn = state.primaryKeyColumn;
+    if (pkColumn == null) {
+      _showSnack('Error: Cannot edit cell without a primary key.', Colors.red);
       return;
     }
 
-    final pkValue = rowData[_primaryKeyColumn!];
-    final currentValue = rowData[columnName];
+    final row = state.rowAt(rowIndex);
+    final column = state.columns[columnIndex];
+    final pkValue = row[pkColumn];
+    final currentValue = state.cellValue(rowIndex, columnIndex);
     final controller = TextEditingController(text: currentValue?.toString() ?? '');
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Edit Cell: $columnName'),
+        title: Text('Edit Cell: ${column.name}'),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-          ),
+          decoration: const InputDecoration(border: OutlineInputBorder()),
         ),
         actions: [
           TextButton(
@@ -991,15 +823,14 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             onPressed: () {
               Navigator.pop(dialogContext);
               final newValue = controller.text.trim();
-              _performOperation(
-                () => _dbHandler.updateCell(
-                  widget.table,
-                  columnName,
-                  newValue.isEmpty ? null : newValue,
-                  _primaryKeyColumn!,
-                  pkValue,
+              _runDbAction(
+                action: (notifier) => notifier.updateCellValue(
+                  rowIndex: rowIndex,
+                  columnIndex: columnIndex,
+                  columnName: column.name,
+                  newValue: newValue.isEmpty ? null : newValue,
                 ),
-                'Cell updated successfully.',
+                successMessage: 'Cell updated successfully.',
               );
             },
             child: const Text('Save'),
@@ -1009,17 +840,24 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showEditRowDialog(Map<String, dynamic>? rowData) {
-    final isNewRow = rowData == null;
+  void _showEditRowDialog(int? rowIndex) {
+    final state = ref.read(dataEditingProvider(_args));
+    final isNewRow = rowIndex == null;
+    final pkColumn = state.primaryKeyColumn;
     final controllers = <String, TextEditingController>{};
-    final pkColName = _primaryKeyColumn;
 
-    for (var col in _columns) {
-      final colName = col['name']!;
-      if (isNewRow && colName == pkColName && (col['type']!.contains('int') || col['type']!.contains('serial'))) {
+    for (final column in state.columns) {
+      final colName = column.name;
+      final shouldSkipPk = isNewRow &&
+          pkColumn != null &&
+          colName == pkColumn &&
+          (column.type.toLowerCase().contains('int') || column.type.toLowerCase().contains('serial'));
+
+      if (shouldSkipPk) {
         continue;
       }
-      final value = isNewRow ? '' : (rowData[colName]?.toString() ?? '');
+
+      final value = isNewRow ? '' : (state.rowAt(rowIndex!)[colName]?.toString() ?? '');
       controllers[colName] = TextEditingController(text: value);
     }
 
@@ -1030,13 +868,20 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: controllers.entries.map((entry) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: TextField(
-                    controller: entry.value, decoration: InputDecoration(labelText: entry.key, border: const OutlineInputBorder())),
-              );
-            }).toList(),
+            children: controllers.entries
+                .map(
+                  (entry) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: TextField(
+                      controller: entry.value,
+                      decoration: InputDecoration(
+                        labelText: entry.key,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
           ),
         ),
         actions: [
@@ -1044,22 +889,29 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final values = controllers.map<String, dynamic>((key, value) {
-                final text = value.text;
+              final values = controllers.map<String, dynamic>((key, controller) {
+                final text = controller.text.trim();
                 return MapEntry(key, text.isEmpty ? null : text);
               });
 
               if (isNewRow) {
-                _performOperation(() => _dbHandler.addRow(widget.table, values), 'Row added successfully.');
+                _runDbAction(
+                  action: (notifier) => notifier.addRow(values),
+                  successMessage: 'Row added successfully.',
+                );
               } else {
-                if (pkColName == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Error: Cannot update without a primary key.'), backgroundColor: Colors.red));
+                if (pkColumn == null) {
+                  _showSnack('Error: Cannot update without a primary key.', Colors.red);
                   return;
                 }
-                final pkValue = rowData![pkColName];
-                _performOperation(
-                    () => _dbHandler.updateRow(widget.table, values, pkColName, pkValue), 'Row updated successfully.');
+                final pkValue = state.rowAt(rowIndex!)[pkColumn];
+                _runDbAction(
+                  action: (notifier) => notifier.updateRow(
+                    values: values,
+                    primaryKeyValue: pkValue,
+                  ),
+                  successMessage: 'Row updated successfully.',
+                );
               }
             },
             child: const Text('Save'),
@@ -1069,13 +921,15 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showDeleteConfirmDialog(Map<String, dynamic> row) {
-    if (_primaryKeyColumn == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error: Cannot delete without a primary key.'), backgroundColor: Colors.red));
+  void _showDeleteConfirmDialog(int rowIndex) {
+    final state = ref.read(dataEditingProvider(_args));
+    final pkColumn = state.primaryKeyColumn;
+    if (pkColumn == null) {
+      _showSnack('Error: Cannot delete without a primary key.', Colors.red);
       return;
     }
-    final pkValue = row[_primaryKeyColumn!];
+
+    final pkValue = state.rowAt(rowIndex)[pkColumn];
 
     showDialog(
       context: context,
@@ -1085,14 +939,14 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () {
               Navigator.pop(dialogContext);
-              _performOperation(
-                () => _dbHandler.deleteRow(widget.table, _primaryKeyColumn!, pkValue),
-                'Row deleted successfully.',
+              _runDbAction(
+                action: (notifier) => notifier.deleteRow(pkValue),
+                successMessage: 'Row deleted successfully.',
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             child: const Text('Delete'),
           ),
         ],
