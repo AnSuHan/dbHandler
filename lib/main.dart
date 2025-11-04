@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:db_handler/views/splash.dart';
 import 'package:db_handler/views/server_selection.dart';
 import 'package:db_handler/views/database_selection.dart';
@@ -6,7 +7,7 @@ import 'package:db_handler/views/table_selection.dart';
 import 'package:db_handler/views/data_editing.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {
