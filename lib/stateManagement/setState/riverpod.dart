@@ -1,6 +1,7 @@
 // lib/stateManagement/setState/riverpod.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import '../../sqflite/models/server_model.dart';
 import '../../sqflite/dao/server_dao.dart';
 

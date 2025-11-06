@@ -1,17 +1,16 @@
-import 'dart:math';
-import 'package:db_handler/db/database_handler.dart';
-import 'package:db_handler/db/postgres_handler.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../sqflite/platform_check.dart';
+import '../stateManagement/setState/data_editing_riverpod.dart';
 
 class CopyIntent extends Intent {}
 
 class PasteIntent extends Intent {}
 
-class DataEditingScreen extends StatefulWidget {
+class DataEditingScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> server;
   final String database;
   final String table;
@@ -24,44 +23,20 @@ class DataEditingScreen extends StatefulWidget {
   });
 
   @override
-  State<DataEditingScreen> createState() => _DataEditingScreenState();
+  ConsumerState<DataEditingScreen> createState() => _DataEditingScreenState();
 }
 
-class _DataEditingScreenState extends State<DataEditingScreen> {
-  late final DatabaseHandler _dbHandler;
-  bool _isLoading = true;
-  String? _error;
-  List<Map<String, dynamic>> _rows = [];
-  List<Map<String, String>> _columns = [];
-  String? _primaryKeyColumn;
-  List<double> _columnWidths = [];
-  List<double> _minColumnWidths = [];
-
-  int? _selectedColumnIndex;
-  int? _selectedRowIndex;
-  Map<String, int>? _selectedCell; // { 'rowIndex': int, 'colIndex': int }
+class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   final FocusNode _focusNode = FocusNode();
-
   late final ScrollController _horizontalHeadController;
   late final ScrollController _horizontalBodyController;
 
   @override
   void initState() {
     super.initState();
-    _dbHandler = _getDbHandler();
     _horizontalHeadController = ScrollController();
     _horizontalBodyController = ScrollController();
     _syncScroll();
-    _loadTableData();
-  }
-
-  DatabaseHandler _getDbHandler() {
-    switch (widget.server['type']) {
-      case 'PostgreSQL':
-        return PostgresHandler(widget.server, database: widget.database);
-      default:
-        throw Exception('Unsupported database type: ${widget.server['type']}');
-    }
   }
 
   void _syncScroll() {
@@ -87,87 +62,20 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     super.dispose();
   }
 
-  Future<void> _loadTableData() async {
-    if (mounted) setState(() => _isLoading = true);
-
-    try {
-      final columns = await _dbHandler.getColumns(widget.table);
-      final primaryKey = await _dbHandler.getPrimaryKey(widget.table);
-      final dataRows = await _dbHandler.getData(widget.table);
-
-      final minWidths = columns.map<double>((col) {
-        return _getTextWidth(col['name']!, const TextStyle(fontWeight: FontWeight.bold)) + 34.0;
-      }).toList();
-
-      final initialWidths = _calculateColumnWidths(columns, dataRows, minWidths);
-
-      // Add width for the row number column
-      initialWidths.insert(0, 60.0);
-      minWidths.insert(0, 60.0);
-
-      if (mounted) {
-        setState(() {
-          _columns = columns.map((c) => {'name': c['name'] as String, 'type': c['type'] as String}).toList();
-          _primaryKeyColumn = primaryKey;
-          _rows = dataRows;
-          _minColumnWidths = minWidths;
-          _columnWidths = initialWidths;
-          _isLoading = false;
-          _error = null;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'Failed to load table data: $e';
-        });
-      }
-    }
-  }
-
-  List<double> _calculateColumnWidths(
-      List<Map<String, dynamic>> columns, List<Map<String, dynamic>> rows, List<double> minWidths) {
-    final List<double> widths = [];
-    final columnsAndActions = [...columns, {'name': 'Actions'}];
-
-    for (int i = 0; i < columnsAndActions.length; i++) {
-      if (i < columns.length) {
-        // Regular column
-        double maxWidth = minWidths[i]; // Start with min width (header width + padding)
-        final colName = columns[i]['name']!;
-        for (var row in rows) {
-          final value = row[colName]?.toString() ?? 'NULL';
-          final cellWidth = _getTextWidth(value, const TextStyle()) + 34.0; // Increased buffer
-          maxWidth = max(maxWidth, cellWidth);
-        }
-        widths.add(maxWidth);
-      } else {
-        // Actions column
-        widths.add(100.0);
-      }
-    }
-    return widths;
-  }
-
-  double _getTextWidth(String text, TextStyle style) {
-    final textPainter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      maxLines: 1,
-      textDirection: TextDirection.ltr,
-    )..layout(minWidth: 0, maxWidth: double.infinity);
-    return textPainter.size.width;
-  }
-
   Future<void> _performOperation(
     Future<void> Function() operation,
-    String successMessage,
-  ) async {
+    String successMessage, {
+    int? updatedRowIndex,
+  }) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    final notifier = ref.read(dataEditingProvider(DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    )).notifier);
 
     try {
-      await operation();
+      await notifier.performOperation(operation, updatedRowIndex: updatedRowIndex);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -181,18 +89,20 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
         );
       }
     }
-
-    if (mounted) {
-      await _loadTableData();
-    }
   }
 
   void _copyCell() {
-    if (_selectedCell == null) return;
+    final state = ref.read(dataEditingProvider(DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    )));
+    
+    if (state.selectedCell == null) return;
 
-    final rowIndex = _selectedCell!['rowIndex']!;
-    final colIndex = _selectedCell!['colIndex']!;
-    final value = _rows[rowIndex][_columns[colIndex]['name']!];
+    final rowIndex = state.selectedCell!['rowIndex']!;
+    final colIndex = state.selectedCell!['colIndex']!;
+    final value = state.rows[rowIndex][state.columns[colIndex]['name']!];
 
     Clipboard.setData(ClipboardData(text: value?.toString() ?? ''));
 
@@ -202,8 +112,18 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
   }
 
   void _pasteCell() async {
-    if (_selectedCell == null) return;
-    if (_primaryKeyColumn == null) {
+    final state = ref.read(dataEditingProvider(DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    )));
+    final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+      server: widget.server,
+      database: widget.database,
+    )));
+    
+    if (state.selectedCell == null) return;
+    if (state.primaryKeyColumn == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Error: Cannot paste without a primary key.'), backgroundColor: Colors.red));
       return;
@@ -218,25 +138,37 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
       return;
     }
 
-    final rowIndex = _selectedCell!['rowIndex']!;
-    final colIndex = _selectedCell!['colIndex']!;
-    final targetColumnName = _columns[colIndex]['name']!;
-    final pkValue = _rows[rowIndex][_primaryKeyColumn!];
+    final rowIndex = state.selectedCell!['rowIndex']!;
+    final colIndex = state.selectedCell!['colIndex']!;
+    final targetColumnName = state.columns[colIndex]['name']!;
+    final pkValue = state.rows[rowIndex][state.primaryKeyColumn!];
 
     await _performOperation(
-      () => _dbHandler.updateCell(
+      () => dbHandler.updateCell(
         widget.table,
         targetColumnName,
         newValue,
-        _primaryKeyColumn!,
+        state.primaryKeyColumn!,
         pkValue,
       ),
       'Cell updated successfully.',
+      updatedRowIndex: rowIndex, // 특정 행만 업데이트
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(dataEditingProvider(DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    )));
+    final notifier = ref.read(dataEditingProvider(DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    )).notifier);
+    
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyC): CopyIntent(),
@@ -264,13 +196,13 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
               actions: [
-                IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh', onPressed: _loadTableData),
+                IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh', onPressed: () => notifier.loadTableData()),
                 IconButton(
-                    icon: const Icon(Icons.add), tooltip: 'Add Row', onPressed: () => _showEditRowDialog(null)),
+                    icon: const Icon(Icons.add), tooltip: 'Add Row', onPressed: () => _showEditRowDialog(null, state, notifier)),
                 IconButton(
                     icon: const Icon(Icons.add_box_outlined),
                     tooltip: 'Add Column',
-                    onPressed: _showAddColumnDialog),
+                    onPressed: () => _showAddColumnDialog(state, notifier)),
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'copy') {
@@ -282,12 +214,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                     PopupMenuItem<String>(
                       value: 'copy',
-                      enabled: _selectedCell != null,
+                      enabled: state.selectedCell != null,
                       child: const Text('Copy Cell'),
                     ),
                     PopupMenuItem<String>(
                       value: 'paste',
-                      enabled: _selectedCell != null,
+                      enabled: state.selectedCell != null,
                       child: const Text('Paste Cell'),
                     ),
                   ],
@@ -295,16 +227,16 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                 ),
               ],
             ),
-            body: _isLoading
+            body: state.isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
-                    : _columns.isEmpty
+                : state.error != null
+                    ? Center(child: Text(state.error!, style: const TextStyle(color: Colors.red)))
+                    : state.columns.isEmpty
                         ? const Center(child: Text('Table has no columns. Please add one.'))
                         : Column(
                             children: [
-                              _buildHeader(),
-                              _buildBody(),
+                              _buildHeader(state, notifier),
+                              _buildBody(state),
                             ],
                           ),
           ),
@@ -313,7 +245,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(DataEditingState state, DataEditingNotifier notifier) {
     return SingleChildScrollView(
       controller: _horizontalHeadController,
       scrollDirection: Axis.horizontal,
@@ -322,7 +254,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
         children: [
           // Row number column header
           Container(
-            width: _columnWidths.first,
+            width: state.columnWidths.first,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               border: Border(
@@ -332,16 +264,16 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             ),
             child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          ..._columns.asMap().entries.map((entry) {
+          ...state.columns.asMap().entries.map((entry) {
             final i = entry.key;
             final col = entry.value;
             return Stack(
               children: [
                 Container(
-                  width: _columnWidths[i + 1],
+                  width: state.columnWidths[i + 1],
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: _selectedColumnIndex == i ? Colors.blue.withOpacity(0.2) : null,
+                    color: state.selectedColumnIndex == i ? Colors.blue.withOpacity(0.2) : null,
                     border: Border(
                       right: BorderSide(color: Colors.grey.shade300),
                       bottom: BorderSide(color: Colors.grey.shade300, width: 2),
@@ -349,7 +281,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   ),
                   child: GestureDetector(
                     onTap: () {
-                      _selectColumn(i);
+                      notifier.selectColumn(i);
                     },
                     onLongPressStart: (LongPressStartDetails details) async {
                       if (PlatformCheck.isMouseAvailable) {
@@ -377,7 +309,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                       );
 
                       if (selected == 'edit') {
-                        _showModifyColumnDialog(_columns[i]);
+                        _showModifyColumnDialog(state.columns[i], state, notifier);
                       }
                     },
                     onSecondaryTapDown: (TapDownDetails details) async {
@@ -402,7 +334,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                       );
 
                       if (selected == 'edit') {
-                        _showModifyColumnDialog(_columns[i]);
+                        _showModifyColumnDialog(state.columns[i], state, notifier);
                       }
                     },
                     child: Text(
@@ -417,10 +349,8 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                   bottom: 0,
                   child: GestureDetector(
                     onHorizontalDragUpdate: (details) {
-                      setState(() {
-                        final newWidth = _columnWidths[i + 1] + details.delta.dx;
-                        _columnWidths[i + 1] = max(newWidth, _minColumnWidths[i + 1]);
-                      });
+                      final newWidth = state.columnWidths[i + 1] + details.delta.dx;
+                      notifier.updateColumnWidth(i + 1, newWidth);
                     },
                     child: MouseRegion(
                       cursor: SystemMouseCursors.resizeLeftRight,
@@ -435,7 +365,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             );
           }).toList(),
           Container(
-            width: _columnWidths.last,
+            width: state.columnWidths.last,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               border: Border(
@@ -449,46 +379,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _selectColumn(int index) {
-    setState(() {
-      if (_selectedColumnIndex == index) {
-        _selectedColumnIndex = null; // deselect
-      } else {
-        _selectedColumnIndex = index;
-        _selectedRowIndex = null;
-        _selectedCell = null;
-      }
-    });
-  }
-
-  void _selectRow(int index) {
-    setState(() {
-      if (_selectedRowIndex == index) {
-        _selectedRowIndex = null; // deselect
-      } else {
-        _selectedRowIndex = index;
-        _selectedColumnIndex = null;
-        _selectedCell = null;
-      }
-    });
-  }
-
-  void _selectCell(int rowIndex, int colIndex) {
-    setState(() {
-      final currentCell = _selectedCell;
-      if (currentCell != null &&
-          currentCell['rowIndex'] == rowIndex &&
-          currentCell['colIndex'] == colIndex) {
-        _selectedCell = null; // deselect
-      } else {
-        _selectedCell = {'rowIndex': rowIndex, 'colIndex': colIndex};
-        _selectedRowIndex = null;
-        _selectedColumnIndex = null;
-      }
-    });
-  }
-
-  Widget _buildBody() {
+  Widget _buildBody(DataEditingState state) {
+    final notifier = ref.read(dataEditingProvider(DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    )).notifier);
     return Expanded(
       child: SingleChildScrollView(
         scrollDirection: Axis.vertical,
@@ -498,10 +394,10 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
           physics: const ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: _rows.asMap().entries.map((entry) {
+            children: state.rows.asMap().entries.map((entry) {
               final index = entry.key;
               final rowData = entry.value;
-              return _buildRow(rowData, index);
+              return _buildRow(rowData, index, state, notifier);
             }).toList(),
           ),
         ),
@@ -509,97 +405,122 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  Widget _buildRow(Map<String, dynamic> rowData, int rowIndex) {
-    final isRowSelectedForColor = _selectedRowIndex == rowIndex;
+  Widget _buildRow(Map<String, dynamic> rowData, int rowIndex, DataEditingState state, DataEditingNotifier notifier) {
+    final dataEditingParams = DataEditingParams(
+      server: widget.server,
+      database: widget.database,
+      table: widget.table,
+    );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: rowIndex.isOdd && !isRowSelectedForColor ? Colors.grey.withOpacity(0.1) : null,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        children: [
-          // Row number cell
-          GestureDetector(
-            onTap: () => _selectRow(rowIndex),
-            child: Container(
-              width: _columnWidths.first,
+    return Consumer(
+      builder: (context, ref, child) {
+        // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독 (행 배경색용)
+        final isRowSelected = ref.watch(
+          dataEditingProvider(dataEditingParams).select(
+            (state) => state.selectedRowIndex == rowIndex,
+          ),
+        );
+
+        return Container(
+          decoration: BoxDecoration(
+            color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+          ),
+          child: Row(
+            children: [
+              // Row number cell
+              child!,
+              ...state.columns.asMap().entries.map((entry) {
+                final colIndex = entry.key;
+                final col = entry.value;
+                return _DataCellWidget(
+                  key: ValueKey('cell_${rowIndex}_${colIndex}'),
+                  rowIndex: rowIndex,
+                  colIndex: colIndex,
+                  columnName: col['name']!,
+                  dataEditingParams: dataEditingParams,
+                  columnWidth: state.columnWidths[colIndex + 1],
+                  onTap: () => notifier.selectCell(rowIndex, colIndex),
+                  onDoubleTap: () {
+                    notifier.selectCell(rowIndex, colIndex);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        // state에서 현재 행 데이터 가져오기
+                        final currentState = ref.read(dataEditingProvider(dataEditingParams));
+                        if (rowIndex < currentState.rows.length) {
+                          final currentRowData = currentState.rows[rowIndex];
+                          _showEditCellDialog(currentRowData, col['name']!, currentState, notifier);
+                        }
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+              // Actions cell
+              Consumer(
+                builder: (context, ref, child) {
+                  // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독
+                  final isRowSelectedForActions = ref.watch(
+                    dataEditingProvider(dataEditingParams).select(
+                      (state) => state.selectedRowIndex == rowIndex,
+                    ),
+                  );
+                  return Container(
+                    width: state.columnWidths.last,
+                    decoration: BoxDecoration(
+                      color: isRowSelectedForActions ? Colors.blue.withOpacity(0.2) : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
+                          onPressed: () => _showEditRowDialog(rowData, state, notifier),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                          onPressed: () => _showDeleteConfirmDialog(rowData, state, notifier),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+      child: GestureDetector(
+        onTap: () => notifier.selectRow(rowIndex),
+        child: Consumer(
+          builder: (context, ref, child) {
+            // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독
+            final isRowSelected = ref.watch(
+              dataEditingProvider(DataEditingParams(
+                server: widget.server,
+                database: widget.database,
+                table: widget.table,
+              )).select(
+                (state) => state.selectedRowIndex == rowIndex,
+              ),
+            );
+            return Container(
+              width: state.columnWidths.first,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: isRowSelectedForColor ? Colors.blue.withOpacity(0.2) : null,
+                color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
                 border: Border(right: BorderSide(color: Colors.grey.shade200)),
               ),
               child: Text('${rowIndex + 1}'),
-            ),
-          ),
-          ..._columns.asMap().entries.map((entry) {
-            final colIndex = entry.key;
-            final col = entry.value;
-            final value = rowData[col['name']];
-
-            final isColSelected = _selectedColumnIndex == colIndex;
-            final isCellSelected = _selectedCell != null &&
-                _selectedCell!['rowIndex'] == rowIndex &&
-                _selectedCell!['colIndex'] == colIndex;
-
-            Color? cellColor;
-            if (isCellSelected) {
-              cellColor = Colors.green.withOpacity(0.4);
-            } else if (isRowSelectedForColor || isColSelected) {
-              cellColor = Colors.blue.withOpacity(0.2);
-            }
-
-            return GestureDetector(
-              onTap: () => _selectCell(rowIndex, colIndex),
-              onDoubleTap: () {
-                setState(() {
-                  _selectedCell = {'rowIndex': rowIndex, 'colIndex': colIndex};
-                  _selectedRowIndex = null;
-                  _selectedColumnIndex = null;
-                });
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    _showEditCellDialog(rowData, col['name']!);
-                  }
-                });
-              },
-              child: Container(
-                width: _columnWidths[colIndex + 1],
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: cellColor,
-                  border: Border(right: BorderSide(color: Colors.grey.shade200)),
-                ),
-                child: Text(value?.toString() ?? 'NULL'),
-              ),
             );
-          }).toList(),
-          Container(
-            width: _columnWidths.last,
-            decoration: BoxDecoration(
-              color: isRowSelectedForColor ? Colors.blue.withOpacity(0.2) : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
-                  onPressed: () => _showEditRowDialog(rowData),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                  onPressed: () => _showDeleteConfirmDialog(rowData),
-                ),
-              ],
-            ),
-          ),
-        ],
+          },
+        ),
       ),
     );
   }
 
-  void _showAddColumnDialog() {
+  void _showAddColumnDialog(DataEditingState state, DataEditingNotifier notifier) {
     final nameController = TextEditingController();
     String? selectedDataType;
     final List<Map<String, dynamic>> constraints = [];
@@ -757,8 +678,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                     }
                     Navigator.pop(dialogContext);
                     final constraintsString = buildConstraintsString();
+                    final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+                      server: widget.server,
+                      database: widget.database,
+                    )));
                     _performOperation(
-                      () => _dbHandler.addColumn(widget.table, columnName, selectedDataType!, constraintsString),
+                      () => dbHandler.addColumn(widget.table, columnName, selectedDataType!, constraintsString),
                       'Column added successfully.',
                     );
                   },
@@ -772,7 +697,7 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showModifyColumnDialog(Map<String, dynamic> columnData) {
+  void _showModifyColumnDialog(Map<String, dynamic> columnData, DataEditingState state, DataEditingNotifier notifier) {
     final nameController = TextEditingController(text: columnData['name']);
     final List<String> dataTypes = [
       'VARCHAR(255)',
@@ -943,8 +868,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                     }
                     Navigator.pop(dialogContext);
                     final constraintsString = buildConstraintsString();
+                    final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+                      server: widget.server,
+                      database: widget.database,
+                    )));
                     _performOperation(
-                      () => _dbHandler.modifyColumn(
+                      () => dbHandler.modifyColumn(
                           widget.table, columnData['name'], newColumnName, selectedDataType!, constraintsString),
                       'Column modified successfully.',
                     );
@@ -959,17 +888,26 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showEditCellDialog(Map<String, dynamic> rowData, String columnName) {
-    if (_primaryKeyColumn == null) {
+  void _showEditCellDialog(Map<String, dynamic> rowData, String columnName, DataEditingState state, DataEditingNotifier notifier) {
+    if (state.primaryKeyColumn == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Error: Cannot edit cell without a primary key.'),
           backgroundColor: Colors.red));
       return;
     }
 
-    final pkValue = rowData[_primaryKeyColumn!];
+    final pkValue = rowData[state.primaryKeyColumn!];
     final currentValue = rowData[columnName];
     final controller = TextEditingController(text: currentValue?.toString() ?? '');
+
+    // 행 인덱스 찾기 (부분 리빌드를 위해 필요)
+    int? rowIndex;
+    for (int i = 0; i < state.rows.length; i++) {
+      if (state.rows[i][state.primaryKeyColumn!] == pkValue) {
+        rowIndex = i;
+        break;
+      }
+    }
 
     showDialog(
       context: context,
@@ -991,15 +929,20 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             onPressed: () {
               Navigator.pop(dialogContext);
               final newValue = controller.text.trim();
+              final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+                server: widget.server,
+                database: widget.database,
+              )));
               _performOperation(
-                () => _dbHandler.updateCell(
+                () => dbHandler.updateCell(
                   widget.table,
                   columnName,
                   newValue.isEmpty ? null : newValue,
-                  _primaryKeyColumn!,
+                  state.primaryKeyColumn!,
                   pkValue,
                 ),
                 'Cell updated successfully.',
+                updatedRowIndex: rowIndex, // 특정 행만 업데이트
               );
             },
             child: const Text('Save'),
@@ -1009,12 +952,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showEditRowDialog(Map<String, dynamic>? rowData) {
+  void _showEditRowDialog(Map<String, dynamic>? rowData, DataEditingState state, DataEditingNotifier notifier) {
     final isNewRow = rowData == null;
     final controllers = <String, TextEditingController>{};
-    final pkColName = _primaryKeyColumn;
+    final pkColName = state.primaryKeyColumn;
 
-    for (var col in _columns) {
+    for (var col in state.columns) {
       final colName = col['name']!;
       if (isNewRow && colName == pkColName && (col['type']!.contains('int') || col['type']!.contains('serial'))) {
         continue;
@@ -1049,17 +992,21 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
                 return MapEntry(key, text.isEmpty ? null : text);
               });
 
+              final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+                server: widget.server,
+                database: widget.database,
+              )));
               if (isNewRow) {
-                _performOperation(() => _dbHandler.addRow(widget.table, values), 'Row added successfully.');
+                _performOperation(() => dbHandler.addRow(widget.table, values), 'Row added successfully.');
               } else {
                 if (pkColName == null) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                       content: Text('Error: Cannot update without a primary key.'), backgroundColor: Colors.red));
                   return;
                 }
-                final pkValue = rowData![pkColName];
+                final pkValue = rowData[pkColName];
                 _performOperation(
-                    () => _dbHandler.updateRow(widget.table, values, pkColName, pkValue), 'Row updated successfully.');
+                    () => dbHandler.updateRow(widget.table, values, pkColName, pkValue), 'Row updated successfully.');
               }
             },
             child: const Text('Save'),
@@ -1069,13 +1016,13 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
     );
   }
 
-  void _showDeleteConfirmDialog(Map<String, dynamic> row) {
-    if (_primaryKeyColumn == null) {
+  void _showDeleteConfirmDialog(Map<String, dynamic> row, DataEditingState state, DataEditingNotifier notifier) {
+    if (state.primaryKeyColumn == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error: Cannot delete without a primary key.'), backgroundColor: Colors.red));
       return;
     }
-    final pkValue = row[_primaryKeyColumn!];
+    final pkValue = row[state.primaryKeyColumn!];
 
     showDialog(
       context: context,
@@ -1087,8 +1034,12 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+                server: widget.server,
+                database: widget.database,
+              )));
               _performOperation(
-                () => _dbHandler.deleteRow(widget.table, _primaryKeyColumn!, pkValue),
+                () => dbHandler.deleteRow(widget.table, state.primaryKeyColumn!, pkValue),
                 'Row deleted successfully.',
               );
             },
@@ -1096,6 +1047,88 @@ class _DataEditingScreenState extends State<DataEditingScreen> {
             child: const Text('Delete'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 개별 셀 위젯 - 해당 셀의 값과 선택 상태만 구독하여 부분 리빌드 최적화
+class _DataCellWidget extends ConsumerWidget {
+  final int rowIndex;
+  final int colIndex;
+  final String columnName;
+  final DataEditingParams dataEditingParams;
+  final double columnWidth;
+  final VoidCallback onTap;
+  final VoidCallback onDoubleTap;
+
+  const _DataCellWidget({
+    super.key,
+    required this.rowIndex,
+    required this.colIndex,
+    required this.columnName,
+    required this.dataEditingParams,
+    required this.columnWidth,
+    required this.onTap,
+    required this.onDoubleTap,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // ref.watch에 selector를 사용하여 특정 셀 값만 선택적으로 구독 (값이 변경될 때만 리빌드)
+    final cellValue = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) {
+          if (rowIndex >= state.rows.length) return null;
+          if (colIndex >= state.columns.length) return null;
+          final colName = state.columns[colIndex]['name']!;
+          final row = state.rows[rowIndex];
+          return row[colName];
+        },
+      ),
+    );
+
+    // ref.watch에 selector를 사용하여 셀 선택 상태만 선택적으로 구독
+    final isCellSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedCell != null &&
+            state.selectedCell!['rowIndex'] == rowIndex &&
+            state.selectedCell!['colIndex'] == colIndex,
+      ),
+    );
+
+    // ref.watch에 selector를 사용하여 열 선택 상태만 선택적으로 구독
+    final isColSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedColumnIndex == colIndex,
+      ),
+    );
+
+    // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독
+    final isRowSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedRowIndex == rowIndex,
+      ),
+    );
+
+    Color? cellColor;
+    if (isCellSelected) {
+      cellColor = Colors.green.withOpacity(0.4);
+    } else if (isRowSelected || isColSelected) {
+      cellColor = Colors.blue.withOpacity(0.2);
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      onDoubleTap: onDoubleTap,
+      child: Container(
+        width: columnWidth,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: cellColor,
+          border: Border(right: BorderSide(color: Colors.grey.shade200)),
+        ),
+        child: Text(cellValue?.toString() ?? 'NULL'),
       ),
     );
   }
