@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
 import 'unit/data_cell.dart';
+import 'unit/filter_sort_group_panel.dart';
 
 class CopyIntent extends Intent {}
 
@@ -397,12 +398,16 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   return const Center(child: Text('Table has no columns. Please add one.'));
                 }
                 return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    FilterSortGroupPanel(dataEditingParams: dataEditingParams),
                     _TableHeader(
                       dataEditingParams: dataEditingParams,
                       horizontalHeadController: _horizontalHeadController,
                     ),
-                    _buildBody(dataEditingParams),
+                    Expanded(
+                      child: _buildBody(dataEditingParams),
+                    ),
                   ],
                 );
               },
@@ -414,34 +419,38 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   }
 
   Widget _buildBody(DataEditingParams dataEditingParams) {
-    return Expanded(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: Align(
+        alignment: Alignment.topLeft,
         child: SingleChildScrollView(
           controller: _horizontalBodyController,
           scrollDirection: Axis.horizontal,
           physics: const ClampingScrollPhysics(),
-          child: Consumer(
-            builder: (context, ref, child) {
-              // rows.length만 watch하여 행 추가/삭제 시에만 리빌드
-              final rowsCount = ref.watch(
-                dataEditingProvider(dataEditingParams).select((state) => state.rows.length),
-              );
-              
-              // columns와 columnWidths도 watch (구조 변경 시에만 리빌드)
-              final columns = ref.watch(
-                dataEditingProvider(dataEditingParams).select((state) => state.columns),
-              );
-              final columnWidths = ref.watch(
-                dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
-              );
-              
-              return _TableBodyWidget(
-                rowsCount: rowsCount,
-                dataEditingParams: dataEditingParams,
-                columnWidths: columnWidths,
-              );
-            },
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Consumer(
+              builder: (context, ref, child) {
+                // rows.length만 watch하여 행 추가/삭제 시에만 리빌드
+                final rowsCount = ref.watch(
+                  dataEditingProvider(dataEditingParams).select((state) => state.rows.length),
+                );
+                
+                // columns와 columnWidths도 watch (구조 변경 시에만 리빌드)
+                final columns = ref.watch(
+                  dataEditingProvider(dataEditingParams).select((state) => state.columns),
+                );
+                final columnWidths = ref.watch(
+                  dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
+                );
+                
+                return _TableBodyWidget(
+                  rowsCount: rowsCount,
+                  dataEditingParams: dataEditingParams,
+                  columnWidths: columnWidths,
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1208,51 +1217,56 @@ class _TableHeader extends ConsumerWidget {
     
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
 
-    return SingleChildScrollView(
-      controller: horizontalHeadController,
-      scrollDirection: Axis.horizontal,
-      physics: const ClampingScrollPhysics(),
-      child: Row(
-        children: [
-          // Row number column header
-          Container(
-            width: columnWidths.first,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: Border(
-                right: BorderSide(color: Colors.grey.shade300),
-                bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+    return Align(
+      alignment: Alignment.topLeft,
+      child: SingleChildScrollView(
+        controller: horizontalHeadController,
+        scrollDirection: Axis.horizontal,
+        physics: const ClampingScrollPhysics(),
+        child: Row(
+          children: [
+            // Row number column header
+            Container(
+              width: columnWidths.first,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.grey.shade300),
+                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+                ),
               ),
+              child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-            child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          ...columns.asMap().entries.map((entry) {
-            final i = entry.key;
-            final col = entry.value;
-            return _HeaderColumnCell(
-              columnIndex: i,
-              column: col,
-              columnWidth: columnWidths[i + 1],
-              dataEditingParams: dataEditingParams,
-              onModifyColumn: (column) {
-                final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
-                if (screen != null) {
-                  screen._showModifyColumnDialog(column, dataEditingParams);
-                }
-              },
-            );
-          }).toList(),
-          Container(
-            width: columnWidths.last,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+            ...columns.asMap().entries.map((entry) {
+              final i = entry.key;
+              final col = entry.value;
+              return _HeaderColumnCell(
+                columnIndex: i,
+                column: col,
+                columnWidth: columnWidths[i + 1],
+                dataEditingParams: dataEditingParams,
+                onModifyColumn: (column) {
+                  final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+                  if (screen != null) {
+                    screen._showModifyColumnDialog(column, dataEditingParams);
+                  }
+                },
+              );
+            }).toList(),
+            Container(
+              width: columnWidths.last,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+                ),
               ),
+              child: const Text('Actions', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-            child: const Text('Actions', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1295,6 +1309,7 @@ class _HeaderColumnCell extends ConsumerWidget {
         Container(
           width: columnWidths[columnIndex + 1],
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: isSelected ? Colors.blue.withOpacity(0.2) : null,
             border: Border(
@@ -1360,6 +1375,7 @@ class _HeaderColumnCell extends ConsumerWidget {
             child: Text(
               column['name']!,
               style: const TextStyle(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.left,
             ),
           ),
         ),

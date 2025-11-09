@@ -89,6 +89,179 @@ class PostgresHandler extends DatabaseHandler {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getDataWithFilters(
+    String tableName, {
+    List<Map<String, dynamic>>? filters,
+    List<Map<String, dynamic>>? sorts,
+    List<String>? groupByColumns,
+  }) {
+    return _withConnection(database!, (conn) async {
+      final substitutionValues = <String, dynamic>{};
+      
+      // GROUP BY가 사용되는 경우 SELECT 절을 다르게 구성
+      String selectClause;
+      if (groupByColumns != null && groupByColumns.isNotEmpty) {
+        // GROUP BY를 사용할 때는 GROUP BY에 포함된 컬럼만 선택
+        // 다른 컬럼은 집계 함수로 감싸거나 제외해야 함
+        // 여기서는 GROUP BY 컬럼만 선택 (중복 제거 목적)
+        selectClause = 'SELECT ${groupByColumns.map((c) => '"$c"').join(', ')} FROM "$tableName"';
+      } else {
+        // GROUP BY가 없을 때는 모든 컬럼 선택
+        selectClause = 'SELECT * FROM "$tableName"';
+      }
+      
+      var query = selectClause;
+      
+      // WHERE 절 생성 (필터)
+      if (filters != null && filters.isNotEmpty) {
+        final whereClauses = <String>[];
+        int paramIndex = 0;
+        
+        // 그룹별로 필터 분류
+        final Map<int?, List<Map<String, dynamic>>> groupedFilters = {};
+        for (final filter in filters) {
+          final groupIndex = filter['groupIndex'] as int?;
+          groupedFilters.putIfAbsent(groupIndex, () => []).add(filter);
+        }
+        
+        // 그룹 인덱스로 정렬 (null이 먼저, 그 다음 숫자 순서)
+        final sortedGroups = groupedFilters.keys.toList()
+          ..sort((a, b) {
+            if (a == null && b == null) return 0;
+            if (a == null) return -1;
+            if (b == null) return 1;
+            return a.compareTo(b);
+          });
+        
+        // 각 그룹 처리
+        for (int groupIdx = 0; groupIdx < sortedGroups.length; groupIdx++) {
+          final groupIndex = sortedGroups[groupIdx];
+          final groupFilters = groupedFilters[groupIndex]!;
+          final bool hasGroup = groupIndex != null;
+          
+          // 그룹 시작
+          if (hasGroup) {
+            whereClauses.add('(');
+          }
+          
+          // 그룹 내 필터 처리
+          for (int i = 0; i < groupFilters.length; i++) {
+            final filter = groupFilters[i];
+            final column = filter['column'] as String;
+            final operator = filter['operator'] as String;
+            final value = filter['value'];
+            final logicalOperator = filter['logicalOperator'] as String?;
+            
+            // 조건 추가
+            String condition;
+            switch (operator.toUpperCase()) {
+              case 'IS NULL':
+                condition = '"$column" IS NULL';
+                break;
+              case 'IS NOT NULL':
+                condition = '"$column" IS NOT NULL';
+                break;
+              case 'IN':
+                if (value is List) {
+                  final paramNames = <String>[];
+                  for (int j = 0; j < value.length; j++) {
+                    final paramName = 'param$paramIndex';
+                    paramNames.add('@$paramName');
+                    substitutionValues[paramName] = value[j];
+                    paramIndex++;
+                  }
+                  condition = '"$column" IN (${paramNames.join(', ')})';
+                } else {
+                  condition = '"$column" = @param$paramIndex';
+                  substitutionValues['param$paramIndex'] = value;
+                  paramIndex++;
+                }
+                break;
+              case 'NOT IN':
+                if (value is List) {
+                  final paramNames = <String>[];
+                  for (int j = 0; j < value.length; j++) {
+                    final paramName = 'param$paramIndex';
+                    paramNames.add('@$paramName');
+                    substitutionValues[paramName] = value[j];
+                    paramIndex++;
+                  }
+                  condition = '"$column" NOT IN (${paramNames.join(', ')})';
+                } else {
+                  condition = '"$column" != @param$paramIndex';
+                  substitutionValues['param$paramIndex'] = value;
+                  paramIndex++;
+                }
+                break;
+              case 'LIKE':
+                condition = '"$column" LIKE @param$paramIndex';
+                substitutionValues['param$paramIndex'] = value;
+                paramIndex++;
+                break;
+              default:
+                condition = '"$column" $operator @param$paramIndex';
+                substitutionValues['param$paramIndex'] = value;
+                paramIndex++;
+            }
+            
+            whereClauses.add(condition);
+            
+            // 그룹 내 논리 연산자 추가 (마지막 필터가 아닌 경우)
+            if (i < groupFilters.length - 1 && logicalOperator != null) {
+              whereClauses.add(logicalOperator.toUpperCase());
+            }
+          }
+          
+          // 그룹 끝
+          if (hasGroup) {
+            whereClauses.add(')');
+          }
+          
+          // 그룹 사이 논리 연산자 추가 (마지막 그룹이 아닌 경우)
+          // 마지막 필터의 logicalOperator를 사용하거나, 기본값으로 AND 사용
+          if (groupIdx < sortedGroups.length - 1) {
+            final lastFilterInGroup = groupFilters.last;
+            final logicalOp = lastFilterInGroup['logicalOperator'] as String? ?? 'AND';
+            whereClauses.add(logicalOp.toUpperCase());
+          }
+        }
+        
+        if (whereClauses.isNotEmpty) {
+          query += ' WHERE ${whereClauses.join(' ')}';
+        }
+      }
+      
+      // GROUP BY 절 생성
+      if (groupByColumns != null && groupByColumns.isNotEmpty) {
+        query += ' GROUP BY ${groupByColumns.map((c) => '"$c"').join(', ')}';
+      }
+      
+      // ORDER BY 절 생성 (정렬)
+      // GROUP BY를 사용할 때는 ORDER BY에 GROUP BY 컬럼만 사용하거나 집계 함수 사용 가능
+      if (sorts != null && sorts.isNotEmpty) {
+        final orderByClauses = sorts.map((sort) {
+          final column = sort['column'] as String;
+          final ascending = sort['ascending'] as bool;
+          // GROUP BY를 사용할 때는 ORDER BY에 GROUP BY 컬럼만 허용
+          if (groupByColumns != null && groupByColumns.isNotEmpty) {
+            if (!groupByColumns.contains(column)) {
+              // GROUP BY에 포함되지 않은 컬럼은 ORDER BY에서 제외
+              return null;
+            }
+          }
+          return '"$column" ${ascending ? 'ASC' : 'DESC'}';
+        }).where((clause) => clause != null).join(', ');
+        if (orderByClauses.isNotEmpty) {
+          query += ' ORDER BY $orderByClauses';
+        }
+      }
+      
+      final results = await conn.query(query, substitutionValues: substitutionValues.isEmpty ? null : substitutionValues);
+      return results.map((row) => row.toColumnMap()).toList();
+    });
+  }
+
+  @override
   Future<void> addColumn(String tableName, String columnName, String dataType, String constraints) {
      return _withConnection(database!, (conn) {
       return conn.query('ALTER TABLE "$tableName" ADD COLUMN "$columnName" $dataType $constraints');

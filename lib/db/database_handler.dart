@@ -7,6 +7,12 @@ abstract class DatabaseHandler {
   Future<List<Map<String, dynamic>>> getColumns(String tableName);
   Future<String?> getPrimaryKey(String tableName);
   Future<List<Map<String, dynamic>>> getData(String tableName);
+  Future<List<Map<String, dynamic>>> getDataWithFilters(
+    String tableName, {
+    List<Map<String, dynamic>>? filters,
+    List<Map<String, dynamic>>? sorts,
+    List<String>? groupByColumns,
+  });
   Future<void> addColumn(String tableName, String columnName, String dataType, String constraints);
   Future<void> modifyColumn(String tableName, String oldColumnName, String newColumnName, String newDataType, String newConstraints);
   Future<void> deleteColumn(String tableName, String columnName);

@@ -6,6 +6,77 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../../db/database_handler.dart';
 import '../../db/postgres_handler.dart';
 
+/// 필터 조건 클래스
+class FilterCondition {
+  final String columnName;
+  final String operator; // =, !=, <, >, <=, >=, LIKE, IN, NOT IN, IS NULL, IS NOT NULL
+  final dynamic value; // 값 (LIKE의 경우 String, IN의 경우 List)
+  final String? logicalOperator; // AND, OR (다음 조건과의 연결)
+  final int? groupIndex; // 괄호 그룹 인덱스 (같은 그룹끼리 묶음)
+  
+  const FilterCondition({
+    required this.columnName,
+    required this.operator,
+    this.value,
+    this.logicalOperator,
+    this.groupIndex,
+  });
+  
+  FilterCondition copyWith({
+    String? columnName,
+    String? operator,
+    dynamic value,
+    String? logicalOperator,
+    int? groupIndex,
+  }) {
+    return FilterCondition(
+      columnName: columnName ?? this.columnName,
+      operator: operator ?? this.operator,
+      value: value ?? this.value,
+      logicalOperator: logicalOperator ?? this.logicalOperator,
+      groupIndex: groupIndex ?? this.groupIndex,
+    );
+  }
+  
+  Map<String, dynamic> toMap() {
+    return {
+      'column': columnName,
+      'operator': operator,
+      'value': value,
+      'logicalOperator': logicalOperator,
+      'groupIndex': groupIndex,
+    };
+  }
+}
+
+/// 정렬 조건 클래스
+class SortCondition {
+  final String columnName;
+  final bool ascending; // true: ASC, false: DESC
+  
+  const SortCondition({
+    required this.columnName,
+    this.ascending = true,
+  });
+  
+  SortCondition copyWith({
+    String? columnName,
+    bool? ascending,
+  }) {
+    return SortCondition(
+      columnName: columnName ?? this.columnName,
+      ascending: ascending ?? this.ascending,
+    );
+  }
+  
+  Map<String, dynamic> toMap() {
+    return {
+      'column': columnName,
+      'ascending': ascending,
+    };
+  }
+}
+
 /// DataEditing 상태 클래스
 class DataEditingState {
   final bool isLoading;
@@ -24,6 +95,11 @@ class DataEditingState {
   
   // 버전 관리를 위한 맵 추가: 각 셀의 변경을 추적
   final Map<String, int> cellVersions; // key: "row_col", value: version
+  
+  // 필터, 정렬, 그룹 상태
+  final List<FilterCondition> filters; // 필터 조건 리스트
+  final List<SortCondition> sorts; // 정렬 조건 리스트
+  final List<String> groupByColumns; // 그룹화할 컬럼들
 
   const DataEditingState({
     this.isLoading = true,
@@ -38,6 +114,9 @@ class DataEditingState {
     this.selectedCell,
     this.selectedCellRange,
     this.cellVersions = const {},
+    this.filters = const [],
+    this.sorts = const [],
+    this.groupByColumns = const [],
   });
 
   DataEditingState copyWith({
@@ -53,6 +132,9 @@ class DataEditingState {
     Map<String, int>? selectedCell,
     Map<String, int>? selectedCellRange,
     Map<String, int>? cellVersions,
+    List<FilterCondition>? filters,
+    List<SortCondition>? sorts,
+    List<String>? groupByColumns,
   }) {
     return DataEditingState(
       isLoading: isLoading ?? this.isLoading,
@@ -67,6 +149,9 @@ class DataEditingState {
       selectedCell: selectedCell,
       selectedCellRange: selectedCellRange,
       cellVersions: cellVersions ?? this.cellVersions,
+      filters: filters ?? this.filters,
+      sorts: sorts ?? this.sorts,
+      groupByColumns: groupByColumns ?? this.groupByColumns,
     );
   }
   
@@ -188,7 +273,24 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     try {
       final columns = await _dbHandler.getColumns(_table);
       final primaryKey = await _dbHandler.getPrimaryKey(_table);
-      final dataRows = await _dbHandler.getData(_table);
+      
+      // 필터, 정렬, 그룹이 있으면 getDataWithFilters 사용, 없으면 getData 사용
+      final List<Map<String, dynamic>> dataRows;
+      if (state.filters.isNotEmpty || state.sorts.isNotEmpty || state.groupByColumns.isNotEmpty) {
+        // 필터 조건을 Map 형식으로 변환
+        final filterMaps = state.filters.map((f) => f.toMap()).toList();
+        // 정렬 조건을 Map 형식으로 변환
+        final sortMaps = state.sorts.map((s) => s.toMap()).toList();
+        
+        dataRows = await _dbHandler.getDataWithFilters(
+          _table,
+          filters: filterMaps,
+          sorts: sortMaps,
+          groupByColumns: state.groupByColumns.isNotEmpty ? state.groupByColumns : null,
+        );
+      } else {
+        dataRows = await _dbHandler.getData(_table);
+      }
 
       final minWidths = columns.map<double>((col) {
         return _getTextWidth(col['name']!, const TextStyle(fontWeight: FontWeight.bold)) + 34.0;
@@ -293,6 +395,95 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       selectedCell: null,
       selectedCellRange: null,
     );
+  }
+  
+  /// 필터 추가
+  void addFilter(FilterCondition filter) {
+    final newFilters = List<FilterCondition>.from(state.filters)..add(filter);
+    state = state.copyWith(filters: newFilters);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 필터 제거
+  void removeFilter(int index) {
+    final newFilters = List<FilterCondition>.from(state.filters)..removeAt(index);
+    state = state.copyWith(filters: newFilters);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 필터 수정
+  void updateFilter(int index, FilterCondition filter) {
+    final newFilters = List<FilterCondition>.from(state.filters);
+    newFilters[index] = filter;
+    state = state.copyWith(filters: newFilters);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 필터 모두 제거
+  void clearFilters() {
+    state = state.copyWith(filters: []);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 정렬 추가
+  void addSort(SortCondition sort) {
+    final newSorts = List<SortCondition>.from(state.sorts)..add(sort);
+    state = state.copyWith(sorts: newSorts);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 정렬 수정
+  void updateSort(int index, SortCondition sort) {
+    final newSorts = List<SortCondition>.from(state.sorts);
+    newSorts[index] = sort;
+    state = state.copyWith(sorts: newSorts);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 정렬 제거
+  void removeSort(int index) {
+    final newSorts = List<SortCondition>.from(state.sorts)..removeAt(index);
+    state = state.copyWith(sorts: newSorts);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 정렬 모두 제거
+  void clearSorts() {
+    state = state.copyWith(sorts: []);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 그룹화 컬럼 추가
+  void addGroupByColumn(String columnName) {
+    if (!state.groupByColumns.contains(columnName)) {
+      final newGroupByColumns = List<String>.from(state.groupByColumns)..add(columnName);
+      state = state.copyWith(groupByColumns: newGroupByColumns);
+      // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+      Future.microtask(() => loadTableData());
+    }
+  }
+  
+  /// 그룹화 컬럼 제거
+  void removeGroupByColumn(String columnName) {
+    final newGroupByColumns = List<String>.from(state.groupByColumns)..remove(columnName);
+    state = state.copyWith(groupByColumns: newGroupByColumns);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 그룹화 모두 제거
+  void clearGroupBy() {
+    state = state.copyWith(groupByColumns: []);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
   }
 
   void updateColumnWidth(int index, double newWidth) {
