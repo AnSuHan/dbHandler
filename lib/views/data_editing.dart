@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
+import 'unit/data_cell.dart';
 
 class CopyIntent extends Intent {}
 
@@ -92,11 +93,12 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   }
 
   void _copyCell() {
-    final state = ref.read(dataEditingProvider(DataEditingParams(
+    final dataEditingParams = DataEditingParams(
       server: widget.server,
       database: widget.database,
       table: widget.table,
-    )));
+    );
+    final state = ref.read(dataEditingProvider(dataEditingParams));
     
     if (state.selectedCell == null) return;
 
@@ -112,11 +114,12 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   }
 
   void _pasteCell() async {
-    final state = ref.read(dataEditingProvider(DataEditingParams(
+    final dataEditingParams = DataEditingParams(
       server: widget.server,
       database: widget.database,
       table: widget.table,
-    )));
+    );
+    final state = ref.read(dataEditingProvider(dataEditingParams));
     final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
       server: widget.server,
       database: widget.database,
@@ -143,31 +146,48 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     final targetColumnName = state.columns[colIndex]['name']!;
     final pkValue = state.rows[rowIndex][state.primaryKeyColumn!];
 
-    await _performOperation(
-      () => dbHandler.updateCell(
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+    
+    try {
+      // DB 업데이트
+      await dbHandler.updateCell(
         widget.table,
         targetColumnName,
         newValue,
         state.primaryKeyColumn!,
         pkValue,
-      ),
-      'Cell updated successfully.',
-      updatedRowIndex: rowIndex, // 특정 행만 업데이트
-    );
+      );
+      
+      // 셀 값만 업데이트 (최소 단위 리빌드)
+      await notifier.updateCellValue(
+        rowIndex,
+        colIndex,
+        targetColumnName,
+        newValue.isEmpty ? null : newValue,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cell updated successfully.'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(dataEditingProvider(DataEditingParams(
+    final dataEditingParams = DataEditingParams(
       server: widget.server,
       database: widget.database,
       table: widget.table,
-    )));
-    final notifier = ref.read(dataEditingProvider(DataEditingParams(
-      server: widget.server,
-      database: widget.database,
-      table: widget.table,
-    )).notifier);
+    );
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
     
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
@@ -196,195 +216,64 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
               actions: [
-                IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh', onPressed: () => notifier.loadTableData()),
                 IconButton(
-                    icon: const Icon(Icons.add), tooltip: 'Add Row', onPressed: () => _showEditRowDialog(null, state, notifier)),
-                IconButton(
-                    icon: const Icon(Icons.add_box_outlined),
-                    tooltip: 'Add Column',
-                    onPressed: () => _showAddColumnDialog(state, notifier)),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'copy') {
-                      _copyCell();
-                    } else if (value == 'paste') {
-                      _pasteCell();
-                    }
-                  },
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    PopupMenuItem<String>(
-                      value: 'copy',
-                      enabled: state.selectedCell != null,
-                      child: const Text('Copy Cell'),
-                    ),
-                    PopupMenuItem<String>(
-                      value: 'paste',
-                      enabled: state.selectedCell != null,
-                      child: const Text('Paste Cell'),
-                    ),
-                  ],
-                  icon: const Icon(Icons.more_vert),
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh',
+                  onPressed: () => notifier.loadTableData(),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Add Row',
+                  onPressed: () => _showEditRowDialog(null, dataEditingParams),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_box_outlined),
+                  tooltip: 'Add Column',
+                  onPressed: () => _showAddColumnDialog(dataEditingParams),
+                ),
+                _AppBarMenu(dataEditingParams: dataEditingParams),
               ],
             ),
-            body: state.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : state.error != null
-                    ? Center(child: Text(state.error!, style: const TextStyle(color: Colors.red)))
-                    : state.columns.isEmpty
-                        ? const Center(child: Text('Table has no columns. Please add one.'))
-                        : Column(
-                            children: [
-                              _buildHeader(state, notifier),
-                              _buildBody(state),
-                            ],
-                          ),
+            body: Consumer(
+              builder: (context, ref, child) {
+                // 최소한의 상태만 watch (isLoading, error, columns.length)
+                final isLoading = ref.watch(
+                  dataEditingProvider(dataEditingParams).select((state) => state.isLoading),
+                );
+                final error = ref.watch(
+                  dataEditingProvider(dataEditingParams).select((state) => state.error),
+                );
+                final columnsLength = ref.watch(
+                  dataEditingProvider(dataEditingParams).select((state) => state.columns.length),
+                );
+
+                if (isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (error != null) {
+                  return Center(child: Text(error, style: const TextStyle(color: Colors.red)));
+                }
+                if (columnsLength == 0) {
+                  return const Center(child: Text('Table has no columns. Please add one.'));
+                }
+                return Column(
+                  children: [
+                    _TableHeader(
+                      dataEditingParams: dataEditingParams,
+                      horizontalHeadController: _horizontalHeadController,
+                    ),
+                    _buildBody(dataEditingParams),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(DataEditingState state, DataEditingNotifier notifier) {
-    return SingleChildScrollView(
-      controller: _horizontalHeadController,
-      scrollDirection: Axis.horizontal,
-      physics: const ClampingScrollPhysics(),
-      child: Row(
-        children: [
-          // Row number column header
-          Container(
-            width: state.columnWidths.first,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: Border(
-                right: BorderSide(color: Colors.grey.shade300),
-                bottom: BorderSide(color: Colors.grey.shade300, width: 2),
-              ),
-            ),
-            child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          ...state.columns.asMap().entries.map((entry) {
-            final i = entry.key;
-            final col = entry.value;
-            return Stack(
-              children: [
-                Container(
-                  width: state.columnWidths[i + 1],
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: state.selectedColumnIndex == i ? Colors.blue.withOpacity(0.2) : null,
-                    border: Border(
-                      right: BorderSide(color: Colors.grey.shade300),
-                      bottom: BorderSide(color: Colors.grey.shade300, width: 2),
-                    ),
-                  ),
-                  child: GestureDetector(
-                    onTap: () {
-                      notifier.selectColumn(i);
-                    },
-                    onLongPressStart: (LongPressStartDetails details) async {
-                      if (PlatformCheck.isMouseAvailable) {
-                        return;
-                      }
-
-                      final tapPosition = details.globalPosition;
-                      final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
-
-                      final selected = await showMenu(
-                        context: context,
-                        position: RelativeRect.fromRect(
-                          Rect.fromLTWH(
-                            tapPosition.dx,
-                            tapPosition.dy,
-                            0,
-                            0,
-                          ),
-                          Offset.zero & overlay.size,
-                        ),
-                        items: [
-                          PopupMenuItem(value: 'edit', child: Text('Modify')),
-                          // other menu items...
-                        ],
-                      );
-
-                      if (selected == 'edit') {
-                        _showModifyColumnDialog(state.columns[i], state, notifier);
-                      }
-                    },
-                    onSecondaryTapDown: (TapDownDetails details) async {
-                      if (!PlatformCheck.isMouseAvailable) {
-                        return;
-                      }
-
-                      final tapPosition = details.globalPosition;
-                      final screenSize = MediaQuery.of(context).size;
-
-                      final selected = await showMenu(
-                        context: context,
-                        position: RelativeRect.fromLTRB(
-                          tapPosition.dx,
-                          tapPosition.dy,
-                          screenSize.width - tapPosition.dx,
-                          screenSize.height - tapPosition.dy,
-                        ),
-                        items: [
-                          PopupMenuItem(value: 'edit', child: Text('Modify')),
-                        ],
-                      );
-
-                      if (selected == 'edit') {
-                        _showModifyColumnDialog(state.columns[i], state, notifier);
-                      }
-                    },
-                    child: Text(
-                      col['name']!,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: GestureDetector(
-                    onHorizontalDragUpdate: (details) {
-                      final newWidth = state.columnWidths[i + 1] + details.delta.dx;
-                      notifier.updateColumnWidth(i + 1, newWidth);
-                    },
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeLeftRight,
-                      child: Container(
-                        width: 8,
-                        color: Colors.transparent,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-          Container(
-            width: state.columnWidths.last,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: Colors.grey.shade300, width: 2),
-              ),
-            ),
-            child: const Text('Actions', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBody(DataEditingState state) {
-    final notifier = ref.read(dataEditingProvider(DataEditingParams(
-      server: widget.server,
-      database: widget.database,
-      table: widget.table,
-    )).notifier);
+  Widget _buildBody(DataEditingParams dataEditingParams) {
     return Expanded(
       child: SingleChildScrollView(
         scrollDirection: Axis.vertical,
@@ -392,135 +281,38 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           controller: _horizontalBodyController,
           scrollDirection: Axis.horizontal,
           physics: const ClampingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: state.rows.asMap().entries.map((entry) {
-              final index = entry.key;
-              final rowData = entry.value;
-              return _buildRow(rowData, index, state, notifier);
-            }).toList(),
+          child: Consumer(
+            builder: (context, ref, child) {
+              // rows.length만 watch하여 행 추가/삭제 시에만 리빌드
+              final rowsCount = ref.watch(
+                dataEditingProvider(dataEditingParams).select((state) => state.rows.length),
+              );
+              
+              // columns와 columnWidths도 watch (구조 변경 시에만 리빌드)
+              final columns = ref.watch(
+                dataEditingProvider(dataEditingParams).select((state) => state.columns),
+              );
+              final columnWidths = ref.watch(
+                dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
+              );
+              
+              return _TableBodyWidget(
+                rowsCount: rowsCount,
+                dataEditingParams: dataEditingParams,
+                columnWidths: columnWidths,
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  Widget _buildRow(Map<String, dynamic> rowData, int rowIndex, DataEditingState state, DataEditingNotifier notifier) {
-    final dataEditingParams = DataEditingParams(
-      server: widget.server,
-      database: widget.database,
-      table: widget.table,
-    );
 
-    return Consumer(
-      builder: (context, ref, child) {
-        // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독 (행 배경색용)
-        final isRowSelected = ref.watch(
-          dataEditingProvider(dataEditingParams).select(
-            (state) => state.selectedRowIndex == rowIndex,
-          ),
-        );
 
-        return Container(
-          decoration: BoxDecoration(
-            color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
-            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-          ),
-          child: Row(
-            children: [
-              // Row number cell
-              child!,
-              ...state.columns.asMap().entries.map((entry) {
-                final colIndex = entry.key;
-                final col = entry.value;
-                return _DataCellWidget(
-                  key: ValueKey('cell_${rowIndex}_${colIndex}'),
-                  rowIndex: rowIndex,
-                  colIndex: colIndex,
-                  columnName: col['name']!,
-                  dataEditingParams: dataEditingParams,
-                  columnWidth: state.columnWidths[colIndex + 1],
-                  onTap: () => notifier.selectCell(rowIndex, colIndex),
-                  onDoubleTap: () {
-                    notifier.selectCell(rowIndex, colIndex);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        // state에서 현재 행 데이터 가져오기
-                        final currentState = ref.read(dataEditingProvider(dataEditingParams));
-                        if (rowIndex < currentState.rows.length) {
-                          final currentRowData = currentState.rows[rowIndex];
-                          _showEditCellDialog(currentRowData, col['name']!, currentState, notifier);
-                        }
-                      }
-                    });
-                  },
-                );
-              }).toList(),
-              // Actions cell
-              Consumer(
-                builder: (context, ref, child) {
-                  // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독
-                  final isRowSelectedForActions = ref.watch(
-                    dataEditingProvider(dataEditingParams).select(
-                      (state) => state.selectedRowIndex == rowIndex,
-                    ),
-                  );
-                  return Container(
-                    width: state.columnWidths.last,
-                    decoration: BoxDecoration(
-                      color: isRowSelectedForActions ? Colors.blue.withOpacity(0.2) : null,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
-                          onPressed: () => _showEditRowDialog(rowData, state, notifier),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                          onPressed: () => _showDeleteConfirmDialog(rowData, state, notifier),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
-      child: GestureDetector(
-        onTap: () => notifier.selectRow(rowIndex),
-        child: Consumer(
-          builder: (context, ref, child) {
-            // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독
-            final isRowSelected = ref.watch(
-              dataEditingProvider(DataEditingParams(
-                server: widget.server,
-                database: widget.database,
-                table: widget.table,
-              )).select(
-                (state) => state.selectedRowIndex == rowIndex,
-              ),
-            );
-            return Container(
-              width: state.columnWidths.first,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
-                border: Border(right: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: Text('${rowIndex + 1}'),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  void _showAddColumnDialog(DataEditingState state, DataEditingNotifier notifier) {
+  void _showAddColumnDialog(DataEditingParams dataEditingParams) {
+    final state = ref.read(dataEditingProvider(dataEditingParams));
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
     final nameController = TextEditingController();
     String? selectedDataType;
     final List<Map<String, dynamic>> constraints = [];
@@ -697,7 +489,9 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     );
   }
 
-  void _showModifyColumnDialog(Map<String, dynamic> columnData, DataEditingState state, DataEditingNotifier notifier) {
+  void _showModifyColumnDialog(Map<String, dynamic> columnData, DataEditingParams dataEditingParams) {
+    final state = ref.read(dataEditingProvider(dataEditingParams));
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
     final nameController = TextEditingController(text: columnData['name']);
     final List<String> dataTypes = [
       'VARCHAR(255)',
@@ -952,7 +746,9 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     );
   }
 
-  void _showEditRowDialog(Map<String, dynamic>? rowData, DataEditingState state, DataEditingNotifier notifier) {
+  void _showEditRowDialog(Map<String, dynamic>? rowData, DataEditingParams dataEditingParams) {
+    final state = ref.read(dataEditingProvider(dataEditingParams));
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
     final isNewRow = rowData == null;
     final controllers = <String, TextEditingController>{};
     final pkColName = state.primaryKeyColumn;
@@ -962,7 +758,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       if (isNewRow && colName == pkColName && (col['type']!.contains('int') || col['type']!.contains('serial'))) {
         continue;
       }
-      final value = isNewRow ? '' : (rowData[colName]?.toString() ?? '');
+      final value = isNewRow ? '' : (rowData![colName]?.toString() ?? '');
       controllers[colName] = TextEditingController(text: value);
     }
 
@@ -985,7 +781,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dialogContext);
               final values = controllers.map<String, dynamic>((key, value) {
                 final text = value.text;
@@ -993,20 +789,61 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               });
 
               final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
-                server: widget.server,
-                database: widget.database,
+                server: dataEditingParams.server,
+                database: dataEditingParams.database,
               )));
-              if (isNewRow) {
-                _performOperation(() => dbHandler.addRow(widget.table, values), 'Row added successfully.');
-              } else {
-                if (pkColName == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Error: Cannot update without a primary key.'), backgroundColor: Colors.red));
-                  return;
+              
+              notifier.setLoading(true);
+              try {
+                if (isNewRow) {
+                  await dbHandler.addRow(dataEditingParams.table, values);
+                  await notifier.loadTableData();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Row added successfully.'), backgroundColor: Colors.green),
+                    );
+                  }
+                } else {
+                  if (pkColName == null) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Error: Cannot update without a primary key.'), backgroundColor: Colors.red));
+                    }
+                    return;
+                  }
+                  final pkValue = rowData![pkColName];
+                  await dbHandler.updateRow(dataEditingParams.table, values, pkColName, pkValue);
+                  
+                  // 행 인덱스 찾기
+                  int? rowIndex;
+                  for (int i = 0; i < state.rows.length; i++) {
+                    if (state.rows[i][pkColName] == pkValue) {
+                      rowIndex = i;
+                      break;
+                    }
+                  }
+                  
+                  // 특정 행만 업데이트 (부분 리빌드)
+                  if (rowIndex != null) {
+                    await notifier.updateRowData(rowIndex);
+                  } else {
+                    await notifier.loadTableData();
+                  }
+                  
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Row updated successfully.'), backgroundColor: Colors.green),
+                    );
+                  }
                 }
-                final pkValue = rowData[pkColName];
-                _performOperation(
-                    () => dbHandler.updateRow(widget.table, values, pkColName, pkValue), 'Row updated successfully.');
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              } finally {
+                notifier.setLoading(false);
               }
             },
             child: const Text('Save'),
@@ -1016,7 +853,10 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     );
   }
 
-  void _showDeleteConfirmDialog(Map<String, dynamic> row, DataEditingState state, DataEditingNotifier notifier) {
+  void _showDeleteConfirmDialog(Map<String, dynamic> row, DataEditingParams dataEditingParams) {
+    final state = ref.read(dataEditingProvider(dataEditingParams));
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+    
     if (state.primaryKeyColumn == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error: Cannot delete without a primary key.'), backgroundColor: Colors.red));
@@ -1032,16 +872,31 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dialogContext);
               final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
-                server: widget.server,
-                database: widget.database,
+                server: dataEditingParams.server,
+                database: dataEditingParams.database,
               )));
-              _performOperation(
-                () => dbHandler.deleteRow(widget.table, state.primaryKeyColumn!, pkValue),
-                'Row deleted successfully.',
-              );
+              
+              notifier.setLoading(true);
+              try {
+                await dbHandler.deleteRow(dataEditingParams.table, state.primaryKeyColumn!, pkValue);
+                await notifier.loadTableData();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Row deleted successfully.'), backgroundColor: Colors.green),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              } finally {
+                notifier.setLoading(false);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             child: const Text('Delete'),
@@ -1052,84 +907,446 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   }
 }
 
-/// 개별 셀 위젯 - 해당 셀의 값과 선택 상태만 구독하여 부분 리빌드 최적화
-class _DataCellWidget extends ConsumerWidget {
-  final int rowIndex;
-  final int colIndex;
-  final String columnName;
+/// 테이블 본문 위젯 - 행들을 렌더링
+class _TableBodyWidget extends StatelessWidget {
+  final int rowsCount;
   final DataEditingParams dataEditingParams;
-  final double columnWidth;
-  final VoidCallback onTap;
-  final VoidCallback onDoubleTap;
+  final List<double> columnWidths;
 
-  const _DataCellWidget({
+  const _TableBodyWidget({
+    super.key,
+    required this.rowsCount,
+    required this.dataEditingParams,
+    required this.columnWidths,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: List.generate(rowsCount, (index) {
+        return _RowWidget(
+          key: ValueKey('row_$index'),
+          rowIndex: index,
+          dataEditingParams: dataEditingParams,
+          columnWidths: columnWidths,
+        );
+      }),
+    );
+  }
+}
+
+/// 행 위젯 - 각 행을 독립적으로 관리하여 부분 리빌드 최적화
+class _RowWidget extends ConsumerWidget {
+  final int rowIndex;
+  final DataEditingParams dataEditingParams;
+  final List<double> columnWidths;
+
+  const _RowWidget({
     super.key,
     required this.rowIndex,
-    required this.colIndex,
-    required this.columnName,
     required this.dataEditingParams,
-    required this.columnWidth,
-    required this.onTap,
-    required this.onDoubleTap,
+    required this.columnWidths,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ref.watch에 selector를 사용하여 특정 셀 값만 선택적으로 구독 (값이 변경될 때만 리빌드)
-    final cellValue = ref.watch(
-      dataEditingProvider(dataEditingParams).select(
-        (state) {
-          if (rowIndex >= state.rows.length) return null;
-          if (colIndex >= state.columns.length) return null;
-          final colName = state.columns[colIndex]['name']!;
-          final row = state.rows[rowIndex];
-          return row[colName];
-        },
-      ),
+    // columns만 watch (컬럼 구조 변경 시에만 리빌드)
+    final columns = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) => state.columns),
     );
-
-    // ref.watch에 selector를 사용하여 셀 선택 상태만 선택적으로 구독
-    final isCellSelected = ref.watch(
-      dataEditingProvider(dataEditingParams).select(
-        (state) => state.selectedCell != null &&
-            state.selectedCell!['rowIndex'] == rowIndex &&
-            state.selectedCell!['colIndex'] == colIndex,
-      ),
-    );
-
-    // ref.watch에 selector를 사용하여 열 선택 상태만 선택적으로 구독
-    final isColSelected = ref.watch(
-      dataEditingProvider(dataEditingParams).select(
-        (state) => state.selectedColumnIndex == colIndex,
-      ),
-    );
-
-    // ref.watch에 selector를 사용하여 행 선택 상태만 선택적으로 구독
+    
+    // 행 선택 상태만 watch
     final isRowSelected = ref.watch(
       dataEditingProvider(dataEditingParams).select(
         (state) => state.selectedRowIndex == rowIndex,
       ),
     );
 
-    Color? cellColor;
-    if (isCellSelected) {
-      cellColor = Colors.green.withOpacity(0.4);
-    } else if (isRowSelected || isColSelected) {
-      cellColor = Colors.blue.withOpacity(0.2);
-    }
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
 
-    return GestureDetector(
-      onTap: onTap,
-      onDoubleTap: onDoubleTap,
-      child: Container(
-        width: columnWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: cellColor,
-          border: Border(right: BorderSide(color: Colors.grey.shade200)),
-        ),
-        child: Text(cellValue?.toString() ?? 'NULL'),
+    return Container(
+      decoration: BoxDecoration(
+        color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          // Row number cell
+          _RowNumberCellWidget(
+            rowIndex: rowIndex,
+            dataEditingParams: dataEditingParams,
+            columnWidth: columnWidths.first,
+          ),
+          // Data cells - 독립적인 EditableDataCell 위젯 사용
+          ...columns.asMap().entries.map((entry) {
+            final colIndex = entry.key;
+            final col = entry.value;
+            return EditableDataCell(
+              key: ValueKey('cell_${rowIndex}_${colIndex}'),
+              rowIndex: rowIndex,
+              colIndex: colIndex,
+              columnName: col['name']!,
+              dataEditingParams: dataEditingParams,
+              columnWidth: columnWidths[colIndex + 1],
+            );
+          }).toList(),
+          // Actions cell
+          _RowActionsCellWidget(
+            rowIndex: rowIndex,
+            dataEditingParams: dataEditingParams,
+            columnWidth: columnWidths.last,
+          ),
+        ],
       ),
     );
   }
 }
+
+/// AppBar 메뉴 위젯 - selectedCell 상태만 구독
+class _AppBarMenu extends ConsumerWidget {
+  final DataEditingParams dataEditingParams;
+
+  const _AppBarMenu({
+    required this.dataEditingParams,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // selectedCell 상태만 watch
+    final selectedCell = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) => state.selectedCell),
+    );
+
+    return PopupMenuButton<String>(
+      onSelected: (value) {
+        final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+        if (screen == null) return;
+        
+        if (value == 'copy') {
+          screen._copyCell();
+        } else if (value == 'paste') {
+          screen._pasteCell();
+        }
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'copy',
+          enabled: selectedCell != null,
+          child: const Text('Copy Cell'),
+        ),
+        PopupMenuItem<String>(
+          value: 'paste',
+          enabled: selectedCell != null,
+          child: const Text('Paste Cell'),
+        ),
+      ],
+      icon: const Icon(Icons.more_vert),
+    );
+  }
+}
+
+/// 테이블 헤더 위젯 - 필요한 상태만 선택적으로 구독
+class _TableHeader extends ConsumerWidget {
+  final DataEditingParams dataEditingParams;
+  final ScrollController horizontalHeadController;
+
+  const _TableHeader({
+    required this.dataEditingParams,
+    required this.horizontalHeadController,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // columns와 columnWidths만 watch
+    final columns = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) => state.columns),
+    );
+    final columnWidths = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
+    );
+    
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+
+    return SingleChildScrollView(
+      controller: horizontalHeadController,
+      scrollDirection: Axis.horizontal,
+      physics: const ClampingScrollPhysics(),
+      child: Row(
+        children: [
+          // Row number column header
+          Container(
+            width: columnWidths.first,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(
+                right: BorderSide(color: Colors.grey.shade300),
+                bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+              ),
+            ),
+            child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          ...columns.asMap().entries.map((entry) {
+            final i = entry.key;
+            final col = entry.value;
+            return _HeaderColumnCell(
+              columnIndex: i,
+              column: col,
+              columnWidth: columnWidths[i + 1],
+              dataEditingParams: dataEditingParams,
+              onModifyColumn: (column) {
+                final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+                if (screen != null) {
+                  screen._showModifyColumnDialog(column, dataEditingParams);
+                }
+              },
+            );
+          }).toList(),
+          Container(
+            width: columnWidths.last,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+              ),
+            ),
+            child: const Text('Actions', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 헤더 열 셀 위젯 - 해당 열의 선택 상태만 구독
+class _HeaderColumnCell extends ConsumerWidget {
+  final int columnIndex;
+  final Map<String, String> column;
+  final double columnWidth;
+  final DataEditingParams dataEditingParams;
+  final void Function(Map<String, String>) onModifyColumn;
+
+  const _HeaderColumnCell({
+    required this.columnIndex,
+    required this.column,
+    required this.columnWidth,
+    required this.dataEditingParams,
+    required this.onModifyColumn,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 해당 열의 선택 상태만 watch
+    final isSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedColumnIndex == columnIndex,
+      ),
+    );
+    
+    // columnWidths만 watch (리사이즈 시 리빌드)
+    final columnWidths = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
+    );
+
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+
+    return Stack(
+      children: [
+        Container(
+          width: columnWidths[columnIndex + 1],
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue.withOpacity(0.2) : null,
+            border: Border(
+              right: BorderSide(color: Colors.grey.shade300),
+              bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+            ),
+          ),
+          child: GestureDetector(
+            onTap: () => notifier.selectColumn(columnIndex),
+            onLongPressStart: (LongPressStartDetails details) async {
+              if (PlatformCheck.isMouseAvailable) {
+                return;
+              }
+
+              final tapPosition = details.globalPosition;
+              final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+
+              final selected = await showMenu(
+                context: context,
+                position: RelativeRect.fromRect(
+                  Rect.fromLTWH(
+                    tapPosition.dx,
+                    tapPosition.dy,
+                    0,
+                    0,
+                  ),
+                  Offset.zero & overlay.size,
+                ),
+                items: [
+                  PopupMenuItem(value: 'edit', child: Text('Modify')),
+                ],
+              );
+
+              if (selected == 'edit') {
+                onModifyColumn(column);
+              }
+            },
+            onSecondaryTapDown: (TapDownDetails details) async {
+              if (!PlatformCheck.isMouseAvailable) {
+                return;
+              }
+
+              final tapPosition = details.globalPosition;
+              final screenSize = MediaQuery.of(context).size;
+
+              final selected = await showMenu(
+                context: context,
+                position: RelativeRect.fromLTRB(
+                  tapPosition.dx,
+                  tapPosition.dy,
+                  screenSize.width - tapPosition.dx,
+                  screenSize.height - tapPosition.dy,
+                ),
+                items: [
+                  PopupMenuItem(value: 'edit', child: Text('Modify')),
+                ],
+              );
+
+              if (selected == 'edit') {
+                onModifyColumn(column);
+              }
+            },
+            child: Text(
+              column['name']!,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: GestureDetector(
+            onHorizontalDragUpdate: (details) {
+              final newWidth = columnWidths[columnIndex + 1] + details.delta.dx;
+              notifier.updateColumnWidth(columnIndex + 1, newWidth);
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.resizeLeftRight,
+              child: Container(
+                width: 8,
+                color: Colors.transparent,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 행 번호 셀 위젯 - 행 선택 상태만 구독하여 부분 리빌드 최적화
+class _RowNumberCellWidget extends ConsumerWidget {
+  final int rowIndex;
+  final DataEditingParams dataEditingParams;
+  final double columnWidth;
+
+  const _RowNumberCellWidget({
+    super.key,
+    required this.rowIndex,
+    required this.dataEditingParams,
+    required this.columnWidth,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 행 선택 상태만 watch
+    final isRowSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedRowIndex == rowIndex,
+      ),
+    );
+
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+
+    return GestureDetector(
+      onTap: () => notifier.selectRow(rowIndex),
+      child: Container(
+        width: columnWidth,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
+          border: Border(right: BorderSide(color: Colors.grey.shade200)),
+        ),
+        child: Text('${rowIndex + 1}'),
+      ),
+    );
+  }
+}
+
+/// 행 액션 셀 위젯 - 행 선택 상태와 행 데이터만 구독
+class _RowActionsCellWidget extends ConsumerWidget {
+  final int rowIndex;
+  final DataEditingParams dataEditingParams;
+  final double columnWidth;
+
+  const _RowActionsCellWidget({
+    super.key,
+    required this.rowIndex,
+    required this.dataEditingParams,
+    required this.columnWidth,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 행 선택 상태만 watch
+    final isRowSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedRowIndex == rowIndex,
+      ),
+    );
+
+    // 행 데이터 가져오기 (수정/삭제 다이얼로그용)
+    final state = ref.read(dataEditingProvider(dataEditingParams));
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+    
+    if (rowIndex >= state.rows.length) {
+      return Container(width: columnWidth);
+    }
+
+    final rowData = state.rows[rowIndex];
+
+    return Container(
+      width: columnWidth,
+      decoration: BoxDecoration(
+        color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
+            onPressed: () {
+              final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+              if (screen != null) {
+                screen._showEditRowDialog(rowData, dataEditingParams);
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+            onPressed: () {
+              final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+              if (screen != null) {
+                screen._showDeleteConfirmDialog(rowData, dataEditingParams);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+

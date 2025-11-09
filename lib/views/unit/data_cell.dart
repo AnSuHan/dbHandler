@@ -1,0 +1,200 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../stateManagement/setState/data_editing_riverpod.dart';
+import '../../db/database_handler.dart';
+
+/// 개별 데이터 셀 위젯
+/// Riverpod의 select를 사용하여 해당 셀의 값만 정밀하게 구독
+/// 다른 셀이 변경되어도 이 셀은 리빌드되지 않습니다.
+class EditableDataCell extends ConsumerWidget {
+  final int rowIndex;
+  final int colIndex;
+  final String columnName;
+  final DataEditingParams dataEditingParams;
+  final double columnWidth;
+
+  const EditableDataCell({
+    super.key,
+    required this.rowIndex,
+    required this.colIndex,
+    required this.columnName,
+    required this.dataEditingParams,
+    required this.columnWidth,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Riverpod의 select를 사용하여 특정 셀 값만 선택적으로 구독
+    // 이 셀의 값이 변경될 때만 리빌드됩니다 (ValueNotifier와 유사한 동작)
+    final cellValue = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) {
+          if (rowIndex >= state.rows.length) return null;
+          if (colIndex >= state.columns.length) return null;
+          final colName = state.columns[colIndex]['name']!;
+          final row = state.rows[rowIndex];
+          return row[colName];
+        },
+      ),
+    );
+
+    // 셀 선택 상태만 선택적으로 구독
+    final isCellSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedCell != null &&
+            state.selectedCell!['rowIndex'] == rowIndex &&
+            state.selectedCell!['colIndex'] == colIndex,
+      ),
+    );
+
+    // 열 선택 상태만 선택적으로 구독
+    final isColSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedColumnIndex == colIndex,
+      ),
+    );
+
+    // 행 선택 상태만 선택적으로 구독
+    final isRowSelected = ref.watch(
+      dataEditingProvider(dataEditingParams).select(
+        (state) => state.selectedRowIndex == rowIndex,
+      ),
+    );
+
+    // notifier는 read만 사용 (리빌드 트리거하지 않음)
+    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+
+    // 셀 배경색 결정
+    Color? cellColor;
+    if (isCellSelected) {
+      cellColor = Colors.green.withOpacity(0.4);
+    } else if (isRowSelected || isColSelected) {
+      cellColor = Colors.blue.withOpacity(0.2);
+    }
+
+    return GestureDetector(
+      onTap: () => notifier.selectCell(rowIndex, colIndex),
+      onDoubleTap: () {
+        notifier.selectCell(rowIndex, colIndex);
+        // 다음 프레임에서 다이얼로그 표시 (상태 업데이트 후)
+        Future.microtask(() {
+          final state = ref.read(dataEditingProvider(dataEditingParams));
+          if (rowIndex < state.rows.length) {
+            final currentRowData = state.rows[rowIndex];
+            _showEditCellDialog(context, ref, currentRowData, columnName, state, notifier, colIndex);
+          }
+        });
+      },
+      child: Container(
+        width: columnWidth,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: cellColor,
+          border: Border(right: BorderSide(color: Colors.grey.shade200)),
+        ),
+        child: Text(
+          cellValue?.toString() ?? 'NULL',
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+
+  /// 셀 편집 다이얼로그 표시
+  void _showEditCellDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> rowData,
+    String columnName,
+    DataEditingState state,
+    DataEditingNotifier notifier,
+    int targetColIndex,
+  ) async {
+    if (state.primaryKeyColumn == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Error: Cannot edit cell without a primary key.'),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    final pkValue = rowData[state.primaryKeyColumn!];
+    final currentValue = rowData[columnName];
+    final controller = TextEditingController(text: currentValue?.toString() ?? '');
+
+    // 행 인덱스 찾기 (부분 리빌드를 위해 필요)
+    int? targetRowIndex;
+    for (int i = 0; i < state.rows.length; i++) {
+      if (state.rows[i][state.primaryKeyColumn!] == pkValue) {
+        targetRowIndex = i;
+        break;
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Edit Cell: $columnName'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              final newValue = controller.text.trim();
+              final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
+                server: dataEditingParams.server,
+                database: dataEditingParams.database,
+              )));
+
+              try {
+                // DB 업데이트
+                await dbHandler.updateCell(
+                  dataEditingParams.table,
+                  columnName,
+                  newValue.isEmpty ? null : newValue,
+                  state.primaryKeyColumn!,
+                  pkValue,
+                );
+                
+                // 셀 값만 업데이트 (최소 단위 리빌드)
+                if (targetRowIndex != null && targetColIndex < state.columns.length) {
+                  await notifier.updateCellValue(
+                    targetRowIndex,
+                    targetColIndex,
+                    columnName,
+                    newValue.isEmpty ? null : newValue,
+                  );
+                } else {
+                  // 행을 찾을 수 없으면 전체 데이터 로드
+                  await notifier.loadTableData();
+                }
+                
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Cell updated successfully.'), backgroundColor: Colors.green),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+}

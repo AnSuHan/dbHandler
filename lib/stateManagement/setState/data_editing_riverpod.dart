@@ -18,6 +18,9 @@ class DataEditingState {
   final int? selectedColumnIndex;
   final int? selectedRowIndex;
   final Map<String, int>? selectedCell; // { 'rowIndex': int, 'colIndex': int }
+  
+  // 버전 관리를 위한 맵 추가: 각 셀의 변경을 추적
+  final Map<String, int> cellVersions; // key: "row_col", value: version
 
   const DataEditingState({
     this.isLoading = true,
@@ -30,6 +33,7 @@ class DataEditingState {
     this.selectedColumnIndex,
     this.selectedRowIndex,
     this.selectedCell,
+    this.cellVersions = const {},
   });
 
   DataEditingState copyWith({
@@ -43,6 +47,7 @@ class DataEditingState {
     int? selectedColumnIndex,
     int? selectedRowIndex,
     Map<String, int>? selectedCell,
+    Map<String, int>? cellVersions,
   }) {
     return DataEditingState(
       isLoading: isLoading ?? this.isLoading,
@@ -55,6 +60,7 @@ class DataEditingState {
       selectedColumnIndex: selectedColumnIndex,
       selectedRowIndex: selectedRowIndex,
       selectedCell: selectedCell,
+      cellVersions: cellVersions ?? this.cellVersions,
     );
   }
 }
@@ -127,6 +133,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         columnWidths: initialWidths,
         isLoading: false,
         error: null,
+        cellVersions: {},
       );
     } catch (e) {
       state = state.copyWith(
@@ -177,21 +184,74 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     state = state.copyWith(columnWidths: newWidths);
   }
 
+  /// 특정 셀만 업데이트 (최소 단위 리빌드)
+  Future<void> updateCellValue(int rowIndex, int colIndex, String columnName, dynamic newValue) async {
+    if (rowIndex >= state.rows.length || colIndex >= state.columns.length) {
+      return;
+    }
+
+    // rows 리스트를 새로 복사하되, 해당 행의 Map만 새로 생성
+    final newRows = List<Map<String, dynamic>>.from(state.rows);
+    final updatedRow = Map<String, dynamic>.from(newRows[rowIndex]);
+    updatedRow[columnName] = newValue;
+    newRows[rowIndex] = updatedRow;
+
+    // 셀 버전 업데이트 (해당 셀만 리빌드 트리거)
+    final cellKey = '${rowIndex}_$colIndex';
+    final newCellVersions = Map<String, int>.from(state.cellVersions);
+    newCellVersions[cellKey] = (newCellVersions[cellKey] ?? 0) + 1;
+
+    state = state.copyWith(
+      rows: newRows,
+      cellVersions: newCellVersions,
+      isLoading: false,
+    );
+  }
+
   /// 특정 행만 업데이트 (부분 리빌드를 위한 최적화)
-  /// ref.watch의 selector를 통해 특정 셀만 리빌드되므로, 전체 데이터를 다시 로드해도
-  /// 해당 셀만 리빌드됩니다.
   Future<void> updateRowData(int rowIndex) async {
     try {
-      // 전체 데이터를 다시 로드하지만, ref.watch의 selector를 통해
-      // 특정 셀만 리빌드되므로 성능상 문제없음
+      // 해당 행의 데이터만 가져오기 (Primary Key를 사용하여 특정 행 조회)
+      if (state.primaryKeyColumn == null || rowIndex >= state.rows.length) {
+        // Primary Key가 없거나 행 인덱스가 범위를 벗어나면 전체 데이터 다시 로드
+        await loadTableData();
+        return;
+      }
+
+      final pkValue = state.rows[rowIndex][state.primaryKeyColumn];
       final dataRows = await _dbHandler.getData(_table);
-      if (rowIndex < dataRows.length && rowIndex < state.rows.length) {
+      
+      // 업데이트된 행 찾기
+      int? updatedRowIndex;
+      for (int i = 0; i < dataRows.length; i++) {
+        if (dataRows[i][state.primaryKeyColumn] == pkValue) {
+          updatedRowIndex = i;
+          break;
+        }
+      }
+
+      if (updatedRowIndex != null && updatedRowIndex < state.rows.length) {
         // 해당 행만 업데이트
         final newRows = List<Map<String, dynamic>>.from(state.rows);
-        newRows[rowIndex] = dataRows[rowIndex];
-        state = state.copyWith(rows: newRows, isLoading: false);
+        newRows[updatedRowIndex] = dataRows[updatedRowIndex];
+        
+        // 해당 행의 모든 셀 버전 업데이트
+        final newCellVersions = Map<String, int>.from(state.cellVersions);
+        for (int colIndex = 0; colIndex < state.columns.length; colIndex++) {
+          final cellKey = '${updatedRowIndex}_$colIndex';
+          newCellVersions[cellKey] = (newCellVersions[cellKey] ?? 0) + 1;
+        }
+        
+        state = state.copyWith(
+          rows: newRows,
+          cellVersions: newCellVersions,
+          isLoading: false,
+        );
+      } else if (updatedRowIndex != null) {
+        // 새 행이 추가된 경우 전체 데이터 다시 로드
+        await loadTableData();
       } else {
-        // 행 인덱스가 범위를 벗어나면 전체 데이터 다시 로드
+        // 행이 삭제된 경우 전체 데이터 다시 로드
         await loadTableData();
       }
     } catch (e) {
@@ -199,13 +259,14 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       await loadTableData();
     }
   }
+  
 
   Future<void> performOperation(
     Future<void> Function() operation, {
     int? updatedRowIndex,
   }) async {
-    state = state.copyWith(isLoading: true);
-
+    // isLoading은 설정하지 않음 (불필요한 전체 리빌드 방지)
+    
     try {
       await operation();
     } catch (e) {
@@ -252,9 +313,6 @@ final dataEditingProvider = StateNotifierProvider.family<DataEditingNotifier, Da
   },
 );
 
-// Provider는 제거하고 위젯에서 직접 ref.select를 사용합니다.
-// 이렇게 하면 특정 셀 값만 선택적으로 구독하여 부분 리빌드가 가능합니다.
-
 class DataEditingParams {
   final Map<String, dynamic> server;
   final String database;
@@ -292,4 +350,3 @@ class DataEditingParams {
     return hash;
   }
 }
-
