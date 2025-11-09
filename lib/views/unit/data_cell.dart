@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../stateManagement/setState/data_editing_riverpod.dart';
 import '../../db/database_handler.dart';
@@ -38,12 +40,10 @@ class EditableDataCell extends ConsumerWidget {
       ),
     );
 
-    // 셀 선택 상태만 선택적으로 구독
+    // 셀 선택 상태만 선택적으로 구독 (다중 셀 선택 범위 포함)
     final isCellSelected = ref.watch(
       dataEditingProvider(dataEditingParams).select(
-        (state) => state.selectedCell != null &&
-            state.selectedCell!['rowIndex'] == rowIndex &&
-            state.selectedCell!['colIndex'] == colIndex,
+        (state) => state.isCellInRange(rowIndex, colIndex),
       ),
     );
 
@@ -72,29 +72,52 @@ class EditableDataCell extends ConsumerWidget {
       cellColor = Colors.blue.withOpacity(0.2);
     }
 
-    return GestureDetector(
-      onTap: () => notifier.selectCell(rowIndex, colIndex),
-      onDoubleTap: () {
-        notifier.selectCell(rowIndex, colIndex);
-        // 다음 프레임에서 다이얼로그 표시 (상태 업데이트 후)
-        Future.microtask(() {
-          final state = ref.read(dataEditingProvider(dataEditingParams));
-          if (rowIndex < state.rows.length) {
-            final currentRowData = state.rows[rowIndex];
-            _showEditCellDialog(context, ref, currentRowData, columnName, state, notifier, colIndex);
-          }
-        });
+    // 드래그 상태 추적을 위한 전역 변수 대신, 각 셀에서 마우스 이벤트 처리
+    return Listener(
+      onPointerDown: (event) {
+        // 마우스 왼쪽 버튼 클릭 시 선택 시작
+        if (event.kind == PointerDeviceKind.mouse) {
+          notifier.startCellSelection(rowIndex, colIndex);
+        }
       },
-      child: Container(
-        width: columnWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: cellColor,
-          border: Border(right: BorderSide(color: Colors.grey.shade200)),
-        ),
-        child: Text(
-          cellValue?.toString() ?? 'NULL',
-          overflow: TextOverflow.ellipsis,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => notifier.selectCell(rowIndex, colIndex),
+        onDoubleTap: () {
+          notifier.selectCell(rowIndex, colIndex);
+          // 다음 프레임에서 다이얼로그 표시 (상태 업데이트 후)
+          Future.microtask(() {
+            final state = ref.read(dataEditingProvider(dataEditingParams));
+            if (rowIndex < state.rows.length) {
+              final currentRowData = state.rows[rowIndex];
+              _showEditCellDialog(context, ref, currentRowData, columnName, state, notifier, colIndex);
+            }
+          });
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (event) {
+            // 마우스가 셀 위에 들어올 때, 버튼이 눌려있으면 범위 선택 업데이트
+            if (event.buttons == kPrimaryButton) {
+              final state = ref.read(dataEditingProvider(dataEditingParams));
+              // 선택이 시작되었으면 범위 업데이트
+              if (state.selectedCellRange != null || state.selectedCell != null) {
+                notifier.updateCellSelection(rowIndex, colIndex);
+              }
+            }
+          },
+          child: Container(
+            width: columnWidth,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: cellColor,
+              border: Border(right: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Text(
+              cellValue?.toString() ?? 'NULL',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ),
       ),
     );

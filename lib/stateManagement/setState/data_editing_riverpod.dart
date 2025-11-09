@@ -19,6 +19,9 @@ class DataEditingState {
   final int? selectedRowIndex;
   final Map<String, int>? selectedCell; // { 'rowIndex': int, 'colIndex': int }
   
+  // 다중 셀 선택 범위: { 'startRow': int, 'startCol': int, 'endRow': int, 'endCol': int }
+  final Map<String, int>? selectedCellRange;
+  
   // 버전 관리를 위한 맵 추가: 각 셀의 변경을 추적
   final Map<String, int> cellVersions; // key: "row_col", value: version
 
@@ -33,6 +36,7 @@ class DataEditingState {
     this.selectedColumnIndex,
     this.selectedRowIndex,
     this.selectedCell,
+    this.selectedCellRange,
     this.cellVersions = const {},
   });
 
@@ -47,6 +51,7 @@ class DataEditingState {
     int? selectedColumnIndex,
     int? selectedRowIndex,
     Map<String, int>? selectedCell,
+    Map<String, int>? selectedCellRange,
     Map<String, int>? cellVersions,
   }) {
     return DataEditingState(
@@ -60,8 +65,78 @@ class DataEditingState {
       selectedColumnIndex: selectedColumnIndex,
       selectedRowIndex: selectedRowIndex,
       selectedCell: selectedCell,
+      selectedCellRange: selectedCellRange,
       cellVersions: cellVersions ?? this.cellVersions,
     );
+  }
+  
+  /// 선택된 범위 내의 모든 셀 키를 반환 (row_col 형식)
+  Set<String> getSelectedCellKeys() {
+    if (selectedCellRange == null) {
+      if (selectedCell != null) {
+        return {'${selectedCell!['rowIndex']}_${selectedCell!['colIndex']}'};
+      }
+      return {};
+    }
+    
+    final startRow = selectedCellRange!['startRow']!;
+    final startCol = selectedCellRange!['startCol']!;
+    final endRow = selectedCellRange!['endRow']!;
+    final endCol = selectedCellRange!['endCol']!;
+    
+    final minRow = min(startRow, endRow);
+    final maxRow = max(startRow, endRow);
+    final minCol = min(startCol, endCol);
+    final maxCol = max(startCol, endCol);
+    
+    final keys = <String>{};
+    for (int row = minRow; row <= maxRow; row++) {
+      for (int col = minCol; col <= maxCol; col++) {
+        keys.add('${row}_${col}');
+      }
+    }
+    return keys;
+  }
+  
+  /// 특정 셀이 선택 범위 내에 있는지 확인
+  bool isCellInRange(int rowIndex, int colIndex) {
+    if (selectedCellRange == null) {
+      if (selectedCell != null) {
+        return selectedCell!['rowIndex'] == rowIndex && selectedCell!['colIndex'] == colIndex;
+      }
+      return false;
+    }
+    
+    final startRow = selectedCellRange!['startRow']!;
+    final startCol = selectedCellRange!['startCol']!;
+    final endRow = selectedCellRange!['endRow']!;
+    final endCol = selectedCellRange!['endCol']!;
+    
+    final minRow = min(startRow, endRow);
+    final maxRow = max(startRow, endRow);
+    final minCol = min(startCol, endCol);
+    final maxCol = max(startCol, endCol);
+    
+    return rowIndex >= minRow && rowIndex <= maxRow && colIndex >= minCol && colIndex <= maxCol;
+  }
+  
+  /// 선택된 셀 중 가장 좌상단 셀의 위치를 반환 (붙여넣기 시작 위치)
+  Map<String, int>? getTopLeftSelectedCell() {
+    if (selectedCellRange == null) {
+      // 범위 선택이 없으면 selectedCell 반환
+      return selectedCell;
+    }
+    
+    // 범위 선택이 있으면 가장 좌상단 셀 계산
+    final startRow = selectedCellRange!['startRow']!;
+    final startCol = selectedCellRange!['startCol']!;
+    final endRow = selectedCellRange!['endRow']!;
+    final endCol = selectedCellRange!['endCol']!;
+    
+    final minRow = min(startRow, endRow);
+    final minCol = min(startCol, endCol);
+    
+    return {'rowIndex': minRow, 'colIndex': minCol};
   }
 }
 
@@ -152,6 +227,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       selectedColumnIndex: state.selectedColumnIndex == index ? null : index,
       selectedRowIndex: null,
       selectedCell: null,
+      selectedCellRange: null,
     );
   }
 
@@ -160,22 +236,63 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       selectedRowIndex: state.selectedRowIndex == index ? null : index,
       selectedColumnIndex: null,
       selectedCell: null,
+      selectedCellRange: null,
     );
   }
 
   void selectCell(int rowIndex, int colIndex) {
-    final currentCell = state.selectedCell;
-    if (currentCell != null &&
-        currentCell['rowIndex'] == rowIndex &&
-        currentCell['colIndex'] == colIndex) {
-      state = state.copyWith(selectedCell: null);
-    } else {
-      state = state.copyWith(
-        selectedCell: {'rowIndex': rowIndex, 'colIndex': colIndex},
-        selectedRowIndex: null,
-        selectedColumnIndex: null,
-      );
+    // 셀 클릭 시 선택 해제하지 않고 항상 선택 상태 유지
+    state = state.copyWith(
+      selectedCell: {'rowIndex': rowIndex, 'colIndex': colIndex},
+      selectedCellRange: {
+        'startRow': rowIndex,
+        'startCol': colIndex,
+        'endRow': rowIndex,
+        'endCol': colIndex,
+      },
+      selectedRowIndex: null,
+      selectedColumnIndex: null,
+    );
+  }
+  
+  /// 드래그 시작: 시작 셀 설정
+  void startCellSelection(int rowIndex, int colIndex) {
+    state = state.copyWith(
+      selectedCell: {'rowIndex': rowIndex, 'colIndex': colIndex},
+      selectedCellRange: {
+        'startRow': rowIndex,
+        'startCol': colIndex,
+        'endRow': rowIndex,
+        'endCol': colIndex,
+      },
+      selectedRowIndex: null,
+      selectedColumnIndex: null,
+    );
+  }
+  
+  /// 드래그 중: 끝 셀 업데이트
+  void updateCellSelection(int rowIndex, int colIndex) {
+    if (state.selectedCellRange == null) {
+      startCellSelection(rowIndex, colIndex);
+      return;
     }
+    
+    state = state.copyWith(
+      selectedCellRange: {
+        'startRow': state.selectedCellRange!['startRow']!,
+        'startCol': state.selectedCellRange!['startCol']!,
+        'endRow': rowIndex,
+        'endCol': colIndex,
+      },
+    );
+  }
+  
+  /// 선택 해제
+  void clearSelection() {
+    state = state.copyWith(
+      selectedCell: null,
+      selectedCellRange: null,
+    );
   }
 
   void updateColumnWidth(int index, double newWidth) {
@@ -197,7 +314,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     newRows[rowIndex] = updatedRow;
 
     // 셀 버전 업데이트 (해당 셀만 리빌드 트리거)
-    final cellKey = '${rowIndex}_$colIndex';
+    final cellKey = '${rowIndex}_${colIndex}';
     final newCellVersions = Map<String, int>.from(state.cellVersions);
     newCellVersions[cellKey] = (newCellVersions[cellKey] ?? 0) + 1;
 
@@ -205,6 +322,85 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       rows: newRows,
       cellVersions: newCellVersions,
       isLoading: false,
+    );
+  }
+  
+  /// 여러 셀을 한 번에 업데이트 (배치 업데이트로 최적화)
+  /// 각 셀의 변경사항을 모아서 한 번만 state를 업데이트하여 리빌드를 최소화
+  /// 같은 행의 여러 셀을 효율적으로 처리하여 불필요한 행 복사를 방지
+  /// 실제로 변경된 셀이 있는 경우에만 state를 업데이트
+  Future<void> updateMultipleCellValues(List<Map<String, dynamic>> cellUpdates) async {
+    if (cellUpdates.isEmpty) return;
+    
+    final newCellVersions = Map<String, int>.from(state.cellVersions);
+    final changedRows = <int, Map<String, dynamic>>{}; // 변경된 행들: rowIndex -> updatedRow
+    
+    // 행별로 그룹화하여 같은 행의 여러 셀을 한 번에 처리
+    final updatesByRow = <int, List<Map<String, dynamic>>>{};
+    for (final update in cellUpdates) {
+      final rowIndex = update['rowIndex'] as int;
+      if (rowIndex >= state.rows.length) continue;
+      
+      updatesByRow.putIfAbsent(rowIndex, () => []).add(update);
+    }
+    
+    // 각 행에 대해 업데이트 적용 및 변경 여부 확인
+    for (final entry in updatesByRow.entries) {
+      final rowIndex = entry.key;
+      final updates = entry.value;
+      final originalRow = state.rows[rowIndex];
+      final updatedRow = Map<String, dynamic>.from(originalRow);
+      bool rowChanged = false;
+      
+      for (final update in updates) {
+        final colIndex = update['colIndex'] as int;
+        final columnName = update['columnName'] as String;
+        final newValue = update['newValue'];
+        
+        if (colIndex >= state.columns.length) continue;
+        
+        // 기존 값과 비교하여 실제로 변경된 경우에만 업데이트
+        final oldValue = originalRow[columnName];
+        if (oldValue != newValue) {
+          // 셀 값 업데이트
+          updatedRow[columnName] = newValue;
+          rowChanged = true;
+          
+          // 셀 버전 업데이트 (해당 셀만 리빌드 트리거)
+          final cellKey = '${rowIndex}_${colIndex}';
+          newCellVersions[cellKey] = (newCellVersions[cellKey] ?? 0) + 1;
+        }
+      }
+      
+      // 행이 실제로 변경된 경우에만 변경된 행 저장
+      if (rowChanged) {
+        changedRows[rowIndex] = updatedRow;
+      }
+    }
+    
+    // 변경된 셀이 하나도 없으면 state 업데이트하지 않음 (중요: setState 최소화)
+    if (changedRows.isEmpty) {
+      return;
+    }
+    
+    // 변경된 행만 새로 생성하고, 변경되지 않은 행은 기존 참조 유지
+    // 이렇게 하면 변경되지 않은 행의 셀들은 리빌드되지 않음
+    final newRows = <Map<String, dynamic>>[];
+    for (int i = 0; i < state.rows.length; i++) {
+      if (changedRows.containsKey(i)) {
+        // 변경된 행은 새로 생성된 Map 사용
+        newRows.add(changedRows[i]!);
+      } else {
+        // 변경되지 않은 행은 기존 참조 유지 (리빌드 방지)
+        newRows.add(state.rows[i]);
+      }
+    }
+    
+    // 변경사항이 있는 경우에만 state 업데이트 (한 번만 setState 호출)
+    // Riverpod의 select를 사용하면 변경된 셀만 리빌드됨
+    state = state.copyWith(
+      rows: newRows,
+      cellVersions: newCellVersions,
     );
   }
 

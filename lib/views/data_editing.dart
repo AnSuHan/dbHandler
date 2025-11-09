@@ -100,16 +100,60 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     );
     final state = ref.read(dataEditingProvider(dataEditingParams));
     
-    if (state.selectedCell == null) return;
+    final selectedKeys = state.getSelectedCellKeys();
+    if (selectedKeys.isEmpty) return;
 
-    final rowIndex = state.selectedCell!['rowIndex']!;
-    final colIndex = state.selectedCell!['colIndex']!;
-    final value = state.rows[rowIndex][state.columns[colIndex]['name']!];
+    // 선택된 셀들의 범위 계산 (사각형 범위)
+    int? minRow, maxRow, minCol, maxCol;
+    
+    for (final key in selectedKeys) {
+      final parts = key.split('_');
+      if (parts.length != 2) continue;
+      
+      final rowIndex = int.tryParse(parts[0]);
+      final colIndex = int.tryParse(parts[1]);
+      
+      if (rowIndex == null || colIndex == null) continue;
+      
+      // 범위 업데이트
+      minRow = minRow == null ? rowIndex : (minRow < rowIndex ? minRow : rowIndex);
+      maxRow = maxRow == null ? rowIndex : (maxRow > rowIndex ? maxRow : rowIndex);
+      minCol = minCol == null ? colIndex : (minCol < colIndex ? minCol : colIndex);
+      maxCol = maxCol == null ? colIndex : (maxCol > colIndex ? maxCol : colIndex);
+    }
+    
+    // 범위가 없으면 종료
+    if (minRow == null || maxRow == null || minCol == null || maxCol == null) {
+      return;
+    }
+    
+    // TSV 형식으로 데이터 생성 (사각형 범위의 모든 셀 포함)
+    final buffer = StringBuffer();
+    for (int row = minRow; row <= maxRow; row++) {
+      final rowData = <String>[];
+      for (int col = minCol; col <= maxCol; col++) {
+        final key = '${row}_${col}';
+        // 선택된 셀이고 유효한 범위 내에 있으면 값 복사, 아니면 빈 문자열
+        if (selectedKeys.contains(key) && 
+            row < state.rows.length && 
+            col < state.columns.length) {
+          final value = state.rows[row][state.columns[col]['name']!];
+          rowData.add(value?.toString() ?? '');
+        } else {
+          rowData.add('');
+        }
+      }
+      buffer.writeln(rowData.join('\t'));
+    }
 
-    Clipboard.setData(ClipboardData(text: value?.toString() ?? ''));
+    Clipboard.setData(ClipboardData(text: buffer.toString().trim()));
 
+    final cellCount = selectedKeys.length;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cell copied to clipboard'), duration: Duration(seconds: 1)),
+      SnackBar(
+        content: Text('$cellCount cell(s) copied to clipboard'),
+        duration: const Duration(seconds: 1),
+      ),
     );
   }
 
@@ -125,7 +169,8 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       database: widget.database,
     )));
     
-    if (state.selectedCell == null) return;
+    // 선택된 셀이 없으면 종료
+    if (state.selectedCell == null && state.selectedCellRange == null) return;
     if (state.primaryKeyColumn == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Error: Cannot paste without a primary key.'), backgroundColor: Colors.red));
@@ -133,43 +178,137 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     }
 
     final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
-    final newValue = clipboardData?.text;
+    final clipboardText = clipboardData?.text;
 
-    if (newValue == null) {
+    if (clipboardText == null || clipboardText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Nothing to paste from clipboard.'), backgroundColor: Colors.orange));
       return;
     }
 
-    final rowIndex = state.selectedCell!['rowIndex']!;
-    final colIndex = state.selectedCell!['colIndex']!;
-    final targetColumnName = state.columns[colIndex]['name']!;
-    final pkValue = state.rows[rowIndex][state.primaryKeyColumn!];
+    // TSV 형식 파싱 (탭으로 구분된 값)
+    // 줄바꿈 문자 처리: \r\n, \n, \r 모두 지원
+    final normalizedText = clipboardText
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n');
+    
+    final lines = normalizedText
+        .split('\n')
+        .where((line) => line.trim().isNotEmpty || line.contains('\t'))
+        .toList();
+
+    if (lines.isEmpty) return;
+
+    // 각 줄을 탭으로 분리 (빈 셀도 유지)
+    final pasteData = lines.map((line) {
+      // 빈 줄도 처리하기 위해 split 사용
+      if (line.isEmpty) return <String>[];
+      return line.split('\t');
+    }).where((row) => row.isNotEmpty).toList();
+
+    if (pasteData.isEmpty) return;
+
+    // 시작 위치: 여러 셀이 선택된 경우 가장 좌상단 셀을 기준으로 붙여넣기
+    final topLeftCell = state.getTopLeftSelectedCell();
+    if (topLeftCell == null) {
+      return;
+    }
+    
+    final startRowIndex = topLeftCell['rowIndex']!;
+    final startColIndex = topLeftCell['colIndex']!;
 
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
-    
+    int successCount = 0;
+    int failCount = 0;
+
     try {
-      // DB 업데이트
-      await dbHandler.updateCell(
-        widget.table,
-        targetColumnName,
-        newValue,
-        state.primaryKeyColumn!,
-        pkValue,
-      );
+      // setLoading을 호출하지 않음 (불필요한 state 업데이트 방지)
+      // DB 업데이트와 UI 업데이트를 분리하여 처리
+      // 1단계: 모든 셀의 DB 업데이트 수행
+      final cellUpdates = <Map<String, dynamic>>[];
       
-      // 셀 값만 업데이트 (최소 단위 리빌드)
-      await notifier.updateCellValue(
-        rowIndex,
-        colIndex,
-        targetColumnName,
-        newValue.isEmpty ? null : newValue,
-      );
+      for (int rowOffset = 0; rowOffset < pasteData.length; rowOffset++) {
+        final targetRowIndex = startRowIndex + rowOffset;
+        if (targetRowIndex >= state.rows.length) {
+          // 행이 범위를 벗어나면 중단 (경고는 하지 않음, 정상 동작)
+          break;
+        }
+
+        final rowData = pasteData[rowOffset];
+        if (rowData.isEmpty) continue;
+
+        final pkValue = state.rows[targetRowIndex][state.primaryKeyColumn!];
+
+        for (int colOffset = 0; colOffset < rowData.length; colOffset++) {
+          final targetColIndex = startColIndex + colOffset;
+          if (targetColIndex >= state.columns.length) {
+            // 열이 범위를 벗어나면 해당 행의 나머지 셀은 건너뛰기
+            break;
+          }
+
+          // 빈 문자열도 처리 (앞뒤 공백 제거 후, 빈 문자열이면 null로 저장)
+          final cellValue = rowData[colOffset];
+          final trimmedValue = cellValue.trim();
+          final newValue = trimmedValue.isEmpty ? null : trimmedValue;
+
+          final targetColumnName = state.columns[targetColIndex]['name']!;
+          
+          // 기존 값과 비교하여 실제로 변경된 경우에만 업데이트
+          final oldValue = state.rows[targetRowIndex][targetColumnName];
+          final isValueChanged = oldValue != newValue;
+
+          try {
+            // 값이 변경된 경우에만 DB 업데이트 및 UI 업데이트 정보 수집
+            if (isValueChanged) {
+              // DB 업데이트
+              await dbHandler.updateCell(
+                widget.table,
+                targetColumnName,
+                newValue,
+                state.primaryKeyColumn!,
+                pkValue,
+              );
+
+              // UI 업데이트용 정보 수집 (배치 업데이트)
+              cellUpdates.add({
+                'rowIndex': targetRowIndex,
+                'colIndex': targetColIndex,
+                'columnName': targetColumnName,
+                'newValue': newValue,
+              });
+            }
+
+            successCount++;
+          } catch (e) {
+            failCount++;
+            // 개별 셀 실패는 로그만 남기고 계속 진행
+            debugPrint('Failed to paste cell at row $targetRowIndex, col $targetColIndex: $e');
+          }
+        }
+      }
+      
+      // 2단계: 모든 셀을 한 번에 업데이트 (배치 업데이트로 리빌드 최소화)
+      // updateMultipleCellValues는 변경된 셀이 있는 경우에만 state를 업데이트함
+      if (cellUpdates.isNotEmpty) {
+        await notifier.updateMultipleCellValues(cellUpdates);
+      }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cell updated successfully.'), backgroundColor: Colors.green),
-        );
+        if (failCount == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$successCount cell(s) pasted successfully.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$successCount cell(s) pasted, $failCount failed.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -178,6 +317,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
         );
       }
     }
+    // setLoading을 호출하지 않았으므로 finally에서도 호출하지 않음
   }
 
   @override
