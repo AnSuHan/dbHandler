@@ -98,6 +98,8 @@ class DataEditingState {
   
   // 필터, 정렬, 그룹 상태
   final List<FilterCondition> filters; // 필터 조건 리스트
+  final List<String>? filterOperators; // AND/OR 연산자 저장
+  final List<bool>? filterParenthesis; // 각 필터의 괄호 여부
   final List<SortCondition> sorts; // 정렬 조건 리스트
   final List<String> groupByColumns; // 그룹화할 컬럼들
 
@@ -115,6 +117,8 @@ class DataEditingState {
     this.selectedCellRange,
     this.cellVersions = const {},
     this.filters = const [],
+    this.filterOperators,
+    this.filterParenthesis,
     this.sorts = const [],
     this.groupByColumns = const [],
   });
@@ -133,6 +137,8 @@ class DataEditingState {
     Map<String, int>? selectedCellRange,
     Map<String, int>? cellVersions,
     List<FilterCondition>? filters,
+    List<String>? filterOperators,
+    List<bool>? filterParenthesis,
     List<SortCondition>? sorts,
     List<String>? groupByColumns,
   }) {
@@ -150,6 +156,8 @@ class DataEditingState {
       selectedCellRange: selectedCellRange,
       cellVersions: cellVersions ?? this.cellVersions,
       filters: filters ?? this.filters,
+      filterOperators: filterOperators ?? this.filterOperators,
+      filterParenthesis: filterParenthesis ?? this.filterParenthesis,
       sorts: sorts ?? this.sorts,
       groupByColumns: groupByColumns ?? this.groupByColumns,
     );
@@ -406,12 +414,12 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   }
   
   /// 필터 제거
-  void removeFilter(int index) {
-    final newFilters = List<FilterCondition>.from(state.filters)..removeAt(index);
-    state = state.copyWith(filters: newFilters);
-    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
-  }
+  // void removeFilter(int index) {
+  //   final newFilters = List<FilterCondition>.from(state.filters)..removeAt(index);
+  //   state = state.copyWith(filters: newFilters);
+  //   // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+  //   Future.microtask(() => loadTableData());
+  // }
   
   /// 필터 수정
   void updateFilter(int index, FilterCondition filter) {
@@ -422,12 +430,12 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     Future.microtask(() => loadTableData());
   }
   
-  /// 필터 모두 제거
-  void clearFilters() {
-    state = state.copyWith(filters: []);
-    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
-  }
+  // /// 필터 모두 제거
+  // void clearFilters() {
+  //   state = state.copyWith(filters: []);
+  //   // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+  //   Future.microtask(() => loadTableData());
+  // }
   
   /// 필터 순서 재정렬
   void reorderFilters(int oldIndex, int newIndex) {
@@ -714,6 +722,160 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         await loadTableData();
       }
     }
+  }
+
+  // 필터 순서 변경
+  void reorderFilter(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+
+    final filters = List<FilterCondition>.from(state.filters);
+    final filter = filters.removeAt(oldIndex);
+    filters.insert(newIndex, filter);
+
+    // 연산자와 괄호 정보도 함께 재정렬
+    final operators = state.filterOperators != null ? List<String>.from(state.filterOperators!) : <String>[];
+    final parenthesis = state.filterParenthesis != null ? List<bool>.from(state.filterParenthesis!) : <bool>[];
+
+    if (operators.isNotEmpty && oldIndex < operators.length) {
+      // 연산자는 필터 사이에 있으므로 인덱스 조정 필요
+      if (oldIndex > 0 && operators.isNotEmpty) {
+        final op = oldIndex - 1 < operators.length ? operators[oldIndex - 1] : 'AND';
+        if (newIndex > 0 && newIndex - 1 < operators.length) {
+          operators[newIndex - 1] = op;
+        }
+      }
+    }
+
+    if (parenthesis.isNotEmpty && oldIndex < parenthesis.length) {
+      final paren = parenthesis.removeAt(oldIndex);
+      parenthesis.insert(newIndex, paren);
+    }
+
+    state = state.copyWith(
+      filters: filters,
+      filterOperators: operators.isNotEmpty ? operators : null,
+      filterParenthesis: parenthesis.isNotEmpty ? parenthesis : null,
+    );
+  }
+
+  // AND/OR 연산자 토글
+  void toggleFilterOperator(int operatorIndex) {
+    final operators = state.filterOperators != null
+        ? List<String>.from(state.filterOperators!)
+        : List.generate(state.filters.length - 1, (_) => 'AND');
+
+    if (operatorIndex < operators.length) {
+      operators[operatorIndex] = operators[operatorIndex] == 'AND' ? 'OR' : 'AND';
+      state = state.copyWith(filterOperators: operators);
+    }
+  }
+
+  // 괄호 토글
+  void toggleFilterParenthesis(int filterIndex) {
+    final parenthesis = state.filterParenthesis != null
+        ? List<bool>.from(state.filterParenthesis!)
+        : List.generate(state.filters.length, (_) => false);
+
+    // 리스트 크기 조정
+    while (parenthesis.length < state.filters.length) {
+      parenthesis.add(false);
+    }
+
+    if (filterIndex < parenthesis.length) {
+      parenthesis[filterIndex] = !parenthesis[filterIndex];
+      state = state.copyWith(filterParenthesis: parenthesis);
+    }
+  }
+
+  // 필터 컬럼 업데이트
+  void updateFilterColumn(int index, String column) {
+    if (index >= state.filters.length) return;
+
+    final filters = List<FilterCondition>.from(state.filters);
+    final filter = filters[index];
+
+    filters[index] = filter.copyWith(columnName: column);
+
+    state = state.copyWith(filters: filters);
+  }
+
+  // 필터 연산자 업데이트
+  void updateFilterOperator(int index, String operator) {
+    if (index >= state.filters.length) return;
+
+    final filters = List<FilterCondition>.from(state.filters);
+    final filter = filters[index];
+
+    filters[index] = filter.copyWith(operator: operator);
+
+    state = state.copyWith(filters: filters);
+  }
+
+  // 필터 값 업데이트
+  void updateFilterValue(int index, String value) {
+    if (index >= state.filters.length) return;
+
+    final filters = List<FilterCondition>.from(state.filters);
+    final filter = filters[index];
+
+    filters[index] = filter.copyWith(value: value);
+
+    state = state.copyWith(filters: filters);
+  }
+
+  // 필터 제거
+  void removeFilter(int index) {
+    if (index >= state.filters.length) return;
+
+    final filters = List<FilterCondition>.from(state.filters);
+    filters.removeAt(index);
+
+    // 연산자 리스트도 조정 (필터가 n개면 연산자는 n-1개)
+    List<String>? operators = state.filterOperators != null
+        ? List<String>.from(state.filterOperators!)
+        : null;
+
+    if (operators != null && operators.isNotEmpty) {
+      // 마지막 필터를 제거하는 경우
+      if (index == filters.length && operators.isNotEmpty) {
+        operators.removeLast();
+      }
+      // 첫 번째나 중간 필터를 제거하는 경우
+      else if (index < operators.length) {
+        operators.removeAt(index);
+      }
+
+      if (operators.isEmpty) {
+        operators = null;
+      }
+    }
+
+    // 괄호 정보도 조정
+    List<bool>? parenthesis = state.filterParenthesis != null
+        ? List<bool>.from(state.filterParenthesis!)
+        : null;
+
+    if (parenthesis != null && index < parenthesis.length) {
+      parenthesis.removeAt(index);
+      if (parenthesis.isEmpty) {
+        parenthesis = null;
+      }
+    }
+
+    state = state.copyWith(
+      filters: filters,
+      filterOperators: operators,
+      filterParenthesis: parenthesis,
+    );
+  }
+
+  // 모든 필터 제거
+  void clearFilters() {
+    state = state.copyWith(
+      filters: [],
+      filterOperators: null,
+      filterParenthesis: null,
+    );
   }
 }
 

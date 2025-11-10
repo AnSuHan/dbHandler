@@ -298,18 +298,279 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       );
     }
 
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: state.filters.length * 2 - 1, // 필터 + AND/OR 연산자
+      onReorder: (oldIndex, newIndex) {
+        // AND/OR 블럭은 드래그 불가하므로 실제 필터 인덱스로 변환
+        final actualOldIndex = oldIndex ~/ 2;
+        final actualNewIndex = newIndex > oldIndex ? (newIndex - 1) ~/ 2 : newIndex ~/ 2;
+
+        if (oldIndex % 2 == 0) { // 필터 블럭만 이동 가능
+          notifier.reorderFilter(actualOldIndex, actualNewIndex);
+        }
+      },
+      itemBuilder: (context, index) {
+        // 홀수 인덱스: AND/OR 연산자
+        if (index % 2 == 1) {
+          final operatorIndex = index ~/ 2;
+          return _buildOperatorBlock(
+            key: ValueKey('operator_$operatorIndex'),
+            operator: state.filterOperators?[operatorIndex] ?? 'AND',
+            onToggle: () => notifier.toggleFilterOperator(operatorIndex),
+          );
+        }
+
+        // 짝수 인덱스: 필터 블럭
+        final filterIndex = index ~/ 2;
+        final filter = state.filters[filterIndex];
+
+        return _buildFilterBlock(
+          key: ValueKey('filter_$filterIndex'),
+          filter: filter,
+          filterIndex: filterIndex,
+          state: state,
+          notifier: notifier,
+        );
+      },
+    );
+  }
+
+  Widget _buildOperatorBlock({
+    required Key key,
+    required String operator,
+    required VoidCallback onToggle,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      key: key,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Center(
+        child: InkWell(
+          onTap: onToggle,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: operator == 'AND' ? Colors.blue.shade50 : Colors.orange.shade50,
+              border: Border.all(
+                color: operator == 'AND' ? Colors.blue.shade300 : Colors.orange.shade300,
+                width: 1.5,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  operator,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: operator == 'AND' ? Colors.blue.shade700 : Colors.orange.shade700,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.swap_horiz,
+                  size: 16,
+                  color: operator == 'AND' ? Colors.blue.shade700 : Colors.orange.shade700,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterBlock({
+    required Key key,
+    required dynamic filter,
+    required int filterIndex,
+    required DataEditingState state,
+    required DataEditingNotifier notifier,
+  }) {
+    // Controller 초기화 (없는 경우에만)
+    if (!widget.filterControllers.containsKey(filterIndex)) {
+      widget.filterControllers[filterIndex] = TextEditingController(text: filter.value?.toString() ?? '');
+    }
+
+    final controller = widget.filterControllers[filterIndex]!;
+    final hasParenthesis = state.filterParenthesis?[filterIndex] ?? false;
+
+    return Container(
+      key: key,
+      margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: Colors.white,
         border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade200,
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
-      child: _FilterConditionBuilder(
-        filters: state.filters,
-        columns: state.columns,
-        notifier: notifier,
-        filterControllers: widget.filterControllers,
+      child: Column(
+        children: [
+          // 필터 헤더 (드래그 핸들 + 괄호 토글 + 삭제)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+            ),
+            child: Row(
+              children: [
+                // 드래그 핸들
+                const Icon(Icons.drag_indicator, size: 20, color: Colors.grey),
+                const SizedBox(width: 8),
+                // 괄호 토글
+                InkWell(
+                  onTap: () => notifier.toggleFilterParenthesis(filterIndex),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: hasParenthesis ? Colors.purple.shade50 : Colors.transparent,
+                      border: Border.all(
+                        color: hasParenthesis ? Colors.purple.shade300 : Colors.grey.shade300,
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      '( )',
+                      style: TextStyle(
+                        fontWeight: hasParenthesis ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 14,
+                        color: hasParenthesis ? Colors.purple.shade700 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                // 삭제 버튼
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  color: Colors.red.shade400,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    widget.filterControllers[filterIndex]?.dispose();
+                    widget.filterControllers.remove(filterIndex);
+                    notifier.removeFilter(filterIndex);
+                  },
+                ),
+              ],
+            ),
+          ),
+          // 필터 내용
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                // 괄호 시작
+                if (hasParenthesis)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      '(',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple.shade700,
+                      ),
+                    ),
+                  ),
+                // 컬럼 선택
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<String>(
+                    value: filter.columnName,
+                    decoration: InputDecoration(
+                      labelText: 'Column',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                    ),
+                    items: state.columns.map((col) {
+                      // Map에서 컬럼 이름 추출 (일반적으로 'name' 또는 'column_name' 키 사용)
+                      final columnName = col['name'] ?? col['column_name'] ?? '';
+                      return DropdownMenuItem<String>(
+                        value: columnName,
+                        child: Text(columnName),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        notifier.updateFilterColumn(filterIndex, value);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // 연산자 선택
+                Expanded(
+                  flex: 1,
+                  child: DropdownButtonFormField<String>(
+                    value: filter.operator,
+                    decoration: InputDecoration(
+                      labelText: 'Op',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: '=', child: Text('=')),
+                      DropdownMenuItem(value: '!=', child: Text('!=')),
+                      DropdownMenuItem(value: '>', child: Text('>')),
+                      DropdownMenuItem(value: '<', child: Text('<')),
+                      DropdownMenuItem(value: '>=', child: Text('>=')),
+                      DropdownMenuItem(value: '<=', child: Text('<=')),
+                      DropdownMenuItem(value: 'LIKE', child: Text('LIKE')),
+                      DropdownMenuItem(value: 'IN', child: Text('IN')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        notifier.updateFilterOperator(filterIndex, value);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // 값 입력
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: 'Value',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                    ),
+                    onChanged: (value) {
+                      notifier.updateFilterValue(filterIndex, value);
+                    },
+                  ),
+                ),
+                // 괄호 끝
+                if (hasParenthesis)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      ')',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple.shade700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
