@@ -121,11 +121,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           ],
         ),
         const SizedBox(height: 8),
-        ...state.filters.asMap().entries.map((entry) {
-          final index = entry.key;
-          final filter = entry.value;
-          return _buildFilterItem(filter, index, notifier, state);
-        }),
+        // 엑셀 스타일 조건 빌더
+        _buildExcelStyleFilterBuilder(state, notifier),
       ],
     );
   }
@@ -283,6 +280,40 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     notifier.updateFilter(index, filter.copyWith(value: parsedValue));
   }
 
+  Widget _buildExcelStyleFilterBuilder(DataEditingState state, DataEditingNotifier notifier) {
+    if (state.filters.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            '조건을 추가하려면 "Add Filter" 버튼을 클릭하세요',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: _FilterConditionBuilder(
+        filters: state.filters,
+        columns: state.columns,
+        notifier: notifier,
+        filterControllers: widget.filterControllers,
+      ),
+    );
+  }
+
   Widget _buildSortSection(DataEditingState state, DataEditingNotifier notifier) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,60 +339,124 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         ...state.sorts.asMap().entries.map((entry) {
           final index = entry.key;
           final sort = entry.value;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
+          return _buildDraggableSortItem(sort, index, state, notifier);
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDraggableSortItem(SortCondition sort, int index, DataEditingState state, DataEditingNotifier notifier) {
+    return Draggable<int>(
+      data: index,
+      feedback: Material(
+        elevation: 8,
+        child: IntrinsicWidth(
+          child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: Colors.grey.shade300),
               borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 150,
-                  child: DropdownButton<String>(
-                    value: sort.columnName,
-                    isExpanded: true,
-                    items: state.columns.map((col) {
-                      return DropdownMenuItem(
-                        value: col['name']!,
-                        child: Text(col['name']!, overflow: TextOverflow.ellipsis),
-                      );
-                    }).toList(),
-                    onChanged: (newColumn) {
-                      if (newColumn != null) {
-                        notifier.updateSort(index, sort.copyWith(columnName: newColumn));
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 100,
-                  child: DropdownButton<bool>(
-                    value: sort.ascending,
-                    isExpanded: true,
-                    items: const [
-                      DropdownMenuItem(value: true, child: Text('ASC')),
-                      DropdownMenuItem(value: false, child: Text('DESC')),
-                    ],
-                    onChanged: (newAscending) {
-                      if (newAscending != null) {
-                        notifier.updateSort(index, sort.copyWith(ascending: newAscending));
-                      }
-                    },
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                  onPressed: () => notifier.removeSort(index),
-                ),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)
               ],
             ),
+            child: _buildSortItemContent(sort, index, state, notifier),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.3,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: _buildSortItemContent(sort, index, state, notifier),
+        ),
+      ),
+      child: DragTarget<int>(
+        onAccept: (draggedIndex) {
+          if (draggedIndex != index) {
+            notifier.reorderSorts(draggedIndex, index);
+          }
+        },
+        onWillAccept: (data) => data != index,
+        builder: (context, candidateData, rejectedData) {
+          final isTarget = candidateData.isNotEmpty;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              border: isTarget
+                  ? Border.all(color: Colors.blue, width: 2)
+                  : null,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _buildSortItemContent(sort, index, state, notifier),
+            ),
           );
-        }),
+        },
+      ),
+    );
+  }
+
+  Widget _buildSortItemContent(SortCondition sort, int index, DataEditingState state, DataEditingNotifier notifier) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 150,
+          child: DropdownButton<String>(
+            value: sort.columnName,
+            isExpanded: true,
+            items: state.columns.map((col) {
+              return DropdownMenuItem(
+                value: col['name']!,
+                child: Text(col['name']!, overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+            onChanged: (newColumn) {
+              if (newColumn != null) {
+                notifier.updateSort(index, sort.copyWith(columnName: newColumn));
+              }
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 100,
+          child: DropdownButton<bool>(
+            value: sort.ascending,
+            isExpanded: true,
+            items: const [
+              DropdownMenuItem(value: true, child: Text('ASC')),
+              DropdownMenuItem(value: false, child: Text('DESC')),
+            ],
+            onChanged: (newAscending) {
+              if (newAscending != null) {
+                notifier.updateSort(index, sort.copyWith(ascending: newAscending));
+              }
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+          onPressed: () => notifier.removeSort(index),
+        ),
       ],
     );
   }
@@ -388,29 +483,95 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           ],
         ),
         const SizedBox(height: 8),
-        ...state.groupByColumns.map((columnName) {
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
+        ...state.groupByColumns.asMap().entries.map((entry) {
+          final index = entry.key;
+          final columnName = entry.value;
+          return _buildDraggableGroupItem(columnName, index, notifier);
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDraggableGroupItem(String columnName, int index, DataEditingNotifier notifier) {
+    return Draggable<int>(
+      data: index,
+      feedback: Material(
+        elevation: 8,
+        child: IntrinsicWidth(
+          child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border.all(color: Colors.grey.shade300),
               borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.group, size: 20, color: Colors.blue),
-                const SizedBox(width: 8),
-                Text(columnName, style: const TextStyle(fontWeight: FontWeight.w500)),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                  onPressed: () => notifier.removeGroupByColumn(columnName),
-                ),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)
               ],
             ),
+            child: _buildGroupItemContent(columnName, notifier),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.3,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: _buildGroupItemContent(columnName, notifier),
+        ),
+      ),
+      child: DragTarget<int>(
+        onAccept: (draggedIndex) {
+          if (draggedIndex != index) {
+            notifier.reorderGroupBy(draggedIndex, index);
+          }
+        },
+        onWillAccept: (data) => data != index,
+        builder: (context, candidateData, rejectedData) {
+          final isTarget = candidateData.isNotEmpty;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              border: isTarget
+                  ? Border.all(color: Colors.blue, width: 2)
+                  : null,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _buildGroupItemContent(columnName, notifier),
+            ),
           );
-        }),
+        },
+      ),
+    );
+  }
+
+  Widget _buildGroupItemContent(String columnName, DataEditingNotifier notifier) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 8),
+        const Icon(Icons.group, size: 20, color: Colors.blue),
+        const SizedBox(width: 8),
+        Text(columnName, style: const TextStyle(fontWeight: FontWeight.w500)),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+          onPressed: () => notifier.removeGroupByColumn(columnName),
+        ),
       ],
     );
   }
@@ -479,7 +640,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     String selectedColumn = state.columns.first['name']!;
     String selectedOperator = '=';
     String? valueText = '';
-    String? logicalOperator = 'AND';
+    // 기본값으로 AND 사용 (마지막 필터가 있으면 그 필터의 논리 연산자 사용)
+    String? logicalOperator = state.filters.isNotEmpty 
+        ? state.filters.last.logicalOperator ?? 'AND'
+        : 'AND';
     int? groupIndex;
 
     showDialog(
@@ -531,21 +695,11 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: logicalOperator,
-                  decoration: const InputDecoration(labelText: 'Logical Operator', border: OutlineInputBorder()),
-                  items: const [
-                    DropdownMenuItem(value: 'AND', child: Text('AND')),
-                    DropdownMenuItem(value: 'OR', child: Text('OR')),
-                  ],
-                  onChanged: (value) => setStateInDialog(() => logicalOperator = value),
-                ),
-                const SizedBox(height: 16),
                 TextField(
                   decoration: const InputDecoration(
-                    labelText: 'Group Index (optional, for parentheses)',
+                    labelText: '괄호 그룹 (선택사항)',
                     border: OutlineInputBorder(),
-                    hintText: 'Leave empty or enter number',
+                    hintText: '같은 숫자를 입력하면 같은 그룹으로 묶임',
                   ),
                   keyboardType: TextInputType.number,
                   onChanged: (value) {
@@ -681,6 +835,791 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 Navigator.pop(dialogContext);
               },
               child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 필터 그룹 정보 클래스
+class _FilterGroup {
+  final int startIndex;
+  final int endIndex;
+  final bool isGrouped;
+
+  _FilterGroup({
+    required this.startIndex,
+    required this.endIndex,
+    required this.isGrouped,
+  });
+}
+
+/// 엑셀 스타일 조건 빌더 위젯
+/// 드래그 앤 드롭으로 조건 블록을 재배치할 수 있음
+class _FilterConditionBuilder extends StatefulWidget {
+  final List<FilterCondition> filters;
+  final List<Map<String, String>> columns;
+  final DataEditingNotifier notifier;
+  final Map<int, TextEditingController> filterControllers;
+
+  const _FilterConditionBuilder({
+    required this.filters,
+    required this.columns,
+    required this.notifier,
+    required this.filterControllers,
+  });
+
+  @override
+  State<_FilterConditionBuilder> createState() => _FilterConditionBuilderState();
+}
+
+class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
+  int? _draggedIndex;
+  int? _dragTargetIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    // 그룹별로 필터를 묶어서 처리
+    final List<_FilterGroup> groups = _buildFilterGroups();
+    
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (int i = 0; i < groups.length; i++) ...[
+          // 그룹 사이 드롭 존
+          if (i > 0) _buildBetweenGroupsDropZone(groups[i - 1], groups[i]),
+          if (groups[i].isGrouped) _buildDraggableGroup(groups[i]) else _buildUngroupedItems(groups[i]),
+        ],
+      ],
+    );
+  }
+
+  List<_FilterGroup> _buildFilterGroups() {
+    final List<_FilterGroup> groups = [];
+    int i = 0;
+    
+    while (i < widget.filters.length) {
+      final currentGroupIndex = widget.filters[i].groupIndex;
+      
+      if (currentGroupIndex != null) {
+        // 그룹화된 필터들 찾기
+        final startIndex = i;
+        while (i < widget.filters.length && widget.filters[i].groupIndex == currentGroupIndex) {
+          i++;
+        }
+        groups.add(_FilterGroup(
+          startIndex: startIndex,
+          endIndex: i - 1,
+          isGrouped: true,
+        ));
+      } else {
+        // 그룹화되지 않은 단일 필터
+        groups.add(_FilterGroup(
+          startIndex: i,
+          endIndex: i,
+          isGrouped: false,
+        ));
+        i++;
+      }
+    }
+    
+    return groups;
+  }
+
+  Widget _buildDraggableGroup(_FilterGroup group) {
+    final groupIndex = widget.filters[group.startIndex].groupIndex!;
+    
+    return Draggable<_FilterGroup>(
+      data: group,
+      feedback: Material(
+        elevation: 8,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.blue.shade300, width: 2),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)
+            ],
+          ),
+          child: _buildGroupContent(group, isDragging: true),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.3,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.blue.shade300, width: 2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: _buildGroupContent(group),
+        ),
+      ),
+      onDragStarted: () {
+        setState(() => _draggedIndex = group.startIndex);
+      },
+      onDragEnd: (_) {
+        setState(() {
+          _draggedIndex = null;
+          _dragTargetIndex = null;
+        });
+      },
+      child: DragTarget<_FilterGroup>(
+        onAccept: (draggedGroup) {
+          if (draggedGroup.startIndex != group.startIndex) {
+            _reorderGroup(draggedGroup, group);
+          }
+        },
+        onWillAccept: (data) {
+          setState(() => _dragTargetIndex = group.startIndex);
+          return data?.startIndex != group.startIndex;
+        },
+        onLeave: (_) {
+          setState(() => _dragTargetIndex = null);
+        },
+        builder: (context, candidateData, rejectedData) {
+          final isTarget = candidateData.isNotEmpty && _dragTargetIndex == group.startIndex;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              border: isTarget
+                  ? Border.all(color: Colors.blue, width: 2)
+                  : null,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.blue.shade300, width: 2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _buildGroupContent(group),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildUngroupedItems(_FilterGroup group) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 괄호 밖으로 드래그할 수 있는 드롭 존 (그룹화되지 않은 항목 앞)
+        if (group.startIndex > 0) _buildOutsideGroupDropZone(group.startIndex),
+        for (int i = group.startIndex; i <= group.endIndex; i++) ...[
+          _buildConditionBlock(widget.filters[i], i),
+          if (i < group.endIndex) _buildLogicalOperator(i),
+        ],
+        // 괄호 밖으로 드래그할 수 있는 드롭 존 (그룹화되지 않은 항목 뒤)
+        if (group.endIndex < widget.filters.length - 1) _buildOutsideGroupDropZone(group.endIndex + 1),
+      ],
+    );
+  }
+
+  Widget _buildGroupContent(_FilterGroup group, {bool isDragging = false}) {
+    final groupIndex = widget.filters[group.startIndex].groupIndex!;
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 드래그 핸들
+        Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 4),
+        // 시작 괄호 (드래그 타겟 + 클릭하면 그룹 제거)
+        _buildGroupStartBracket(group, groupIndex),
+        const SizedBox(width: 4),
+        // 조건들
+        for (int i = group.startIndex; i <= group.endIndex; i++) ...[
+          _buildConditionBlock(widget.filters[i], i),
+          if (i < group.endIndex) _buildLogicalOperator(i),
+        ],
+        const SizedBox(width: 4),
+        // 끝 괄호 (드래그 타겟)
+        _buildGroupEndBracket(group, groupIndex),
+      ],
+    );
+  }
+
+  Widget _buildGroupStartBracket(_FilterGroup group, int groupIndex) {
+    return DragTarget<int>(
+      onAccept: (draggedIndex) {
+        _moveFilterIntoGroup(draggedIndex, group.startIndex, groupIndex);
+      },
+      onWillAccept: (data) {
+        if (data == null) return false;
+        final draggedFilter = widget.filters[data];
+        // 이미 같은 그룹에 있으면 거부
+        return draggedFilter.groupIndex != groupIndex;
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isTarget = candidateData.isNotEmpty;
+        return GestureDetector(
+          onTap: () => _removeGroup(group.startIndex),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isTarget ? Colors.green.shade100 : Colors.blue.shade100,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: isTarget ? Colors.green.shade300 : Colors.blue.shade300,
+                width: isTarget ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('(', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(width: 4),
+                Icon(Icons.close, size: 14, color: Colors.blue.shade700),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupEndBracket(_FilterGroup group, int groupIndex) {
+    return DragTarget<int>(
+      onAccept: (draggedIndex) {
+        _moveFilterIntoGroup(draggedIndex, group.endIndex + 1, groupIndex);
+      },
+      onWillAccept: (data) {
+        if (data == null) return false;
+        final draggedFilter = widget.filters[data];
+        // 이미 같은 그룹에 있으면 거부
+        return draggedFilter.groupIndex != groupIndex;
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isTarget = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isTarget ? Colors.green.shade100 : Colors.blue.shade100,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: isTarget ? Colors.green.shade300 : Colors.blue.shade300,
+              width: isTarget ? 2 : 1,
+            ),
+          ),
+          child: const Text(')', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        );
+      },
+    );
+  }
+
+  Widget _buildOutsideGroupDropZone(int targetIndex) {
+    return DragTarget<int>(
+      onAccept: (draggedIndex) {
+        _moveFilterOutOfGroup(draggedIndex);
+      },
+      onWillAccept: (data) {
+        if (data == null) return false;
+        final draggedFilter = widget.filters[data];
+        // 이미 그룹에 있으면 허용
+        return draggedFilter.groupIndex != null;
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isTarget = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: isTarget ? 20 : 8,
+          height: 40,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: isTarget ? Colors.orange.shade100 : Colors.transparent,
+            border: isTarget
+                ? Border.all(color: Colors.orange.shade300, width: 2, style: BorderStyle.solid)
+                : Border.all(color: Colors.grey.shade300.withOpacity(0.5), width: 1, style: BorderStyle.solid),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: isTarget
+              ? const Center(
+                  child: Icon(Icons.remove_circle_outline, size: 16, color: Colors.orange),
+                )
+              : null,
+        );
+      },
+    );
+  }
+
+  Widget _buildBetweenGroupsDropZone(_FilterGroup prevGroup, _FilterGroup nextGroup) {
+    return DragTarget<int>(
+      onAccept: (draggedIndex) {
+        final draggedFilter = widget.filters[draggedIndex];
+        // 그룹에 있으면 그룹에서 제거
+        if (draggedFilter.groupIndex != null) {
+          _moveFilterOutOfGroup(draggedIndex);
+        }
+      },
+      onWillAccept: (data) {
+        if (data == null) return false;
+        final draggedFilter = widget.filters[data];
+        // 그룹에 있으면 허용
+        return draggedFilter.groupIndex != null;
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isTarget = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: isTarget ? 20 : 8,
+          height: 40,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: isTarget ? Colors.orange.shade100 : Colors.transparent,
+            border: isTarget
+                ? Border.all(color: Colors.orange.shade300, width: 2, style: BorderStyle.solid)
+                : Border.all(color: Colors.grey.shade300.withOpacity(0.5), width: 1, style: BorderStyle.solid),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: isTarget
+              ? const Center(
+                  child: Icon(Icons.remove_circle_outline, size: 16, color: Colors.orange),
+                )
+              : null,
+        );
+      },
+    );
+  }
+
+  void _moveFilterIntoGroup(int filterIndex, int targetIndex, int groupIndex) {
+    final newFilters = List<FilterCondition>.from(widget.filters);
+    final filter = newFilters[filterIndex];
+    
+    // 필터를 제거하고 타겟 위치에 삽입
+    newFilters.removeAt(filterIndex);
+    
+    // 인덱스 조정
+    final adjustedTargetIndex = filterIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    newFilters.insert(adjustedTargetIndex, filter.copyWith(groupIndex: groupIndex));
+    
+    // 필터 재정렬
+    widget.notifier.clearFilters();
+    for (final f in newFilters) {
+      widget.notifier.addFilter(f);
+    }
+  }
+
+  void _moveFilterOutOfGroup(int filterIndex) {
+    final newFilters = List<FilterCondition>.from(widget.filters);
+    final filter = newFilters[filterIndex];
+    
+    // 그룹에서 제거
+    newFilters[filterIndex] = filter.copyWith(groupIndex: null);
+    
+    // 필터 업데이트
+    widget.notifier.clearFilters();
+    for (final f in newFilters) {
+      widget.notifier.addFilter(f);
+    }
+  }
+
+  void _reorderGroup(_FilterGroup draggedGroup, _FilterGroup targetGroup) {
+    // 그룹 전체를 이동
+    final newFilters = List<FilterCondition>.from(widget.filters);
+    
+    // 드래그된 그룹의 필터들 추출
+    final draggedFilters = <FilterCondition>[];
+    for (int i = draggedGroup.startIndex; i <= draggedGroup.endIndex; i++) {
+      draggedFilters.add(newFilters[draggedGroup.startIndex]);
+      newFilters.removeAt(draggedGroup.startIndex);
+    }
+    
+    // 타겟 위치 계산
+    int insertIndex;
+    if (draggedGroup.startIndex < targetGroup.startIndex) {
+      // 아래로 드래그한 경우: 타겟 그룹의 시작 위치에 삽입
+      insertIndex = targetGroup.startIndex - (draggedGroup.endIndex - draggedGroup.startIndex + 1);
+    } else {
+      // 위로 드래그한 경우: 타겟 그룹의 시작 위치에 삽입
+      insertIndex = targetGroup.startIndex;
+    }
+    
+    // 타겟 위치에 삽입
+    for (int i = 0; i < draggedFilters.length; i++) {
+      newFilters.insert(insertIndex + i, draggedFilters[i]);
+    }
+    
+    // 필터 재정렬
+    widget.notifier.clearFilters();
+    for (final filter in newFilters) {
+      widget.notifier.addFilter(filter);
+    }
+  }
+
+  void _removeGroup(int index) {
+    final groupIndex = widget.filters[index].groupIndex;
+    if (groupIndex == null) return;
+    
+    // 같은 그룹의 모든 필터에서 그룹 제거
+    for (int i = 0; i < widget.filters.length; i++) {
+      if (widget.filters[i].groupIndex == groupIndex) {
+        widget.notifier.updateFilter(i, widget.filters[i].copyWith(groupIndex: null));
+      }
+    }
+  }
+
+  Widget _buildConditionBlock(FilterCondition filter, int index) {
+    // TextEditingController 초기화
+    if (!widget.filterControllers.containsKey(index)) {
+      final initialValue = filter.value?.toString() ?? '';
+      widget.filterControllers[index] = TextEditingController(text: initialValue);
+    }
+
+    final controller = widget.filterControllers[index]!;
+    final currentValue = filter.value?.toString() ?? '';
+    if (controller.text != currentValue &&
+        (filter.operator != 'IS NULL' && filter.operator != 'IS NOT NULL')) {
+      controller.text = currentValue;
+    }
+
+    return Draggable<int>(
+      data: index,
+      feedback: Material(
+        elevation: 8,
+        child: _buildConditionCard(filter, index, controller, isDragging: true),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.3,
+        child: _buildConditionCard(filter, index, controller),
+      ),
+      onDragStarted: () {
+        setState(() => _draggedIndex = index);
+      },
+      onDragEnd: (_) {
+        setState(() {
+          _draggedIndex = null;
+          _dragTargetIndex = null;
+        });
+      },
+      child: DragTarget<int>(
+        onAccept: (draggedIndex) {
+          if (draggedIndex != index) {
+            widget.notifier.reorderFilters(draggedIndex, index);
+          }
+        },
+        onWillAccept: (data) {
+          setState(() => _dragTargetIndex = index);
+          return data != index;
+        },
+        onLeave: (_) {
+          setState(() => _dragTargetIndex = null);
+        },
+        builder: (context, candidateData, rejectedData) {
+          final isTarget = candidateData.isNotEmpty && _dragTargetIndex == index;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              border: isTarget
+                  ? Border.all(color: Colors.blue, width: 2)
+                  : null,
+            ),
+            child: _buildConditionCard(filter, index, controller),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildConditionCard(FilterCondition filter, int index, TextEditingController controller, {bool isDragging = false}) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: isDragging ? Colors.white : Colors.white,
+        border: Border.all(
+          color: filter.groupIndex != null ? Colors.blue.shade300 : Colors.grey.shade300,
+          width: filter.groupIndex != null ? 2 : 1,
+        ),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: isDragging
+            ? [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)]
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 드래그 핸들
+          Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+          const SizedBox(width: 8),
+          
+          // 열 선택
+          SizedBox(
+            width: 120,
+            child: DropdownButton<String>(
+              value: filter.columnName,
+              isExpanded: true,
+              items: widget.columns.map((col) {
+                return DropdownMenuItem(
+                  value: col['name']!,
+                  child: Text(col['name']!, overflow: TextOverflow.ellipsis),
+                );
+              }).toList(),
+              onChanged: (newColumn) {
+                if (newColumn != null) {
+                  widget.notifier.updateFilter(index, filter.copyWith(columnName: newColumn));
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          // 연산자 선택
+          SizedBox(
+            width: 100,
+            child: DropdownButton<String>(
+              value: filter.operator,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: '=', child: Text('=')),
+                DropdownMenuItem(value: '!=', child: Text('!=')),
+                DropdownMenuItem(value: '<', child: Text('<')),
+                DropdownMenuItem(value: '>', child: Text('>')),
+                DropdownMenuItem(value: '<=', child: Text('<=')),
+                DropdownMenuItem(value: '>=', child: Text('>=')),
+                DropdownMenuItem(value: 'LIKE', child: Text('LIKE')),
+                DropdownMenuItem(value: 'IN', child: Text('IN')),
+                DropdownMenuItem(value: 'NOT IN', child: Text('NOT IN')),
+                DropdownMenuItem(value: 'IS NULL', child: Text('IS NULL')),
+                DropdownMenuItem(value: 'IS NOT NULL', child: Text('IS NOT NULL')),
+              ],
+              onChanged: (newOperator) {
+                if (newOperator != null) {
+                  widget.notifier.updateFilter(index, filter.copyWith(operator: newOperator));
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          // 값 입력
+          if (filter.operator != 'IS NULL' && filter.operator != 'IS NOT NULL')
+            SizedBox(
+              width: 120,
+              child: TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: 'Value',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                ),
+                onSubmitted: (value) {
+                  _applyFilterValue(index, filter, value);
+                },
+                onEditingComplete: () {
+                  _applyFilterValue(index, filter, controller.text);
+                },
+              ),
+            ),
+          
+          const SizedBox(width: 8),
+          
+          // 그룹 추가/제거 버튼
+          IconButton(
+            icon: Icon(
+              filter.groupIndex != null ? Icons.group : Icons.group_outlined,
+              size: 18,
+              color: filter.groupIndex != null ? Colors.blue : Colors.grey,
+            ),
+            tooltip: filter.groupIndex != null ? '그룹 제거' : '그룹 추가',
+            onPressed: () {
+              if (filter.groupIndex != null) {
+                widget.notifier.updateFilter(index, filter.copyWith(groupIndex: null));
+              } else {
+                // 새로운 그룹 인덱스 생성
+                final maxGroupIndex = widget.filters
+                    .where((f) => f.groupIndex != null)
+                    .map((f) => f.groupIndex!)
+                    .fold<int>(-1, (max, idx) => idx > max ? idx : max);
+                widget.notifier.updateFilter(index, filter.copyWith(groupIndex: maxGroupIndex + 1));
+              }
+            },
+          ),
+          
+          // 수정 버튼
+          IconButton(
+            icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
+            tooltip: '수정',
+            onPressed: () => _showEditFilterDialog(index, filter),
+          ),
+          
+          // 삭제 버튼
+          IconButton(
+            icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+            tooltip: '삭제',
+            onPressed: () {
+              widget.filterControllers[index]?.dispose();
+              widget.filterControllers.remove(index);
+              widget.notifier.removeFilter(index);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogicalOperator(int index) {
+    final filter = widget.filters[index];
+    final isAnd = (filter.logicalOperator ?? 'AND') == 'AND';
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: ToggleButtons(
+        isSelected: [isAnd, !isAnd],
+        onPressed: (int selectedIndex) {
+          final newOp = selectedIndex == 0 ? 'AND' : 'OR';
+          widget.notifier.updateFilter(index, filter.copyWith(logicalOperator: newOp));
+        },
+        borderRadius: BorderRadius.circular(4),
+        constraints: const BoxConstraints(
+          minHeight: 32,
+          minWidth: 50,
+        ),
+        selectedColor: Colors.white,
+        fillColor: Colors.blue.shade600,
+        color: Colors.grey.shade700,
+        children: const [
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text('AND', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text('OR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyFilterValue(int index, FilterCondition filter, String value) {
+    dynamic parsedValue = value;
+    if (filter.operator == 'IN' || filter.operator == 'NOT IN') {
+      parsedValue = value.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    } else if (value.trim().isEmpty) {
+      parsedValue = null;
+    }
+    widget.notifier.updateFilter(index, filter.copyWith(value: parsedValue));
+  }
+
+  void _showEditFilterDialog(int index, FilterCondition filter) {
+    String selectedColumn = filter.columnName;
+    String selectedOperator = filter.operator;
+    String? valueText = filter.value?.toString() ?? '';
+    String? logicalOperator = filter.logicalOperator ?? 'AND';
+    int? groupIndex = filter.groupIndex;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setStateInDialog) => AlertDialog(
+          title: const Text('조건 수정'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedColumn,
+                  decoration: const InputDecoration(labelText: '열', border: OutlineInputBorder()),
+                  items: widget.columns.map((col) {
+                    return DropdownMenuItem(value: col['name']!, child: Text(col['name']!));
+                  }).toList(),
+                  onChanged: (value) => setStateInDialog(() => selectedColumn = value!),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedOperator,
+                  decoration: const InputDecoration(labelText: '연산자', border: OutlineInputBorder()),
+                  items: const [
+                    DropdownMenuItem(value: '=', child: Text('=')),
+                    DropdownMenuItem(value: '!=', child: Text('!=')),
+                    DropdownMenuItem(value: '<', child: Text('<')),
+                    DropdownMenuItem(value: '>', child: Text('>')),
+                    DropdownMenuItem(value: '<=', child: Text('<=')),
+                    DropdownMenuItem(value: '>=', child: Text('>=')),
+                    DropdownMenuItem(value: 'LIKE', child: Text('LIKE')),
+                    DropdownMenuItem(value: 'IN', child: Text('IN')),
+                    DropdownMenuItem(value: 'NOT IN', child: Text('NOT IN')),
+                    DropdownMenuItem(value: 'IS NULL', child: Text('IS NULL')),
+                    DropdownMenuItem(value: 'IS NOT NULL', child: Text('IS NOT NULL')),
+                  ],
+                  onChanged: (value) => setStateInDialog(() => selectedOperator = value!),
+                ),
+                if (selectedOperator != 'IS NULL' && selectedOperator != 'IS NOT NULL') ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: TextEditingController(text: valueText),
+                    decoration: InputDecoration(
+                      labelText: selectedOperator == 'IN' || selectedOperator == 'NOT IN'
+                          ? '값 (쉼표로 구분)'
+                          : '값',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (value) => setStateInDialog(() => valueText = value),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: logicalOperator,
+                  decoration: const InputDecoration(labelText: '논리 연산자', border: OutlineInputBorder()),
+                  items: const [
+                    DropdownMenuItem(value: 'AND', child: Text('AND')),
+                    DropdownMenuItem(value: 'OR', child: Text('OR')),
+                  ],
+                  onChanged: (value) => setStateInDialog(() => logicalOperator = value),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: TextEditingController(text: groupIndex?.toString() ?? ''),
+                  decoration: const InputDecoration(
+                    labelText: '괄호 그룹 (선택사항)',
+                    border: OutlineInputBorder(),
+                    hintText: '같은 숫자를 입력하면 같은 그룹으로 묶임',
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (value) {
+                    setStateInDialog(() {
+                      groupIndex = value.isEmpty ? null : int.tryParse(value);
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                dynamic value = valueText;
+                if (selectedOperator == 'IN' || selectedOperator == 'NOT IN') {
+                  value = valueText?.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList() ?? [];
+                } else if (selectedOperator == 'IS NULL' || selectedOperator == 'IS NOT NULL') {
+                  value = null;
+                }
+
+                widget.notifier.updateFilter(index, FilterCondition(
+                  columnName: selectedColumn,
+                  operator: selectedOperator,
+                  value: value,
+                  logicalOperator: logicalOperator,
+                  groupIndex: groupIndex,
+                ));
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('저장'),
             ),
           ],
         ),

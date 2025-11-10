@@ -429,6 +429,19 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     Future.microtask(() => loadTableData());
   }
   
+  /// 필터 순서 재정렬
+  void reorderFilters(int oldIndex, int newIndex) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final newFilters = List<FilterCondition>.from(state.filters);
+    final item = newFilters.removeAt(oldIndex);
+    newFilters.insert(newIndex, item);
+    state = state.copyWith(filters: newFilters);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
   /// 정렬 추가
   void addSort(SortCondition sort) {
     final newSorts = List<SortCondition>.from(state.sorts)..add(sort);
@@ -461,6 +474,23 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     Future.microtask(() => loadTableData());
   }
   
+  /// 정렬 순서 재정렬
+  void reorderSorts(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    
+    final newSorts = List<SortCondition>.from(state.sorts);
+    final item = newSorts.removeAt(oldIndex);
+    
+    // oldIndex가 newIndex보다 작으면 (아래로 이동) removeAt으로 인해 인덱스가 하나씩 앞당겨짐
+    // oldIndex가 newIndex보다 크면 (위로 이동) 인덱스 조정 불필요
+    final adjustedNewIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
+    newSorts.insert(adjustedNewIndex, item);
+    
+    state = state.copyWith(sorts: newSorts);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
   /// 그룹화 컬럼 추가
   void addGroupByColumn(String columnName) {
     if (!state.groupByColumns.contains(columnName)) {
@@ -482,6 +512,23 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   /// 그룹화 모두 제거
   void clearGroupBy() {
     state = state.copyWith(groupByColumns: []);
+    // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+    Future.microtask(() => loadTableData());
+  }
+  
+  /// 그룹화 컬럼 순서 재정렬
+  void reorderGroupBy(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    
+    final newGroupByColumns = List<String>.from(state.groupByColumns);
+    final item = newGroupByColumns.removeAt(oldIndex);
+    
+    // oldIndex가 newIndex보다 작으면 (아래로 이동) removeAt으로 인해 인덱스가 하나씩 앞당겨짐
+    // oldIndex가 newIndex보다 크면 (위로 이동) 인덱스 조정 불필요
+    final adjustedNewIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
+    newGroupByColumns.insert(adjustedNewIndex, item);
+    
+    state = state.copyWith(groupByColumns: newGroupByColumns);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
     Future.microtask(() => loadTableData());
   }

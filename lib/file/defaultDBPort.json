@@ -1,0 +1,20 @@
+{
+    "3306": "MySQL",
+    "5432": "PostgreSQL",
+    "1521": "Oracle DB",
+    "1433": "Microsoft SQL Server",
+    "50000": "DB2",
+    "5000": "Sybase ASE",
+    "27017": "MongoDB",
+    "6379": "Redis",
+    "9042": "Cassandra",
+    "9200": "Elasticsearch",
+    "5439": "Amazon Redshift",
+    "1025": "Teradata",
+    "9088": "Informix",
+    "9092": "H2 Database",
+    "3050": "Firebird",
+    "8091": "Couchbase",
+    "30015": "SAP HANA"
+}
+  
