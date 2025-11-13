@@ -12,14 +12,16 @@ class FilterCondition {
   final String operator; // =, !=, <, >, <=, >=, LIKE, IN, NOT IN, IS NULL, IS NOT NULL
   final dynamic value; // 값 (LIKE의 경우 String, IN의 경우 List)
   final String? logicalOperator; // AND, OR (다음 조건과의 연결)
-  final int? groupIndex; // 괄호 그룹 인덱스 (같은 그룹끼리 묶음)
+  final int? openGroupCount; // 괄호 열기 수
+  final int? closeGroupCount; // 괄호 닫기 수
   
   const FilterCondition({
     required this.columnName,
     required this.operator,
     this.value,
     this.logicalOperator,
-    this.groupIndex,
+    this.openGroupCount,
+    this.closeGroupCount,
   });
   
   FilterCondition copyWith({
@@ -27,14 +29,16 @@ class FilterCondition {
     String? operator,
     dynamic value,
     String? logicalOperator,
-    int? groupIndex,
+    int? openGroupCount,
+    int? closeGroupCount,
   }) {
     return FilterCondition(
       columnName: columnName ?? this.columnName,
       operator: operator ?? this.operator,
       value: value ?? this.value,
       logicalOperator: logicalOperator ?? this.logicalOperator,
-      groupIndex: groupIndex ?? this.groupIndex,
+      openGroupCount: openGroupCount ?? this.openGroupCount,
+      closeGroupCount: closeGroupCount ?? this.closeGroupCount,
     );
   }
   
@@ -44,7 +48,8 @@ class FilterCondition {
       'operator': operator,
       'value': value,
       'logicalOperator': logicalOperator,
-      'groupIndex': groupIndex,
+      'openGroupCount': openGroupCount,
+      'closeGroupCount': closeGroupCount,
     };
   }
 }
@@ -189,7 +194,7 @@ class DataEditingState {
     final keys = <String>{};
     for (int row = minRow; row <= maxRow; row++) {
       for (int col = minCol; col <= maxCol; col++) {
-        keys.add('${row}_${col}');
+        keys.add('${row}_$col');
       }
     }
     return keys;
@@ -564,7 +569,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     newRows[rowIndex] = updatedRow;
 
     // 셀 버전 업데이트 (해당 셀만 리빌드 트리거)
-    final cellKey = '${rowIndex}_${colIndex}';
+    final cellKey = '${rowIndex}_$colIndex';
     final newCellVersions = Map<String, int>.from(state.cellVersions);
     newCellVersions[cellKey] = (newCellVersions[cellKey] ?? 0) + 1;
 
@@ -617,7 +622,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
           rowChanged = true;
           
           // 셀 버전 업데이트 (해당 셀만 리빌드 트리거)
-          final cellKey = '${rowIndex}_${colIndex}';
+          final cellKey = '${rowIndex}_$colIndex';
           newCellVersions[cellKey] = (newCellVersions[cellKey] ?? 0) + 1;
         }
       }
@@ -887,18 +892,22 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         ? List<Map<String, dynamic>>.from(state.filterBlocks!)
         : _createBlocksFromFilters();
 
-    blocks.add({'type': 'open_paren'});
-    state = state.copyWith(filterBlocks: blocks);
+    // 조건이 1개 이상일 때만 괄호 추가
+    if (state.filters.length > 1) {
+      blocks.add({'type': 'open_paren'});
+      blocks.add({'type': 'close_paren'});
+      state = state.copyWith(filterBlocks: blocks);
+    }
   }
 
-  void addCloseParenthesis() {
-    final blocks = state.filterBlocks != null
-        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
-        : _createBlocksFromFilters();
-
-    blocks.add({'type': 'close_paren'});
-    state = state.copyWith(filterBlocks: blocks);
-  }
+  // void addCloseParenthesis() {
+  //   final blocks = state.filterBlocks != null
+  //       ? List<Map<String, dynamic>>.from(state.filterBlocks!)
+  //       : _createBlocksFromFilters();
+  //
+  //   blocks.add({'type': 'close_paren'});
+  //   state = state.copyWith(filterBlocks: blocks);
+  // }
 
   void reorderFilterBlock(int oldIndex, int newIndex) {
     final blocks = state.filterBlocks != null

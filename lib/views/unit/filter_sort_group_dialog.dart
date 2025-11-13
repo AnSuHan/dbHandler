@@ -106,14 +106,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               onPressed: () => _showAddFilterDialog(notifier, state),
             ),
             TextButton.icon(
-              icon: const Icon(Icons.code, size: 18),
-              label: const Text('Add ('),
+              icon: const Icon(Icons.group, size: 18),
+              label: const Text('Add (, )'),
               onPressed: () => notifier.addOpenParenthesis(),
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.code, size: 18),
-              label: const Text('Add )'),
-              onPressed: () => notifier.addCloseParenthesis(),
             ),
             if (state.filters.isNotEmpty)
               TextButton.icon(
@@ -137,161 +132,12 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     );
   }
 
-  Widget _buildFilterItem(FilterCondition filter, int index, DataEditingNotifier notifier, DataEditingState state) {
-    // TextEditingController 초기화 (없으면 생성)
-    if (!widget.filterControllers.containsKey(index)) {
-      final initialValue = filter.value?.toString() ?? '';
-      widget.filterControllers[index] = TextEditingController(text: initialValue);
-    }
-
-    final controller = widget.filterControllers[index]!;
-
-    // 필터 값이 외부에서 변경된 경우 controller 업데이트 (예: 연산자 변경)
-    final currentValue = filter.value?.toString() ?? '';
-    if (controller.text != currentValue &&
-        (filter.operator != 'IS NULL' && filter.operator != 'IS NOT NULL')) {
-      controller.text = currentValue;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          // 그룹 인덱스 표시
-          if (filter.groupIndex != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.purple.shade100,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Group ${filter.groupIndex! + 1}',
-                style: const TextStyle(fontSize: 10, color: Colors.purple),
-              ),
-            ),
-          const SizedBox(width: 8),
-          // 열 선택
-          SizedBox(
-            width: 120,
-            child: DropdownButton<String>(
-              value: filter.columnName,
-              isExpanded: true,
-              items: state.columns.map((col) {
-                return DropdownMenuItem(
-                  value: col['name']!,
-                  child: Text(col['name']!, overflow: TextOverflow.ellipsis),
-                );
-              }).toList(),
-              onChanged: (newColumn) {
-                if (newColumn != null) {
-                  notifier.updateFilter(index, filter.copyWith(columnName: newColumn));
-                }
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 연산자 선택
-          SizedBox(
-            width: 100,
-            child: DropdownButton<String>(
-              value: filter.operator,
-              isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: '=', child: Text('=')),
-                DropdownMenuItem(value: '!=', child: Text('!=')),
-                DropdownMenuItem(value: '<', child: Text('<')),
-                DropdownMenuItem(value: '>', child: Text('>')),
-                DropdownMenuItem(value: '<=', child: Text('<=')),
-                DropdownMenuItem(value: '>=', child: Text('>=')),
-                DropdownMenuItem(value: 'LIKE', child: Text('LIKE')),
-                DropdownMenuItem(value: 'IN', child: Text('IN')),
-                DropdownMenuItem(value: 'NOT IN', child: Text('NOT IN')),
-                DropdownMenuItem(value: 'IS NULL', child: Text('IS NULL')),
-                DropdownMenuItem(value: 'IS NOT NULL', child: Text('IS NOT NULL')),
-              ],
-              onChanged: (newOperator) {
-                if (newOperator != null) {
-                  // 연산자 변경 시 즉시 적용 (IS NULL, IS NOT NULL의 경우 값이 없으므로)
-                  notifier.updateFilter(index, filter.copyWith(operator: newOperator));
-                }
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 값 입력 (IS NULL, IS NOT NULL 제외)
-          if (filter.operator != 'IS NULL' && filter.operator != 'IS NOT NULL')
-            Expanded(
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: 'Value',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-                controller: controller,
-                // 입력이 끝난 후에만 적용 (Enter 키 또는 포커스 아웃)
-                onSubmitted: (value) {
-                  _applyFilterValue(index, filter, notifier, value);
-                },
-                onEditingComplete: () {
-                  _applyFilterValue(index, filter, notifier, controller.text);
-                },
-              ),
-            ),
-          const SizedBox(width: 8),
-          // 논리 연산자 (마지막 필터가 아닌 경우)
-          if (index < state.filters.length - 1)
-            SizedBox(
-              width: 80,
-              child: DropdownButton<String>(
-                value: filter.logicalOperator ?? 'AND',
-                isExpanded: true,
-                items: const [
-                  DropdownMenuItem(value: 'AND', child: Text('AND')),
-                  DropdownMenuItem(value: 'OR', child: Text('OR')),
-                ],
-                onChanged: (newOp) {
-                  notifier.updateFilter(index, filter.copyWith(logicalOperator: newOp));
-                },
-              ),
-            ),
-          const SizedBox(width: 8),
-          // 삭제 버튼
-          IconButton(
-            icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-            onPressed: () {
-              // Controller 정리
-              widget.filterControllers[index]?.dispose();
-              widget.filterControllers.remove(index);
-              notifier.removeFilter(index);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 필터 값을 적용하는 헬퍼 메서드
-  void _applyFilterValue(int index, FilterCondition filter, DataEditingNotifier notifier, String value) {
-    dynamic parsedValue = value;
-    // IN, NOT IN의 경우 콤마로 구분된 리스트로 파싱
-    if (filter.operator == 'IN' || filter.operator == 'NOT IN') {
-      parsedValue = value.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    } else if (value.trim().isEmpty) {
-      parsedValue = null;
-    }
-    notifier.updateFilter(index, filter.copyWith(value: parsedValue));
-  }
-
   Widget _buildExcelStyleFilterBuilder(DataEditingState state, DataEditingNotifier notifier) {
-    if (state.filters.isEmpty && (state.filterBlocks?.isEmpty ?? true)) {
+    // 필터와 괄호, AND/OR 블럭을 하나의 리스트로 관리
+    List<Map<String, dynamic>> blocks = _buildFilterBlockList(state);
+    debugPrint("[_buildExcelStyleFilterBuilder] blocks.asMap().entries: ${blocks.asMap().entries}");
+
+    if ((state.filters.isEmpty && (state.filterBlocks?.isEmpty ?? true)) || blocks.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
@@ -307,10 +153,6 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         ),
       );
     }
-
-    // 필터와 괄호, AND/OR 블럭을 하나의 리스트로 관리
-    List<Map<String, dynamic>> blocks = _buildFilterBlockList(state);
-    debugPrint("[_buildExcelStyleFilterBuilder] blocks.asMap().entries: ${blocks.asMap().entries}");
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -349,18 +191,19 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
 
     for (int i = 0; i < filters.length; i++) {
       final filter = filters[i];
-      final currentGroup = filter.groupIndex;
 
-      // 이전 조건의 그룹과 다르면 여는 괄호 추가
-      if (i == 0 || filters[i - 1].groupIndex != currentGroup) {
-        blocks.add({'type': 'openparen', 'groupIndex': currentGroup});
+      // openGroupCount 만큼 여는 괄호 추가
+      final openCount = filter.openGroupCount ?? 0;
+      for (int j = 0; j < openCount; j++) {
+        blocks.add({'type': 'openparen'});
       }
 
       blocks.add({'type': 'filter', 'index': i});
 
-      // 다음 조건의 그룹과 다르면 닫는 괄호 추가
-      if (i == filters.length - 1 || filters[i + 1].groupIndex != currentGroup) {
-        blocks.add({'type': 'closeparen', 'groupIndex': currentGroup});
+      // closeGroupCount 만큼 닫는 괄호 추가
+      final closeCount = filter.closeGroupCount ?? 0;
+      for (int j = 0; j < closeCount; j++) {
+        blocks.add({'type': 'closeparen'});
       }
 
       if (i < filters.length - 1) {
@@ -550,7 +393,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   Expanded(
                     flex: 2,
                     child: DropdownButtonFormField<String>(
-                      value: filter.columnName,
+                      initialValue: filter.columnName,
                       decoration: InputDecoration(
                         labelText: 'Column',
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -576,7 +419,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                     flex: 1,
                     child: DropdownButtonFormField<String>(
                       isExpanded: true,
-                      value: filter.operator,
+                      initialValue: filter.operator,
                       decoration: InputDecoration(
                         labelText: 'Op',
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -636,244 +479,6 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     );
   }
 
-  Widget _buildOperatorBlock({
-    required Key key,
-    required String operator,
-    required VoidCallback onToggle,
-  }) {
-    return Container(
-      key: key,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Center(
-        child: InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: operator == 'AND' ? Colors.blue.shade50 : Colors.orange.shade50,
-              border: Border.all(
-                color: operator == 'AND' ? Colors.blue.shade300 : Colors.orange.shade300,
-                width: 1.5,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  operator,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: operator == 'AND' ? Colors.blue.shade700 : Colors.orange.shade700,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.swap_horiz,
-                  size: 16,
-                  color: operator == 'AND' ? Colors.blue.shade700 : Colors.orange.shade700,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterBlock({
-    required Key key,
-    required dynamic filter,
-    required int filterIndex,
-    required DataEditingState state,
-    required DataEditingNotifier notifier,
-  }) {
-    // Controller 초기화 (없는 경우에만)
-    if (!widget.filterControllers.containsKey(filterIndex)) {
-      widget.filterControllers[filterIndex] = TextEditingController(text: filter.value?.toString() ?? '');
-    }
-
-    final controller = widget.filterControllers[filterIndex]!;
-    final hasParenthesis = state.filterParenthesis?[filterIndex] ?? false;
-
-    return Container(
-      key: key,
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade200,
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // 필터 헤더 (드래그 핸들 + 괄호 토글 + 삭제)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-            ),
-            child: Row(
-              children: [
-                // 드래그 핸들
-                const Icon(Icons.drag_indicator, size: 20, color: Colors.grey),
-                const SizedBox(width: 8),
-                // 괄호 토글
-                InkWell(
-                  onTap: () => notifier.toggleFilterParenthesis(filterIndex),
-                  borderRadius: BorderRadius.circular(4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: hasParenthesis ? Colors.purple.shade50 : Colors.transparent,
-                      border: Border.all(
-                        color: hasParenthesis ? Colors.purple.shade300 : Colors.grey.shade300,
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '( )',
-                      style: TextStyle(
-                        fontWeight: hasParenthesis ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 14,
-                        color: hasParenthesis ? Colors.purple.shade700 : Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                // 삭제 버튼
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  color: Colors.red.shade400,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () {
-                    widget.filterControllers[filterIndex]?.dispose();
-                    widget.filterControllers.remove(filterIndex);
-                    notifier.removeFilter(filterIndex);
-                  },
-                ),
-              ],
-            ),
-          ),
-          // 필터 내용
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                // 괄호 시작
-                if (hasParenthesis)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text(
-                      '(',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple.shade700,
-                      ),
-                    ),
-                  ),
-                // 컬럼 선택
-                Expanded(
-                  flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    value: filter.columnName,
-                    decoration: InputDecoration(
-                      labelText: 'Column',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                    ),
-                    items: state.columns.map((col) {
-                      // Map에서 컬럼 이름 추출 (일반적으로 'name' 또는 'column_name' 키 사용)
-                      final columnName = col['name'] ?? col['column_name'] ?? '';
-                      return DropdownMenuItem<String>(
-                        value: columnName,
-                        child: Text(columnName),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        notifier.updateFilterColumn(filterIndex, value);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // 연산자 선택
-                Expanded(
-                  flex: 1,
-                  child: DropdownButtonFormField<String>(
-                    value: filter.operator,
-                    decoration: InputDecoration(
-                      labelText: 'Op',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: '=', child: Text('=')),
-                      DropdownMenuItem(value: '!=', child: Text('!=')),
-                      DropdownMenuItem(value: '>', child: Text('>')),
-                      DropdownMenuItem(value: '<', child: Text('<')),
-                      DropdownMenuItem(value: '>=', child: Text('>=')),
-                      DropdownMenuItem(value: '<=', child: Text('<=')),
-                      DropdownMenuItem(value: 'LIKE', child: Text('LIKE')),
-                      DropdownMenuItem(value: 'IN', child: Text('IN')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        notifier.updateFilterOperator(filterIndex, value);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // 값 입력
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: controller,
-                    decoration: InputDecoration(
-                      labelText: 'Value',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                    ),
-                    onChanged: (value) {
-                      notifier.updateFilterValue(filterIndex, value);
-                    },
-                  ),
-                ),
-                // 괄호 끝
-                if (hasParenthesis)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      ')',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple.shade700,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSortSection(DataEditingState state, DataEditingNotifier notifier) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -918,7 +523,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               border: Border.all(color: Colors.grey.shade300),
               borderRadius: BorderRadius.circular(8),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)
+                BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
               ],
             ),
             child: _buildSortItemContent(sort, index, state, notifier),
@@ -939,12 +544,15 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         ),
       ),
       child: DragTarget<int>(
-        onAccept: (draggedIndex) {
+        onAcceptWithDetails: (DragTargetDetails<int> details) {
+          final draggedIndex = details.data;
           if (draggedIndex != index) {
             notifier.reorderSorts(draggedIndex, index);
           }
         },
-        onWillAccept: (data) => data != index,
+        onWillAcceptWithDetails: (DragTargetDetails<int> details) {
+          return details.data != index;
+        },
         builder: (context, candidateData, rejectedData) {
           final isTarget = candidateData.isNotEmpty;
           return AnimatedContainer(
@@ -1065,7 +673,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               border: Border.all(color: Colors.grey.shade300),
               borderRadius: BorderRadius.circular(8),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)
+                BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
               ],
             ),
             child: _buildGroupItemContent(columnName, notifier),
@@ -1086,12 +694,15 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         ),
       ),
       child: DragTarget<int>(
-        onAccept: (draggedIndex) {
+        onAcceptWithDetails: (DragTargetDetails<int> details) {
+          final draggedIndex = details.data;
           if (draggedIndex != index) {
             notifier.reorderGroupBy(draggedIndex, index);
           }
         },
-        onWillAccept: (data) => data != index,
+        onWillAcceptWithDetails: (DragTargetDetails<int> details) {
+          return details.data != index;
+        },
         builder: (context, candidateData, rejectedData) {
           final isTarget = candidateData.isNotEmpty;
           return AnimatedContainer(
@@ -1163,16 +774,23 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   ...state.filters.asMap().entries.map((entry) {
                     final index = entry.key;
                     final filter = entry.value;
-                    final groupPrefix = filter.groupIndex != null ? '[Group ${filter.groupIndex! + 1}] ' : '';
+
+                    // openGroupCount 만큼 괄호 여는 텍스트 추가
+                    final openParens = List.filled(filter.openGroupCount ?? 0, '(').join();
+
+                    // 닫는 괄호 텍스트
+                    final closeParens = List.filled(filter.closeGroupCount ?? 0, ')').join();
+
                     final valueDisplay = filter.operator == 'IS NULL' || filter.operator == 'IS NOT NULL'
                         ? ''
                         : filter.operator == 'IN' || filter.operator == 'NOT IN'
-                            ? ' (${(filter.value as List).join(', ')})'
-                            : ' ${filter.value}';
+                        ? ' (${(filter.value as List).join(', ')})'
+                        : ' ${filter.value}';
                     final logicalOp = index < state.filters.length - 1
                         ? ' ${filter.logicalOperator ?? 'AND'}'
                         : '';
-                    return Text('  $groupPrefix${filter.columnName} ${filter.operator}$valueDisplay$logicalOp');
+
+                    return Text('  $openParens${filter.columnName} ${filter.operator}$valueDisplay$closeParens$logicalOp');
                   }),
                 ],
                 if (state.sorts.isNotEmpty) ...[
@@ -1204,7 +822,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     String? logicalOperator = state.filters.isNotEmpty 
         ? state.filters.last.logicalOperator ?? 'AND'
         : 'AND';
-    int? groupIndex;
+    int openGroupCount = 0;
+    int closeGroupCount = 0;
 
     showDialog(
       context: context,
@@ -1216,7 +835,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: selectedColumn,
+                  initialValue: selectedColumn,
                   decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
                   items: state.columns.map((col) {
                     return DropdownMenuItem(value: col['name']!, child: Text(col['name']!));
@@ -1225,7 +844,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: selectedOperator,
+                  initialValue: selectedOperator,
                   decoration: const InputDecoration(labelText: 'Operator', border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: '=', child: Text('=')),
@@ -1255,18 +874,40 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: '괄호 그룹 (선택사항)',
-                    border: OutlineInputBorder(),
-                    hintText: '같은 숫자를 입력하면 같은 그룹으로 묶임',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (value) {
-                    setStateInDialog(() {
-                      groupIndex = value.isEmpty ? null : int.tryParse(value);
-                    });
-                  },
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Opening brackets count (optional)',
+                          border: OutlineInputBorder(),
+                          hintText: '0 or more',
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          setStateInDialog(() {
+                            openGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Closing brackets count (optional)',
+                          border: OutlineInputBorder(),
+                          hintText: '0 or more',
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          setStateInDialog(() {
+                            closeGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1290,7 +931,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   operator: selectedOperator,
                   value: value,
                   logicalOperator: logicalOperator,
-                  groupIndex: groupIndex,
+                  openGroupCount: openGroupCount,
+                  closeGroupCount: closeGroupCount,
                 ));
                 Navigator.pop(dialogContext);
               },
@@ -1317,7 +959,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: selectedColumn,
+                initialValue: selectedColumn,
                 decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
                 items: state.columns.map((col) {
                   return DropdownMenuItem(value: col['name']!, child: Text(col['name']!));
@@ -1326,7 +968,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<bool>(
-                value: ascending,
+                initialValue: ascending,
                 decoration: const InputDecoration(labelText: 'Order', border: OutlineInputBorder()),
                 items: const [
                   DropdownMenuItem(value: true, child: Text('ASC')),
@@ -1377,7 +1019,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         builder: (context, setStateInDialog) => AlertDialog(
           title: const Text('Add Group By'),
           content: DropdownButtonFormField<String>(
-            value: selectedColumn,
+            initialValue: selectedColumn,
             decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
             items: availableColumns.map((col) {
               return DropdownMenuItem(value: col, child: Text(col));
@@ -1436,7 +1078,6 @@ class _FilterConditionBuilder extends StatefulWidget {
 }
 
 class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
-  int? _draggedIndex;
   int? _dragTargetIndex;
 
   @override
@@ -1461,23 +1102,35 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
   List<_FilterGroup> _buildFilterGroups() {
     final List<_FilterGroup> groups = [];
     int i = 0;
-    
+
     while (i < widget.filters.length) {
-      final currentGroupIndex = widget.filters[i].groupIndex;
-      
-      if (currentGroupIndex != null) {
-        // 그룹화된 필터들 찾기
+      final filter = widget.filters[i];
+      final openCount = filter.openGroupCount ?? 0;
+      final closeCount = filter.closeGroupCount ?? 0;
+
+      // 괄호 그룹이 열리고 닫히는 개수를 기준으로 그룹 구분
+      // 단일 조건일 경우 openCount와 closeCount가 0인 것으로 가정
+      if (openCount > 0) {
         final startIndex = i;
-        while (i < widget.filters.length && widget.filters[i].groupIndex == currentGroupIndex) {
-          i++;
+        int groupLevel = openCount;
+        int j = i + 1;
+
+        while (j < widget.filters.length) {
+          groupLevel += (widget.filters[j].openGroupCount ?? 0);
+          groupLevel -= (widget.filters[j].closeGroupCount ?? 0);
+
+          if (groupLevel <= 0) break;
+          j++;
         }
+        final endIndex = groupLevel <= 0 ? j : widget.filters.length - 1;
+
         groups.add(_FilterGroup(
           startIndex: startIndex,
-          endIndex: i - 1,
+          endIndex: endIndex,
           isGrouped: true,
         ));
+        i = endIndex + 1;
       } else {
-        // 그룹화되지 않은 단일 필터
         groups.add(_FilterGroup(
           startIndex: i,
           endIndex: i,
@@ -1486,13 +1139,11 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
         i++;
       }
     }
-    
+
     return groups;
   }
 
   Widget _buildDraggableGroup(_FilterGroup group) {
-    final groupIndex = widget.filters[group.startIndex].groupIndex!;
-    
     return Draggable<_FilterGroup>(
       data: group,
       feedback: Material(
@@ -1504,7 +1155,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
             border: Border.all(color: Colors.blue.shade300, width: 2),
             borderRadius: BorderRadius.circular(8),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)
+              BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
             ],
           ),
           child: _buildGroupContent(group, isDragging: true),
@@ -1523,23 +1174,22 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
         ),
       ),
       onDragStarted: () {
-        setState(() => _draggedIndex = group.startIndex);
       },
       onDragEnd: (_) {
         setState(() {
-          _draggedIndex = null;
           _dragTargetIndex = null;
         });
       },
       child: DragTarget<_FilterGroup>(
-        onAccept: (draggedGroup) {
+        onAcceptWithDetails: (DragTargetDetails<_FilterGroup> details) {
+          final draggedGroup = details.data;
           if (draggedGroup.startIndex != group.startIndex) {
             _reorderGroup(draggedGroup, group);
           }
         },
-        onWillAccept: (data) {
+        onWillAcceptWithDetails: (DragTargetDetails<_FilterGroup> details) {
           setState(() => _dragTargetIndex = group.startIndex);
-          return data?.startIndex != group.startIndex;
+          return details.data.startIndex != group.startIndex;
         },
         onLeave: (_) {
           setState(() => _dragTargetIndex = null);
@@ -1585,8 +1235,13 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
   }
 
   Widget _buildGroupContent(_FilterGroup group, {bool isDragging = false}) {
-    final groupIndex = widget.filters[group.startIndex].groupIndex!;
-    
+    final filter = widget.filters[group.startIndex];
+
+    // openGroupCount 만큼 여는 괄호 출력
+    final openParens = List.filled(filter.openGroupCount ?? 0, '(').join();
+    // closeGroupCount 만큼 닫는 괄호 출력
+    final closeParens = List.filled(filter.closeGroupCount ?? 0, ')').join();
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1594,7 +1249,12 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
         Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
         const SizedBox(width: 4),
         // 시작 괄호 (드래그 타겟 + 클릭하면 그룹 제거)
-        _buildGroupStartBracket(group, groupIndex),
+        GestureDetector(
+          onTap: () {
+            // 그룹 제거 로직 추가 가능
+          },
+          child: Text(openParens, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
         const SizedBox(width: 4),
         // 조건들
         for (int i = group.startIndex; i <= group.endIndex; i++) ...[
@@ -1603,91 +1263,22 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
         ],
         const SizedBox(width: 4),
         // 끝 괄호 (드래그 타겟)
-        _buildGroupEndBracket(group, groupIndex),
+        Text(closeParens, style: const TextStyle(fontWeight: FontWeight.bold)),
       ],
-    );
-  }
-
-  Widget _buildGroupStartBracket(_FilterGroup group, int groupIndex) {
-    return DragTarget<int>(
-      onAccept: (draggedIndex) {
-        _moveFilterIntoGroup(draggedIndex, group.startIndex, groupIndex);
-      },
-      onWillAccept: (data) {
-        if (data == null) return false;
-        final draggedFilter = widget.filters[data];
-        // 이미 같은 그룹에 있으면 거부
-        return draggedFilter.groupIndex != groupIndex;
-      },
-      builder: (context, candidateData, rejectedData) {
-        final isTarget = candidateData.isNotEmpty;
-        return GestureDetector(
-          onTap: () => _removeGroup(group.startIndex),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isTarget ? Colors.green.shade100 : Colors.blue.shade100,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: isTarget ? Colors.green.shade300 : Colors.blue.shade300,
-                width: isTarget ? 2 : 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('(', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(width: 4),
-                Icon(Icons.close, size: 14, color: Colors.blue.shade700),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildGroupEndBracket(_FilterGroup group, int groupIndex) {
-    return DragTarget<int>(
-      onAccept: (draggedIndex) {
-        _moveFilterIntoGroup(draggedIndex, group.endIndex + 1, groupIndex);
-      },
-      onWillAccept: (data) {
-        if (data == null) return false;
-        final draggedFilter = widget.filters[data];
-        // 이미 같은 그룹에 있으면 거부
-        return draggedFilter.groupIndex != groupIndex;
-      },
-      builder: (context, candidateData, rejectedData) {
-        final isTarget = candidateData.isNotEmpty;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: isTarget ? Colors.green.shade100 : Colors.blue.shade100,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: isTarget ? Colors.green.shade300 : Colors.blue.shade300,
-              width: isTarget ? 2 : 1,
-            ),
-          ),
-          child: const Text(')', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        );
-      },
     );
   }
 
   Widget _buildOutsideGroupDropZone(int targetIndex) {
     return DragTarget<int>(
-      onAccept: (draggedIndex) {
+      onAcceptWithDetails: (DragTargetDetails<int> details) {
+        final draggedIndex = details.data;
         _moveFilterOutOfGroup(draggedIndex);
       },
-      onWillAccept: (data) {
-        if (data == null) return false;
-        final draggedFilter = widget.filters[data];
-        // 이미 그룹에 있으면 허용
-        return draggedFilter.groupIndex != null;
+      onWillAcceptWithDetails: (DragTargetDetails<int> details) {
+        final draggedFilter = widget.filters[details.data];
+        // openGroupCount 또는 closeGroupCount가 0보다 크면 이미 그룹에 있는 것으로 판단
+        return (draggedFilter.openGroupCount != null && draggedFilter.openGroupCount! > 0) ||
+            (draggedFilter.closeGroupCount != null && draggedFilter.closeGroupCount! > 0);
       },
       builder: (context, candidateData, rejectedData) {
         final isTarget = candidateData.isNotEmpty;
@@ -1700,13 +1291,13 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
             color: isTarget ? Colors.orange.shade100 : Colors.transparent,
             border: isTarget
                 ? Border.all(color: Colors.orange.shade300, width: 2, style: BorderStyle.solid)
-                : Border.all(color: Colors.grey.shade300.withOpacity(0.5), width: 1, style: BorderStyle.solid),
+                : Border.all(color: Colors.grey.shade300.withValues(alpha: 0.5), width: 1, style: BorderStyle.solid),
             borderRadius: BorderRadius.circular(4),
           ),
           child: isTarget
               ? const Center(
-                  child: Icon(Icons.remove_circle_outline, size: 16, color: Colors.orange),
-                )
+            child: Icon(Icons.remove_circle_outline, size: 16, color: Colors.orange),
+          )
               : null,
         );
       },
@@ -1715,18 +1306,17 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
 
   Widget _buildBetweenGroupsDropZone(_FilterGroup prevGroup, _FilterGroup nextGroup) {
     return DragTarget<int>(
-      onAccept: (draggedIndex) {
+      onAcceptWithDetails: (DragTargetDetails<int> details) {
+        final draggedIndex = details.data;
         final draggedFilter = widget.filters[draggedIndex];
-        // 그룹에 있으면 그룹에서 제거
-        if (draggedFilter.groupIndex != null) {
+        // openGroupCount나 closeGroupCount가 0보다 크면 그룹에 속한 것으로 판단
+        if ((draggedFilter.openGroupCount ?? 0) > 0 || (draggedFilter.closeGroupCount ?? 0) > 0) {
           _moveFilterOutOfGroup(draggedIndex);
         }
       },
-      onWillAccept: (data) {
-        if (data == null) return false;
-        final draggedFilter = widget.filters[data];
-        // 그룹에 있으면 허용
-        return draggedFilter.groupIndex != null;
+      onWillAcceptWithDetails: (DragTargetDetails<int> details) {
+        final draggedFilter = widget.filters[details.data];
+        return (draggedFilter.openGroupCount ?? 0) > 0 || (draggedFilter.closeGroupCount ?? 0) > 0;
       },
       builder: (context, candidateData, rejectedData) {
         final isTarget = candidateData.isNotEmpty;
@@ -1739,45 +1329,27 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
             color: isTarget ? Colors.orange.shade100 : Colors.transparent,
             border: isTarget
                 ? Border.all(color: Colors.orange.shade300, width: 2, style: BorderStyle.solid)
-                : Border.all(color: Colors.grey.shade300.withOpacity(0.5), width: 1, style: BorderStyle.solid),
+                : Border.all(color: Colors.grey.shade300.withValues(alpha: 0.5), width: 1, style: BorderStyle.solid),
             borderRadius: BorderRadius.circular(4),
           ),
           child: isTarget
               ? const Center(
-                  child: Icon(Icons.remove_circle_outline, size: 16, color: Colors.orange),
-                )
+            child: Icon(Icons.remove_circle_outline, size: 16, color: Colors.orange),
+          )
               : null,
         );
       },
     );
   }
 
-  void _moveFilterIntoGroup(int filterIndex, int targetIndex, int groupIndex) {
-    final newFilters = List<FilterCondition>.from(widget.filters);
-    final filter = newFilters[filterIndex];
-    
-    // 필터를 제거하고 타겟 위치에 삽입
-    newFilters.removeAt(filterIndex);
-    
-    // 인덱스 조정
-    final adjustedTargetIndex = filterIndex < targetIndex ? targetIndex - 1 : targetIndex;
-    newFilters.insert(adjustedTargetIndex, filter.copyWith(groupIndex: groupIndex));
-    
-    // 필터 재정렬
-    widget.notifier.clearFilters();
-    for (final f in newFilters) {
-      widget.notifier.addFilter(f);
-    }
-  }
-
   void _moveFilterOutOfGroup(int filterIndex) {
     final newFilters = List<FilterCondition>.from(widget.filters);
     final filter = newFilters[filterIndex];
-    
-    // 그룹에서 제거
-    newFilters[filterIndex] = filter.copyWith(groupIndex: null);
-    
-    // 필터 업데이트
+
+    // 그룹 정보 제거: openGroupCount, closeGroupCount를 0으로 설정
+    newFilters[filterIndex] = filter.copyWith(openGroupCount: 0, closeGroupCount: 0);
+
+    // 필터 전체를 다시 업데이트
     widget.notifier.clearFilters();
     for (final f in newFilters) {
       widget.notifier.addFilter(f);
@@ -1817,18 +1389,6 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
     }
   }
 
-  void _removeGroup(int index) {
-    final groupIndex = widget.filters[index].groupIndex;
-    if (groupIndex == null) return;
-    
-    // 같은 그룹의 모든 필터에서 그룹 제거
-    for (int i = 0; i < widget.filters.length; i++) {
-      if (widget.filters[i].groupIndex == groupIndex) {
-        widget.notifier.updateFilter(i, widget.filters[i].copyWith(groupIndex: null));
-      }
-    }
-  }
-
   Widget _buildConditionBlock(FilterCondition filter, int index) {
     // TextEditingController 초기화
     if (!widget.filterControllers.containsKey(index)) {
@@ -1854,23 +1414,22 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
         child: _buildConditionCard(filter, index, controller),
       ),
       onDragStarted: () {
-        setState(() => _draggedIndex = index);
       },
       onDragEnd: (_) {
         setState(() {
-          _draggedIndex = null;
           _dragTargetIndex = null;
         });
       },
       child: DragTarget<int>(
-        onAccept: (draggedIndex) {
+        onAcceptWithDetails: (DragTargetDetails<int> details) {
+          final draggedIndex = details.data;
           if (draggedIndex != index) {
             widget.notifier.reorderFilters(draggedIndex, index);
           }
         },
-        onWillAccept: (data) {
+        onWillAcceptWithDetails: (DragTargetDetails<int> details) {
           setState(() => _dragTargetIndex = index);
-          return data != index;
+          return details.data != index;
         },
         onLeave: (_) {
           setState(() => _dragTargetIndex = null);
@@ -1892,17 +1451,19 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
   }
 
   Widget _buildConditionCard(FilterCondition filter, int index, TextEditingController controller, {bool isDragging = false}) {
+    final isGrouped = (filter.openGroupCount != null && filter.openGroupCount! > 0) || (filter.closeGroupCount != null && filter.closeGroupCount! > 0);
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: isDragging ? Colors.white : Colors.white,
         border: Border.all(
-          color: filter.groupIndex != null ? Colors.blue.shade300 : Colors.grey.shade300,
-          width: filter.groupIndex != null ? 2 : 1,
+          color: isGrouped ? Colors.blue.shade300 : Colors.grey.shade300,
+          width: isGrouped ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(8),
         boxShadow: isDragging
-            ? [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)]
+            ? [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)]
             : null,
       ),
       child: Row(
@@ -1911,7 +1472,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
           // 드래그 핸들
           Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
           const SizedBox(width: 8),
-          
+
           // 열 선택
           SizedBox(
             width: 120,
@@ -1932,7 +1493,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
             ),
           ),
           const SizedBox(width: 8),
-          
+
           // 연산자 선택
           SizedBox(
             width: 100,
@@ -1960,7 +1521,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
             ),
           ),
           const SizedBox(width: 8),
-          
+
           // 값 입력
           if (filter.operator != 'IS NULL' && filter.operator != 'IS NOT NULL')
             SizedBox(
@@ -1981,38 +1542,34 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
                 },
               ),
             ),
-          
+
           const SizedBox(width: 8),
-          
+
           // 그룹 추가/제거 버튼
           IconButton(
             icon: Icon(
-              filter.groupIndex != null ? Icons.group : Icons.group_outlined,
+              isGrouped ? Icons.group : Icons.group_outlined,
               size: 18,
-              color: filter.groupIndex != null ? Colors.blue : Colors.grey,
+              color: isGrouped ? Colors.blue : Colors.grey,
             ),
-            tooltip: filter.groupIndex != null ? '그룹 제거' : '그룹 추가',
+            tooltip: isGrouped ? '그룹 제거' : '그룹 추가',
             onPressed: () {
-              if (filter.groupIndex != null) {
-                widget.notifier.updateFilter(index, filter.copyWith(groupIndex: null));
+              if (isGrouped) {
+                widget.notifier.updateFilter(index, filter.copyWith(openGroupCount: 0, closeGroupCount: 0));
               } else {
-                // 새로운 그룹 인덱스 생성
-                final maxGroupIndex = widget.filters
-                    .where((f) => f.groupIndex != null)
-                    .map((f) => f.groupIndex!)
-                    .fold<int>(-1, (max, idx) => idx > max ? idx : max);
-                widget.notifier.updateFilter(index, filter.copyWith(groupIndex: maxGroupIndex + 1));
+                // 새로운 그룹은 일단 괄호 하나씩 열고 닫는 걸로 시작 (필요에 따라 조절 가능)
+                widget.notifier.updateFilter(index, filter.copyWith(openGroupCount: 1, closeGroupCount: 1));
               }
             },
           ),
-          
+
           // 수정 버튼
           IconButton(
             icon: const Icon(Icons.edit, size: 18, color: Colors.blue),
             tooltip: '수정',
             onPressed: () => _showEditFilterDialog(index, filter),
           ),
-          
+
           // 삭제 버튼
           IconButton(
             icon: const Icon(Icons.delete, size: 18, color: Colors.red),
@@ -2074,7 +1631,8 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
     String selectedOperator = filter.operator;
     String? valueText = filter.value?.toString() ?? '';
     String? logicalOperator = filter.logicalOperator ?? 'AND';
-    int? groupIndex = filter.groupIndex;
+    int openGroupCount = filter.openGroupCount ?? 0;
+    int closeGroupCount = filter.closeGroupCount ?? 0;
 
     showDialog(
       context: context,
@@ -2086,7 +1644,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: selectedColumn,
+                  initialValue: selectedColumn,
                   decoration: const InputDecoration(labelText: '열', border: OutlineInputBorder()),
                   items: widget.columns.map((col) {
                     return DropdownMenuItem(value: col['name']!, child: Text(col['name']!));
@@ -2095,7 +1653,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: selectedOperator,
+                  initialValue: selectedOperator,
                   decoration: const InputDecoration(labelText: '연산자', border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: '=', child: Text('=')),
@@ -2127,7 +1685,7 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
                 ],
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  value: logicalOperator,
+                  initialValue: logicalOperator,
                   decoration: const InputDecoration(labelText: '논리 연산자', border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: 'AND', child: Text('AND')),
@@ -2136,19 +1694,42 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
                   onChanged: (value) => setStateInDialog(() => logicalOperator = value),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: TextEditingController(text: groupIndex?.toString() ?? ''),
-                  decoration: const InputDecoration(
-                    labelText: '괄호 그룹 (선택사항)',
-                    border: OutlineInputBorder(),
-                    hintText: '같은 숫자를 입력하면 같은 그룹으로 묶임',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (value) {
-                    setStateInDialog(() {
-                      groupIndex = value.isEmpty ? null : int.tryParse(value);
-                    });
-                  },
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: '괄호 열기 수 (선택사항)',
+                          border: OutlineInputBorder(),
+                          hintText: '0 이상 숫자',
+                        ),
+                        keyboardType: TextInputType.number,
+                        controller: TextEditingController(text: openGroupCount.toString()),
+                        onChanged: (value) {
+                          setStateInDialog(() {
+                            openGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: '괄호 닫기 수 (선택사항)',
+                          border: OutlineInputBorder(),
+                          hintText: '0 이상 숫자',
+                        ),
+                        keyboardType: TextInputType.number,
+                        controller: TextEditingController(text: closeGroupCount.toString()),
+                        onChanged: (value) {
+                          setStateInDialog(() {
+                            closeGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2172,7 +1753,8 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
                   operator: selectedOperator,
                   value: value,
                   logicalOperator: logicalOperator,
-                  groupIndex: groupIndex,
+                  openGroupCount: openGroupCount,
+                  closeGroupCount: closeGroupCount,
                 ));
                 Navigator.pop(dialogContext);
               },
