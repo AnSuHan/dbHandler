@@ -105,6 +105,16 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               label: const Text('Add Filter'),
               onPressed: () => _showAddFilterDialog(notifier, state),
             ),
+            TextButton.icon(
+              icon: const Icon(Icons.code, size: 18),
+              label: const Text('Add ('),
+              onPressed: () => notifier.addOpenParenthesis(),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.code, size: 18),
+              label: const Text('Add )'),
+              onPressed: () => notifier.addCloseParenthesis(),
+            ),
             if (state.filters.isNotEmpty)
               TextButton.icon(
                 icon: const Icon(Icons.clear, size: 18),
@@ -281,7 +291,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
   }
 
   Widget _buildExcelStyleFilterBuilder(DataEditingState state, DataEditingNotifier notifier) {
-    if (state.filters.isEmpty) {
+    if (state.filters.isEmpty && (state.filterBlocks?.isEmpty ?? true)) {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
@@ -298,42 +308,331 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       );
     }
 
-    return ReorderableListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: state.filters.length * 2 - 1, // 필터 + AND/OR 연산자
-      onReorder: (oldIndex, newIndex) {
-        // AND/OR 블럭은 드래그 불가하므로 실제 필터 인덱스로 변환
-        final actualOldIndex = oldIndex ~/ 2;
-        final actualNewIndex = newIndex > oldIndex ? (newIndex - 1) ~/ 2 : newIndex ~/ 2;
+    // 필터와 괄호, AND/OR 블럭을 하나의 리스트로 관리
+    List<Map<String, dynamic>> blocks = _buildFilterBlockList(state);
+    debugPrint("[_buildExcelStyleFilterBuilder] blocks.asMap().entries: ${blocks.asMap().entries}");
 
-        if (oldIndex % 2 == 0) { // 필터 블럭만 이동 가능
-          notifier.reorderFilter(actualOldIndex, actualNewIndex);
-        }
-      },
-      itemBuilder: (context, index) {
-        // 홀수 인덱스: AND/OR 연산자
-        if (index % 2 == 1) {
-          final operatorIndex = index ~/ 2;
-          return _buildOperatorBlock(
-            key: ValueKey('operator_$operatorIndex'),
-            operator: state.filterOperators?[operatorIndex] ?? 'AND',
-            onToggle: () => notifier.toggleFilterOperator(operatorIndex),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ReorderableListView(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        onReorder: (oldIndex, newIndex) {
+          notifier.reorderFilterBlock(oldIndex, newIndex);
+        },
+        children: blocks.asMap().entries.map((entry) {
+          final index = entry.key;
+          final block = entry.value;
+
+          return _buildDraggableBlock(
+            key: ValueKey('block_$index'),
+            block: block,
+            blockIndex: index,
+            state: state,
+            notifier: notifier,
           );
-        }
+        }).toList(),
+      ),
+    );
+  }
 
-        // 짝수 인덱스: 필터 블럭
-        final filterIndex = index ~/ 2;
-        final filter = state.filters[filterIndex];
+  List<Map<String, dynamic>> _buildFilterBlockList(DataEditingState state) {
+    // state에서 블럭 정보를 가져오거나 생성
+    // 예: [{'type': 'filter', 'index': 0}, {'type': 'operator', 'value': 'AND'}, {'type': 'parenthesis', 'value': '('}, ...]
+    final blocks = <Map<String, dynamic>>[];
+    final filters = state.filters;
 
-        return _buildFilterBlock(
-          key: ValueKey('filter_$filterIndex'),
-          filter: filter,
-          filterIndex: filterIndex,
-          state: state,
-          notifier: notifier,
-        );
-      },
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      final currentGroup = filter.groupIndex;
+
+      // 이전 조건의 그룹과 다르면 여는 괄호 추가
+      if (i == 0 || filters[i - 1].groupIndex != currentGroup) {
+        blocks.add({'type': 'openparen', 'groupIndex': currentGroup});
+      }
+
+      blocks.add({'type': 'filter', 'index': i});
+
+      // 다음 조건의 그룹과 다르면 닫는 괄호 추가
+      if (i == filters.length - 1 || filters[i + 1].groupIndex != currentGroup) {
+        blocks.add({'type': 'closeparen', 'groupIndex': currentGroup});
+      }
+
+      if (i < filters.length - 1) {
+        blocks.add({
+          'type': 'operator',
+          'value': filter.logicalOperator ?? 'AND',
+        });
+      }
+    }
+
+    return blocks;
+  }
+
+  Widget _buildDraggableBlock({
+    required Key key,
+    required Map<String, dynamic> block,
+    required int blockIndex,
+    required DataEditingState state,
+    required DataEditingNotifier notifier,
+  }) {
+    final blockType = block['type'] as String;
+    Widget content;
+    switch (blockType) {
+      case 'filter':
+        final filter = state.filters[block['index'] as int];
+        content = _buildFilterBlockContent(filter: filter, filterIndex: block['index'] as int, state: state, notifier: notifier);
+        break;
+      case 'operator':
+        content = _buildOperatorBlockContent(operator: block['value'] as String?, blockIndex: blockIndex, notifier: notifier);
+        break;
+      case 'openparen':
+        content = _buildParenthesisBlockContent('(', blockIndex, notifier);
+        break;
+      case 'closeparen':
+        content = _buildParenthesisBlockContent(')', blockIndex, notifier);
+        break;
+      default:
+        content = Container();
+    }
+
+    return Container(
+      key: key,
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      constraints: const BoxConstraints(minHeight: 48), // 최소 높이 지정
+      child: content,
+    );
+  }
+
+  Widget _buildOperatorBlockContent({String? operator, int? blockIndex, DataEditingNotifier? notifier}) {
+    if (operator == null || blockIndex == null || notifier == null) {
+      return Container();
+    }
+    final isAnd = operator == 'AND';
+    return IntrinsicWidth(
+      child: InkWell(
+        onTap: () => notifier.toggleFilterOperatorAtBlock(blockIndex),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 80),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: isAnd ? Colors.blue.shade50 : Colors.orange.shade50,
+            border: Border.all(
+              color: isAnd ? Colors.blue.shade300 : Colors.orange.shade300,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.drag_indicator, size: 16, color: Colors.grey),
+              const SizedBox(width: 8),
+              Text(
+                operator,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: isAnd ? Colors.blue.shade700 : Colors.orange.shade700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.swap_horiz, size: 16, color: isAnd ? Colors.blue.shade700 : Colors.orange.shade700),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParenthesisBlockContent(String paren, int blockIndex, DataEditingNotifier notifier) {
+    return IntrinsicWidth(
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 60),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.purple.shade50,
+          border: Border.all(color: Colors.purple.shade300, width: 2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.drag_indicator, size: 16, color: Colors.grey),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                paren,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.purple.shade700,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => notifier.removeBlockAtBlockIndex(blockIndex),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterBlockContent({
+    required FilterCondition filter,
+    required int filterIndex,
+    required DataEditingState state,
+    required DataEditingNotifier notifier,
+  }) {
+    if (!widget.filterControllers.containsKey(filterIndex)) {
+      final initialValue = filter.value?.toString() ?? '';
+      widget.filterControllers[filterIndex] = TextEditingController(text: initialValue);
+    }
+    final controller = widget.filterControllers[filterIndex]!;
+
+    final hasParenthesis = state.filterParenthesis?[filterIndex] ?? false;
+
+    return IntrinsicWidth(
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 400, maxWidth: 600),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.blue.shade300, width: 2),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(color: Colors.blue.shade100, blurRadius: 4, offset: const Offset(0, 2))
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.drag_indicator, size: 20, color: Colors.grey),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      widget.filterControllers[filterIndex]?.dispose();
+                      widget.filterControllers.remove(filterIndex);
+                      notifier.removeFilter(filterIndex);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      value: filter.columnName,
+                      decoration: InputDecoration(
+                        labelText: 'Column',
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                        isDense: true,
+                      ),
+                      items: state.columns.map((col) {
+                        final columnName = col['name'] ?? col['columnname'] ?? '';
+                        return DropdownMenuItem<String>(
+                          value: columnName,
+                          child: Text(columnName, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          notifier.updateFilterColumn(filterIndex, value);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 1,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: filter.operator,
+                      decoration: InputDecoration(
+                        labelText: 'Op',
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: '=', child: Text('=')),
+                        DropdownMenuItem(value: '!=', child: Text('!=')),
+                        DropdownMenuItem(value: '<', child: Text('<')),
+                        DropdownMenuItem(value: '<=', child: Text('<=')),
+                        DropdownMenuItem(value: '>', child: Text('>')),
+                        DropdownMenuItem(value: '>=', child: Text('>=')),
+                        DropdownMenuItem(value: 'LIKE', child: Text('LIKE')),
+                        DropdownMenuItem(value: 'IN', child: Text('IN')),
+                        DropdownMenuItem(value: 'NOT IN', child: Text('NOT IN')),
+                        DropdownMenuItem(value: 'IS NULL', child: Text('IS NULL')),
+                        DropdownMenuItem(value: 'IS NOT NULL', child: Text('IS NOT NULL')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          notifier.updateFilterOperator(filterIndex, value);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (filter.operator != 'IS NULL' && filter.operator != 'IS NOT NULL')
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: controller,
+                        decoration: InputDecoration(
+                          labelText: 'Value',
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                          isDense: true,
+                        ),
+                        onChanged: (value) => notifier.updateFilterValue(filterIndex, value),
+                      ),
+                    ),
+                  if (hasParenthesis)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Text(
+                        ')',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold, color: Colors.purple),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1732,20 +2031,17 @@ class _FilterConditionBuilderState extends State<_FilterConditionBuilder> {
   Widget _buildLogicalOperator(int index) {
     final filter = widget.filters[index];
     final isAnd = (filter.logicalOperator ?? 'AND') == 'AND';
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: ToggleButtons(
         isSelected: [isAnd, !isAnd],
-        onPressed: (int selectedIndex) {
-          final newOp = selectedIndex == 0 ? 'AND' : 'OR';
+        onPressed: (selectedIndex) {
+          final newOp = (selectedIndex == 0) ? 'AND' : 'OR';
           widget.notifier.updateFilter(index, filter.copyWith(logicalOperator: newOp));
         },
         borderRadius: BorderRadius.circular(4),
-        constraints: const BoxConstraints(
-          minHeight: 32,
-          minWidth: 50,
-        ),
+        constraints: const BoxConstraints(minHeight: 32, minWidth: 50),
         selectedColor: Colors.white,
         fillColor: Colors.blue.shade600,
         color: Colors.grey.shade700,

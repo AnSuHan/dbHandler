@@ -100,6 +100,7 @@ class DataEditingState {
   final List<FilterCondition> filters; // 필터 조건 리스트
   final List<String>? filterOperators; // AND/OR 연산자 저장
   final List<bool>? filterParenthesis; // 각 필터의 괄호 여부
+  final List<Map<String, dynamic>>? filterBlocks; // 필터 블럭 순서 관리
   final List<SortCondition> sorts; // 정렬 조건 리스트
   final List<String> groupByColumns; // 그룹화할 컬럼들
 
@@ -117,6 +118,7 @@ class DataEditingState {
     this.selectedCellRange,
     this.cellVersions = const {},
     this.filters = const [],
+    this.filterBlocks = const [],
     this.filterOperators,
     this.filterParenthesis,
     this.sorts = const [],
@@ -137,6 +139,7 @@ class DataEditingState {
     Map<String, int>? selectedCellRange,
     Map<String, int>? cellVersions,
     List<FilterCondition>? filters,
+    List<Map<String, dynamic>>? filterBlocks,
     List<String>? filterOperators,
     List<bool>? filterParenthesis,
     List<SortCondition>? sorts,
@@ -156,6 +159,7 @@ class DataEditingState {
       selectedCellRange: selectedCellRange,
       cellVersions: cellVersions ?? this.cellVersions,
       filters: filters ?? this.filters,
+      filterBlocks: filterBlocks ?? this.filterBlocks,
       filterOperators: filterOperators ?? this.filterOperators,
       filterParenthesis: filterParenthesis ?? this.filterParenthesis,
       sorts: sorts ?? this.sorts,
@@ -876,6 +880,139 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       filterOperators: null,
       filterParenthesis: null,
     );
+  }
+
+  void addOpenParenthesis() {
+    final blocks = state.filterBlocks != null
+        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
+        : _createBlocksFromFilters();
+
+    blocks.add({'type': 'open_paren'});
+    state = state.copyWith(filterBlocks: blocks);
+  }
+
+  void addCloseParenthesis() {
+    final blocks = state.filterBlocks != null
+        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
+        : _createBlocksFromFilters();
+
+    blocks.add({'type': 'close_paren'});
+    state = state.copyWith(filterBlocks: blocks);
+  }
+
+  void reorderFilterBlock(int oldIndex, int newIndex) {
+    final blocks = state.filterBlocks != null
+        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
+        : _createBlocksFromFilters();
+
+    if (oldIndex == newIndex) return;
+
+    final block = blocks.removeAt(oldIndex);
+    final adjustedNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    blocks.insert(adjustedNewIndex, block);
+
+    state = state.copyWith(filterBlocks: blocks);
+  }
+
+  void toggleFilterOperatorAtBlock(int blockIndex) {
+    final blocks = state.filterBlocks != null
+        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
+        : _createBlocksFromFilters();
+
+    if (blockIndex < blocks.length && blocks[blockIndex]['type'] == 'operator') {
+      final currentOp = blocks[blockIndex]['value'] as String;
+      blocks[blockIndex]['value'] = currentOp == 'AND' ? 'OR' : 'AND';
+      state = state.copyWith(filterBlocks: blocks);
+    }
+  }
+
+  void removeBlockAt(int blockIndex) {
+    final blocks = state.filterBlocks != null
+        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
+        : _createBlocksFromFilters();
+
+    if (blockIndex < blocks.length) {
+      blocks.removeAt(blockIndex);
+      state = state.copyWith(filterBlocks: blocks);
+    }
+  }
+
+  List<Map<String, dynamic>> _createBlocksFromFilters() {
+    final blocks = <Map<String, dynamic>>[];
+    for (int i = 0; i < state.filters.length; i++) {
+      blocks.add({'type': 'filter', 'index': i});
+      if (i < state.filters.length - 1) {
+        blocks.add({'type': 'operator', 'value': 'AND'});
+      }
+    }
+    return blocks;
+  }
+
+  void removeBlockAtBlockIndex(int blockIndex) {
+    final blocks = state.filterBlocks ?? buildFilterBlockList(state);
+    if (blockIndex < 0 || blockIndex >= blocks.length) {
+      return;
+    }
+
+    final block = blocks[blockIndex];
+    List<FilterCondition> newFilters = List.from(state.filters);
+    List<bool>? newParenthesis = state.filterParenthesis != null
+        ? List<bool>.from(state.filterParenthesis!)
+        : null;
+    List<String>? newOperators = state.filterOperators != null
+        ? List<String>.from(state.filterOperators!)
+        : null;
+
+    if (block['type'] == 'filter') {
+      final filterIndex = block['index'] as int;
+      newFilters.removeAt(filterIndex);
+    }
+    else if (block['type'] == 'openparen' || block['type'] == 'closeparen') {
+      if (newParenthesis != null && blockIndex < newParenthesis.length) {
+        newParenthesis[blockIndex] = false;
+      }
+    }
+    else if (block['type'] == 'operator') {
+      newOperators?.removeAt(blockIndex);
+    }
+
+    // 상태 변경 반영 및 리스너 알림
+    state = state.copyWith(
+      filters: newFilters,
+      filterParenthesis: newParenthesis,
+      filterOperators: newOperators,
+      filterBlocks: null, // 블럭 캐시는 null로 하여 다시 생성하도록 유도
+    );
+  }
+
+  List<Map<String, dynamic>> buildFilterBlockList(DataEditingState state) {
+    final List<Map<String, dynamic>> blocks = [];
+    final parenthesis = state.filterParenthesis ?? [];
+
+    for (int i = 0; i < state.filters.length; i++) {
+      // 조건 앞에 열림 괄호가 있으면 추가
+      if (i < parenthesis.length && parenthesis[i]) {
+        blocks.add({'type': 'openparen'});
+      }
+
+      // 필터 조건 블럭 추가
+      blocks.add({'type': 'filter', 'index': i});
+
+      // 조건 뒤에 닫힘 괄호가 있으면 추가
+      if (i + 1 < parenthesis.length && parenthesis[i + 1]) {
+        blocks.add({'type': 'closeparen'});
+      }
+
+      // 마지막 조건이 아니면 논리 연산자 ('AND' or 'OR') 추가
+      if (i < state.filters.length - 1) {
+        blocks.add({
+          'type': 'operator',
+          'value': state.filterOperators?[i] ?? 'AND',
+        });
+      }
+    }
+
+    return blocks;
   }
 }
 
