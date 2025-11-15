@@ -1,18 +1,20 @@
 // lib/views/server_selection.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:file_picker/file_picker.dart';
-import '../stateManagement/setState/riverpod.dart';
+import 'package:provider/provider.dart';
+import '../stateManagement/mobx/mobx_store.dart';
 import '../sqflite/models/server_model.dart';
 
-class ServerSelectionScreen extends ConsumerStatefulWidget {
+/// mobX 상태 관리
+class ServerSelectionScreen extends StatefulWidget {
   const ServerSelectionScreen({super.key});
 
   @override
-  ConsumerState<ServerSelectionScreen> createState() => _ServerSelectionScreenState();
+  State<ServerSelectionScreen> createState() => _ServerSelectionScreenState();
 }
 
-class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
+class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
@@ -38,6 +40,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     final usernameController = TextEditingController(text: server.username ?? '');
     final passwordController = TextEditingController(text: server.password ?? '');
     final keyFilePathController = TextEditingController(text: server.keyFilePath ?? '');
+    final store = Provider.of<ServerSelectionStore>(context, listen: false);
 
     if (isTest && (server.username == null || server.username!.isEmpty)) {
       usernameController.text = 'postgres';
@@ -98,7 +101,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                         icon: const Icon(Icons.attach_file),
                         onPressed: () async {
                           FilePickerResult? result =
-                              await FilePicker.platform.pickFiles();
+                          await FilePicker.platform.pickFiles();
                           if (result != null) {
                             keyFilePathController.text =
                                 result.files.single.path ?? '';
@@ -122,9 +125,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                     password: passwordController.text.trim(),
                     keyFilePath: keyFilePathController.text.trim(),
                   );
-                  await ref
-                      .read(serverSelectionProvider.notifier)
-                      .updateServer(updatedServer, _showSnackbar);
+                  await store.updateServer(updatedServer, _showSnackbar);
                   if (dialogContext.mounted) Navigator.pop(dialogContext, updatedServer);
                 },
                 child: const Text('저장'),
@@ -141,6 +142,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     final hostController = TextEditingController(text: server.address.split(':')[0]);
     final portController = TextEditingController(text: server.address.split(':')[1]);
     final typeController = TextEditingController(text: server.type);
+    final store = Provider.of<ServerSelectionStore>(context, listen: false);
 
     await showDialog(
       context: context,
@@ -210,9 +212,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                 type: type,
               );
 
-              await ref
-                  .read(serverSelectionProvider.notifier)
-                  .updateServer(updatedServer, _showSnackbar);
+              await store.updateServer(updatedServer, _showSnackbar);
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('저장'),
@@ -223,6 +223,8 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
   }
 
   Future<void> _showDeleteServerDialog(ServerModel server) async {
+    final store = Provider.of<ServerSelectionStore>(context, listen: false);
+
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -232,9 +234,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
           ElevatedButton(
             onPressed: () async {
-              await ref
-                  .read(serverSelectionProvider.notifier)
-                  .deleteServer(server, _showSnackbar);
+              await store.deleteServer(server, _showSnackbar);
               if (context.mounted) Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -248,10 +248,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final serverSelection = ref.watch(serverSelectionProvider);
-    final controller = ref.read(serverSelectionProvider.notifier);
-    final showAddForm = ref.watch(showAddFormProvider);
-    final isTestServer = ref.watch(isTestServerProvider);
+    final store = Provider.of<ServerSelectionStore>(context, listen: false);
 
     return Scaffold(
       appBar: AppBar(
@@ -269,173 +266,197 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
             stops: [0.0, 0.1],
           ),
         ),
-        child: serverSelection.when(
-          data: (servers) => Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Card(
-                  elevation: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              '서버 추가',
-                              style: TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                showAddForm
-                                    ? Icons.close
-                                    : Icons.add,
-                              ),
-                              onPressed: () {
-                                ref.read(showAddFormProvider.notifier).state = !showAddForm;
-                                if (showAddForm) {
-                                  ref.read(isTestServerProvider.notifier).state = false;
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                        if (showAddForm) ...[
-                          const SizedBox(height: 16),
+        child: Observer(
+          builder: (_) {
+            if (store.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (store.error != null) {
+              return Center(child: Text('서버 목록 로딩 실패: ${store.error}'));
+            }
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Card(
+                    elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('테스트 서버 추가',
-                                  style: TextStyle(fontSize: 16)),
-                              Switch(
-                                value: isTestServer,
-                                onChanged: (value) {
-                                  ref.read(isTestServerProvider.notifier).state = value;
-                                  if (value) {
-                                    _nameController.text = 'Test Server';
-                                    _hostController.text = '127.0.0.1';
-                                    _portController.text = '5432';
-                                    _typeController.text = 'PostgreSQL';
-                                  } else {
-                                    _nameController.clear();
-                                    _hostController.clear();
-                                    _portController.clear();
-                                    _typeController.clear();
-                                  }
-                                },
+                              const Text(
+                                '서버 추가',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              Observer(
+                                builder: (_) => IconButton(
+                                  icon: Icon(
+                                    store.showAddForm
+                                        ? Icons.close
+                                        : Icons.add,
+                                  ),
+                                  onPressed: () {
+                                    store.toggleAddForm();
+                                    if (!store.showAddForm) {
+                                      store.setIsTestServer(false);
+                                    }
+                                  },
+                                ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(
-                                labelText: '서버 이름',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.dns)),
+                          Observer(
+                            builder: (_) {
+                              if (!store.showAddForm) return const SizedBox.shrink();
+
+                              return Column(
+                                children: [
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('테스트 서버 추가',
+                                          style: TextStyle(fontSize: 16)),
+                                      Observer(
+                                        builder: (_) => Switch(
+                                          value: store.isTestServer,
+                                          onChanged: (value) {
+                                            store.setIsTestServer(value);
+                                            if (value) {
+                                              _nameController.text = 'Test Server';
+                                              _hostController.text = '127.0.0.1';
+                                              _portController.text = '5432';
+                                              _typeController.text = 'PostgreSQL';
+                                            } else {
+                                              _nameController.clear();
+                                              _hostController.clear();
+                                              _portController.clear();
+                                              _typeController.clear();
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _nameController,
+                                    decoration: const InputDecoration(
+                                        labelText: '서버 이름',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.dns)),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _hostController,
+                                    decoration: const InputDecoration(
+                                        labelText: '호스트 주소',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.link),
+                                        hintText: 'localhost'),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _portController,
+                                    decoration: const InputDecoration(
+                                        labelText: '포트',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.numbers),
+                                        hintText: '5432'),
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _typeController,
+                                    decoration: const InputDecoration(
+                                        labelText: 'DB 타입',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.storage),
+                                        hintText: 'PostgreSQL'),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () async {
+                                        await store.addServer(
+                                          name: _nameController.text.trim(),
+                                          host: _hostController.text.trim(),
+                                          port: _portController.text.trim(),
+                                          type: _typeController.text.trim(),
+                                          showSnackbar: _showSnackbar,
+                                          nameController: _nameController,
+                                          hostController: _hostController,
+                                          portController: _portController,
+                                          typeController: _typeController,
+                                          showAuthDialog: _showAuthDialog,
+                                        );
+                                        store.toggleAddForm();
+                                        store.setIsTestServer(false);
+                                      },
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('서버 추가'),
+                                      style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF6366F1),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.all(16)),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _hostController,
-                            decoration: const InputDecoration(
-                                labelText: '호스트 주소',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.link),
-                                hintText: 'localhost'),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _portController,
-                            decoration: const InputDecoration(
-                                labelText: '포트',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.numbers),
-                                hintText: '5432'),
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _typeController,
-                            decoration: const InputDecoration(
-                                labelText: 'DB 타입',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.storage),
-                                hintText: 'PostgreSQL'),
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () async {
-                                await controller.addServer(
-                                  name: _nameController.text.trim(),
-                                  host: _hostController.text.trim(),
-                                  port: _portController.text.trim(),
-                                  type: _typeController.text.trim(),
-                                  isTest: isTestServer,
-                                  showSnackbar: _showSnackbar,
-                                  nameController: _nameController,
-                                  hostController: _hostController,
-                                  portController: _portController,
-                                  typeController: _typeController,
-                                  showAuthDialog: _showAuthDialog,
-                                );
-                                ref.read(showAddFormProvider.notifier).state = false;
-                                ref.read(isTestServerProvider.notifier).state = false;
-                              },
-                              icon: const Icon(Icons.add),
-                              label: const Text('서버 추가'),
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF6366F1),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.all(16)),
-                            ),
-                          ),
-                        ]
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: servers.isEmpty
-                    ? const Center(
-                        child: Text(
-                          '서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                          textAlign: TextAlign.center,
-                        ),
-                      )
-                    : ListView.builder(
+                Expanded(
+                  child: Observer(
+                    builder: (_) {
+                      if (store.servers.isEmpty) {
+                        return const Center(
+                          child: Text(
+                            '서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                        itemCount: servers.length,
+                        itemCount: store.servers.length,
                         itemBuilder: (context, index) {
-                          final server = servers[index];
+                          final server = store.servers[index];
                           final isTestServer = server.address == '127.0.0.1:5432';
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
                             elevation: 2,
                             child: InkWell(
-                                                                                          onTap: () async {
-                                final navigator = Navigator.of(context);        
+                              onTap: () async {
+                                final navigator = Navigator.of(context);
                                 ServerModel? targetServer = server;
                                 final username = targetServer?.username;
                                 final password = targetServer?.password;
-                                bool needsAuth = (username?.isEmpty ?? true) && 
-                                    (password?.isEmpty ?? true);        
+                                bool needsAuth = (username?.isEmpty ?? true) &&
+                                    (password?.isEmpty ?? true);
 
                                 if (needsAuth && targetServer != null) {
-                                  targetServer = await _showAuthDialog(server,  
+                                  targetServer = await _showAuthDialog(server,
                                       isTest: isTestServer,
                                       isInitialSetup: true);
                                 }
 
-                                if (!mounted || targetServer == null) return;   
-                                navigator.pushNamed('/database-selection',      
+                                if (!mounted || targetServer == null) return;
+                                navigator.pushNamed('/database-selection',
                                     arguments: targetServer.toMap());
                               },
                               child: ListTile(
@@ -443,8 +464,8 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                                   backgroundColor: isTestServer
                                       ? Colors.grey
                                       : (server.isConnected
-                                          ? const Color(0xFF10B981)
-                                          : const Color(0xFFEF4444)),
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFFEF4444)),
                                   child: const Icon(Icons.dns, color: Colors.white),
                                 ),
                                 title: Text(server.name,
@@ -457,7 +478,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                                     Chip(
                                         label: Text(server.type),
                                         backgroundColor:
-                                            const Color(0xFFEDE9FE),
+                                        const Color(0xFFEDE9FE),
                                         labelStyle: const TextStyle(
                                             color: Color(0xFF6366F1))),
                                     const SizedBox(width: 8),
@@ -511,13 +532,14 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                               ),
                             ),
                           );
-                        }),
-              ),
-            ],
-          ),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) =>
-              Center(child: Text('서버 목록 로딩 실패: $e')),
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

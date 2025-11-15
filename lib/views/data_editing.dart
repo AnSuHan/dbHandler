@@ -12,6 +12,7 @@ class CopyIntent extends Intent {}
 
 class PasteIntent extends Intent {}
 
+/// Riverpod 상태 관리
 class DataEditingScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> server;
   final String database;

@@ -7,6 +7,12 @@ fvm flutter clean
 fvm flutter pub get
 
 ---
+# MobX 코드 생성 (mobx_store.g.dart 파일 생성)
+dart run build_runner build --delete-conflicting-outputs
+
+# 또는 watch 모드로 자동 생성
+flutter pub run build_runner watch --delete-conflicting-outputs
+---
 
 ## 웹 실행 방법
 
