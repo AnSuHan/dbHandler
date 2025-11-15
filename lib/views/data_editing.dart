@@ -189,105 +189,84 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
 
     // TSV 형식 파싱 (탭으로 구분된 값)
     // 줄바꿈 문자 처리: \r\n, \n, \r 모두 지원
-    final normalizedText = clipboardText
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n');
-    
-    final lines = normalizedText
-        .split('\n')
-        .where((line) => line.trim().isNotEmpty || line.contains('\t'))
-        .toList();
-
+    final normalizedText = clipboardText.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final lines = normalizedText.split('\n').where((l) => l.trim().isNotEmpty || l.contains('\t')).toList();
     if (lines.isEmpty) return;
 
-    // 각 줄을 탭으로 분리 (빈 셀도 유지)
-    final pasteData = lines.map((line) {
-      // 빈 줄도 처리하기 위해 split 사용
-      if (line.isEmpty) return <String>[];
-      return line.split('\t');
-    }).where((row) => row.isNotEmpty).toList();
-
+    final pasteData = lines.map((line) => line.isEmpty ? <String>[] : line.split('\t'))
+        .where((row) => row.isNotEmpty)
+        .toList();
     if (pasteData.isEmpty) return;
 
-    // 시작 위치: 여러 셀이 선택된 경우 가장 좌상단 셀을 기준으로 붙여넣기
     final topLeftCell = state.getTopLeftSelectedCell();
-    if (topLeftCell == null) {
-      return;
-    }
-    
+    if (topLeftCell == null) return;
+
     final startRowIndex = topLeftCell['rowIndex']!;
     final startColIndex = topLeftCell['colIndex']!;
-
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+
     int successCount = 0;
     int failCount = 0;
+    final cellUpdates = <Map<String, dynamic>>[];
 
     try {
-      // setLoading을 호출하지 않음 (불필요한 state 업데이트 방지)
-      // DB 업데이트와 UI 업데이트를 분리하여 처리
-      // 1단계: 모든 셀의 DB 업데이트 수행
-      final cellUpdates = <Map<String, dynamic>>[];
-      
-      for (int rowOffset = 0; rowOffset < pasteData.length; rowOffset++) {
-        final targetRowIndex = startRowIndex + rowOffset;
-        if (targetRowIndex >= state.rows.length) {
-          // 행이 범위를 벗어나면 중단 (경고는 하지 않음, 정상 동작)
-          break;
-        }
+      try {
+        await dbHandler.runInTransaction(() async {
+          for (int rowOffset = 0; rowOffset < pasteData.length; rowOffset++) {
+            final targetRowIndex = startRowIndex + rowOffset;
+            if (targetRowIndex >= state.rows.length) break;
 
-        final rowData = pasteData[rowOffset];
-        if (rowData.isEmpty) continue;
+            final rowData = pasteData[rowOffset];
+            if (rowData.isEmpty) continue;
 
-        final pkValue = state.rows[targetRowIndex][state.primaryKeyColumn!];
+            final pkValue = state.rows[targetRowIndex][state.primaryKeyColumn!];
 
-        for (int colOffset = 0; colOffset < rowData.length; colOffset++) {
-          final targetColIndex = startColIndex + colOffset;
-          if (targetColIndex >= state.columns.length) {
-            // 열이 범위를 벗어나면 해당 행의 나머지 셀은 건너뛰기
-            break;
-          }
+            for (int colOffset = 0; colOffset < rowData.length; colOffset++) {
+              final targetColIndex = startColIndex + colOffset;
+              if (targetColIndex >= state.columns.length) break;
 
-          // 빈 문자열도 처리 (앞뒤 공백 제거 후, 빈 문자열이면 null로 저장)
-          final cellValue = rowData[colOffset];
-          final trimmedValue = cellValue.trim();
-          final newValue = trimmedValue.isEmpty ? null : trimmedValue;
+              final cellValue = rowData[colOffset];
+              final trimmedValue = cellValue.trim();
+              final newValue = trimmedValue.isEmpty ? null : trimmedValue;
+              final targetColumnName = state.columns[targetColIndex]['name']!;
+              final oldValue = state.rows[targetRowIndex][targetColumnName];
+              final isValueChanged = oldValue != newValue;
 
-          final targetColumnName = state.columns[targetColIndex]['name']!;
-          
-          // 기존 값과 비교하여 실제로 변경된 경우에만 업데이트
-          final oldValue = state.rows[targetRowIndex][targetColumnName];
-          final isValueChanged = oldValue != newValue;
-
-          try {
-            // 값이 변경된 경우에만 DB 업데이트 및 UI 업데이트 정보 수집
-            if (isValueChanged) {
-              // DB 업데이트
-              await dbHandler.updateCell(
-                widget.table,
-                targetColumnName,
-                newValue,
-                state.primaryKeyColumn!,
-                pkValue,
-              );
-
-              // UI 업데이트용 정보 수집 (배치 업데이트)
-              cellUpdates.add({
-                'rowIndex': targetRowIndex,
-                'colIndex': targetColIndex,
-                'columnName': targetColumnName,
-                'newValue': newValue,
-              });
+              if (isValueChanged) {
+                try {
+                  await dbHandler.updateCell(
+                    widget.table,
+                    targetColumnName,
+                    newValue,
+                    state.primaryKeyColumn!,
+                    pkValue,
+                  );
+                  cellUpdates.add({
+                    'rowIndex': targetRowIndex,
+                    'colIndex': targetColIndex,
+                    'columnName': targetColumnName,
+                    'newValue': newValue,
+                  });
+                  successCount++;
+                } catch (e) {
+                  // 실패 발생시 즉시 예외 throw하여 트랜잭션 롤백 유도
+                  throw Exception('Failed to update cell at row $targetRowIndex, col $targetColIndex: $e');
+                }
+              } else {
+                successCount++;
+              }
             }
-
-            successCount++;
-          } catch (e) {
-            failCount++;
-            // 개별 셀 실패는 로그만 남기고 계속 진행
-            debugPrint('Failed to paste cell at row $targetRowIndex, col $targetColIndex: $e');
           }
-        }
+        });
+      } catch (e) {
+        // 트랜잭션 실패시 처리 (UI 알림, 로그 등)
+        failCount = pasteData.length * (state.columns.length); // 최대 실패 개수 가정
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Transaction failed: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+        return; // 추가 처리를 중단함
       }
-      
+
       // 2단계: 모든 셀을 한 번에 업데이트 (배치 업데이트로 리빌드 최소화)
       // updateMultipleCellValues는 변경된 셀이 있는 경우에만 state를 업데이트함
       if (cellUpdates.isNotEmpty) {

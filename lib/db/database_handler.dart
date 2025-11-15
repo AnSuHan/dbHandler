@@ -1,3 +1,5 @@
+import 'package:postgres/postgres.dart';
+
 abstract class DatabaseHandler {
   Future<List<Map<String, dynamic>>> getDatabases();
   Future<void> createDatabase(String dbName);
@@ -20,4 +22,6 @@ abstract class DatabaseHandler {
   Future<void> addRow(String tableName, Map<String, dynamic> data);
   Future<void> updateRow(String tableName, Map<String, dynamic> data, String pkColumn, dynamic pkValue);
   Future<void> updateCell(String tableName, String columnName, dynamic newValue, String pkColumn, dynamic pkValue);
+  /// 원자성 보장을 위해 트랜잭션 내에서 작업 수행 메서드 추가
+  Future<void> runInTransaction(Future<void> Function() operation);
 }

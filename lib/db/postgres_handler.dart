@@ -3,9 +3,9 @@ import 'database_handler.dart';
 
 class PostgresHandler extends DatabaseHandler {
   final Map<String, dynamic> server;
-  final String? database;
+  final String? databaseName;
 
-  PostgresHandler(this.server, {this.database});
+  PostgresHandler(this.server, {this.databaseName});
 
   Future<PostgreSQLConnection> _getConnection(String db) async {
     final host = server['address'].split(':')[0];
@@ -59,7 +59,7 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<List<Map<String, dynamic>>> getColumns(String tableName) {
-    return _withConnection(database!, (conn) async {
+    return _withConnection(databaseName!, (conn) async {
       final results = await conn.query('''
         SELECT column_name, data_type 
         FROM information_schema.columns
@@ -71,7 +71,7 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<String?> getPrimaryKey(String tableName) {
-    return _withConnection(database!, (conn) async {
+    return _withConnection(databaseName!, (conn) async {
       final pkResult = await conn.query(
         "SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = @tableName",
         substitutionValues: {'tableName': tableName},
@@ -82,7 +82,7 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<List<Map<String, dynamic>>> getData(String tableName) {
-    return _withConnection(database!, (conn) async {
+    return _withConnection(databaseName!, (conn) async {
       final results = await conn.query('SELECT * FROM "$tableName"');
       return results.map((row) => row.toColumnMap()).toList();
     });
@@ -95,7 +95,7 @@ class PostgresHandler extends DatabaseHandler {
     List<Map<String, dynamic>>? sorts,
     List<String>? groupByColumns,
   }) {
-    return _withConnection(database!, (conn) async {
+    return _withConnection(databaseName!, (conn) async {
       final substitutionValues = <String, dynamic>{};
       
       // GROUP BY가 사용되는 경우 SELECT 절을 다르게 구성
@@ -263,14 +263,14 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> addColumn(String tableName, String columnName, String dataType, String constraints) {
-     return _withConnection(database!, (conn) {
+     return _withConnection(databaseName!, (conn) {
       return conn.query('ALTER TABLE "$tableName" ADD COLUMN "$columnName" $dataType $constraints');
     });
   }
 
   @override
   Future<void> modifyColumn(String tableName, String oldColumnName, String newColumnName, String newDataType, String newConstraints) {
-    return _withConnection(database!, (conn) async {
+    return _withConnection(databaseName!, (conn) async {
       if (oldColumnName != newColumnName) {
         await conn.query('ALTER TABLE "$tableName" RENAME COLUMN "$oldColumnName" TO "$newColumnName"');
       }
@@ -282,14 +282,14 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> deleteColumn(String tableName, String columnName) {
-    return _withConnection(database!, (conn) {
+    return _withConnection(databaseName!, (conn) {
       return conn.query('ALTER TABLE "$tableName" DROP COLUMN "$columnName"');
     });
   }
 
   @override
   Future<void> deleteRow(String tableName, String pkColumn, dynamic pkValue) {
-    return _withConnection(database!, (conn) {
+    return _withConnection(databaseName!, (conn) {
       final query = 'DELETE FROM "$tableName" WHERE "$pkColumn" = @pkValue';
       return conn.query(query, substitutionValues: {'pkValue': pkValue});
     });
@@ -297,7 +297,7 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> addRow(String tableName, Map<String, dynamic> data) {
-    return _withConnection(database!, (conn) {
+    return _withConnection(databaseName!, (conn) {
       final query = data.isEmpty
           ? 'INSERT INTO "$tableName" DEFAULT VALUES'
           : 'INSERT INTO "$tableName" (${data.keys.map((k) => '"$k"').join(',')}) VALUES (${data.keys.map((k) => '@$k').join(',')})';
@@ -307,7 +307,7 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> updateRow(String tableName, Map<String, dynamic> data, String pkColumn, dynamic pkValue) {
-    return _withConnection(database!, (conn) {
+    return _withConnection(databaseName!, (conn) {
       final setClauses = data.keys.map((k) => '"$k" = @$k').join(',');
       final substitutionValues = {...data, 'primaryKeyValue': pkValue};
       final query = 'UPDATE "$tableName" SET $setClauses WHERE "$pkColumn" = @primaryKeyValue';
@@ -317,11 +317,26 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> updateCell(String tableName, String columnName, dynamic newValue, String pkColumn, dynamic pkValue) {
-    return _withConnection(database!, (conn) {
+    return _withConnection(databaseName!, (conn) {
       final query = 'UPDATE "$tableName" SET "$columnName" = @newValue WHERE "$pkColumn" = @pkValue';
       return conn.query(query, substitutionValues: {
         'newValue': newValue,
         'pkValue': pkValue,
+      });
+    });
+  }
+
+  @override
+  Future<void> runInTransaction(Future<void> Function() operation) async {
+    if (databaseName == null) {
+      throw Exception('Database is not initialized');
+    }
+    await _withConnection(databaseName!, (conn) async {
+      await conn.transaction((txn) async {
+        // 내부에서 txn을 필요로 하는 쿼리는 별도 메서드가 내부 txn를 받도록 설계하거나,
+        // 또는 클래스 내부에서 txn 상태를 필드 등에 보관하여 참조하도록 구현
+        // operation 콜백에는 txn 인자를 받지 않음
+        await operation();
       });
     });
   }

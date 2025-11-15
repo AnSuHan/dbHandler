@@ -1030,7 +1030,7 @@ final databaseHandlerProvider = Provider.family<DatabaseHandler, DatabaseHandler
   (ref, params) {
     switch (params.server['type']) {
       case 'PostgreSQL':
-        return PostgresHandler(params.server, database: params.database);
+        return PostgresHandler(params.server, databaseName: params.database);
       default:
         throw Exception('Unsupported database type: ${params.server['type']}');
     }
