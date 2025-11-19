@@ -1,3 +1,4 @@
+import 'package:db_handler/sqflite/models/server_model.dart';
 import 'package:db_handler/stateManagement/mobx/mobx_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,7 +15,7 @@ void main() {
       child: provider_pkg.MultiProvider(  // MobX용 Provider (alias 사용)
         providers: [
           provider_pkg.Provider<ServerSelectionStore>(
-            create: (_) => ServerSelectionStore(dbType: 'PostgreSQL'), // 초기 DB 타입 설정
+            create: (_) => ServerSelectionStore(),
             dispose: (_, store) {
               // MobX Store 정리 (필요시)
             },
@@ -46,7 +47,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const SplashScreen(),
         '/server-selection': (context) => const ServerSelectionScreen(),
         '/database-selection': (context) {
-          final server = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final server = ModalRoute.of(context)!.settings.arguments as ServerModel;
           return DatabaseSelectionScreen(server: server);
         },
         '/table-selection': (context) {
@@ -57,7 +58,7 @@ class MyApp extends StatelessWidget {
         },
         '/data-editing': (context) {
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-          final server = args['server'] as Map<String, dynamic>;
+          final server = args['server'] as ServerModel;
           final database = args['database'] as String;
           final table = args['table'] as String;
           return DataEditingScreen(server: server, database: database, table: table);

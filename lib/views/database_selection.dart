@@ -2,8 +2,10 @@ import 'package:db_handler/db/database_handler.dart';
 import 'package:db_handler/db/postgres_handler.dart';
 import 'package:flutter/material.dart';
 
+import '../sqflite/models/server_model.dart';
+
 class DatabaseSelectionScreen extends StatefulWidget {
-  final Map<String, dynamic> server;
+  final ServerModel server;
 
   const DatabaseSelectionScreen({super.key, required this.server});
 
@@ -26,11 +28,11 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
 
   DatabaseHandler _getDbHandler() {
     // In the future, you can add more database types here.
-    switch (widget.server['type']) {
+    switch (widget.server.type) {
       case 'PostgreSQL':
         return PostgresHandler(widget.server);
       default:
-        throw Exception('Unsupported database type: ${widget.server['type']}');
+        throw Exception('Unsupported database type: ${widget.server.type}');
     }
   }
 
@@ -119,7 +121,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Server - ${widget.server['name']}"),
+        title: Text("Server - ${widget.server.name}"),
         backgroundColor: const Color(0xFF8B5CF6),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -178,7 +180,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                     ),
                                   ),
                                   Text(
-                                    widget.server['name'],
+                                    widget.server.name,
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,

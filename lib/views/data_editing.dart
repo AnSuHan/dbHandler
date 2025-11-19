@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../sqflite/models/server_model.dart';
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
 import 'unit/data_cell.dart';
@@ -14,7 +15,7 @@ class PasteIntent extends Intent {}
 
 /// Riverpod 상태 관리
 class DataEditingScreen extends ConsumerStatefulWidget {
-  final Map<String, dynamic> server;
+  final ServerModel server;
   final String database;
   final String table;
 

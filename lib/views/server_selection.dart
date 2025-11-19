@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../stateManagement/mobx/mobx_store.dart';
 import '../sqflite/models/server_model.dart';
 
-/// mobX 상태 관리
+/// MobX 상태 관리
 class ServerSelectionScreen extends StatefulWidget {
   const ServerSelectionScreen({super.key});
 
@@ -456,6 +456,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                 }
 
                                 if (!mounted || targetServer == null) return;
+
+                                // PostgreSQL 서버인 경우 DatabaseHandler 초기화
+                                if (targetServer.type.toLowerCase() == 'postgresql') {
+                                  store.initializeDatabaseHandler(targetServer);
+                                }
+
                                 navigator.pushNamed('/database-selection',
                                     arguments: targetServer.toMap());
                               },

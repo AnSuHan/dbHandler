@@ -7,10 +7,11 @@ fvm flutter clean
 fvm flutter pub get
 
 ---
-# MobX 코드 생성 (mobx_store.g.dart 파일 생성)
+# MobX 코드 생성 [1회성] (mobx_store.g.dart 파일 생성)
 dart run build_runner build --delete-conflicting-outputs
+fvm flutter pub run build_runner build --delete-conflicting-outputs
 
-# 또는 watch 모드로 자동 생성
+# 또는 watch 모드로 자동 생성 [터미널 계속 켜 두어야 함]
 flutter pub run build_runner watch --delete-conflicting-outputs
 ---
 

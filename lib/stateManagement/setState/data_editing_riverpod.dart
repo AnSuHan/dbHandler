@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../db/database_handler.dart';
 import '../../db/postgres_handler.dart';
+import '../../sqflite/models/server_model.dart';
 
 /// 필터 조건 클래스
 class FilterCondition {
@@ -1028,17 +1029,17 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 /// DatabaseHandler Provider Factory
 final databaseHandlerProvider = Provider.family<DatabaseHandler, DatabaseHandlerParams>(
   (ref, params) {
-    switch (params.server['type']) {
+    switch (params.server.type) {
       case 'PostgreSQL':
         return PostgresHandler(params.server, databaseName: params.database);
       default:
-        throw Exception('Unsupported database type: ${params.server['type']}');
+        throw Exception('Unsupported database type: ${params.server.type}');
     }
   },
 );
 
 class DatabaseHandlerParams {
-  final Map<String, dynamic> server;
+  final ServerModel server;
   final String database;
 
   DatabaseHandlerParams({required this.server, required this.database});
@@ -1056,7 +1057,7 @@ final dataEditingProvider = StateNotifierProvider.family<DataEditingNotifier, Da
 );
 
 class DataEditingParams {
-  final Map<String, dynamic> server;
+  final ServerModel server;
   final String database;
   final String table;
 
@@ -1069,26 +1070,12 @@ class DataEditingParams {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is DataEditingParams &&
-          runtimeType == other.runtimeType &&
-          _mapEquals(server, other.server) &&
-          database == other.database &&
-          table == other.table;
-
-  bool _mapEquals(Map<String, dynamic> a, Map<String, dynamic> b) {
-    if (a.length != b.length) return false;
-    for (var key in a.keys) {
-      if (a[key] != b[key]) return false;
-    }
-    return true;
-  }
+          other is DataEditingParams &&
+              runtimeType == other.runtimeType &&
+              server == other.server &&
+              database == other.database &&
+              table == other.table;
 
   @override
-  int get hashCode {
-    int hash = database.hashCode ^ table.hashCode;
-    for (var key in server.keys) {
-      hash ^= key.hashCode ^ (server[key]?.hashCode ?? 0);
-    }
-    return hash;
-  }
+  int get hashCode => server.hashCode ^ database.hashCode ^ table.hashCode;
 }
