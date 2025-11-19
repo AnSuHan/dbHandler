@@ -40,7 +40,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     final usernameController = TextEditingController(text: server.username ?? '');
     final passwordController = TextEditingController(text: server.password ?? '');
     final keyFilePathController = TextEditingController(text: server.keyFilePath ?? '');
-    final store = Provider.of<ServerSelectionStore>(context, listen: false);
+    final store = Provider.of<ServerStore>(context, listen: false);
 
     if (isTest && (server.username == null || server.username!.isEmpty)) {
       usernameController.text = 'postgres';
@@ -142,7 +142,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     final hostController = TextEditingController(text: server.address.split(':')[0]);
     final portController = TextEditingController(text: server.address.split(':')[1]);
     final typeController = TextEditingController(text: server.type);
-    final store = Provider.of<ServerSelectionStore>(context, listen: false);
+    final store = Provider.of<ServerStore>(context, listen: false);
 
     await showDialog(
       context: context,
@@ -223,7 +223,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   }
 
   Future<void> _showDeleteServerDialog(ServerModel server) async {
-    final store = Provider.of<ServerSelectionStore>(context, listen: false);
+    final store = Provider.of<ServerStore>(context, listen: false);
 
     await showDialog(
       context: context,
@@ -248,7 +248,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final store = Provider.of<ServerSelectionStore>(context, listen: false);
+    final store = Provider.of<ServerStore>(context, listen: false);
 
     return Scaffold(
       appBar: AppBar(
@@ -298,13 +298,13 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                               Observer(
                                 builder: (_) => IconButton(
                                   icon: Icon(
-                                    store.showAddForm
+                                    store.isAddFormOpen
                                         ? Icons.close
                                         : Icons.add,
                                   ),
                                   onPressed: () {
                                     store.toggleAddForm();
-                                    if (!store.showAddForm) {
+                                    if (!store.isAddFormOpen) {
                                       store.setIsTestServer(false);
                                     }
                                   },
@@ -314,7 +314,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                           ),
                           Observer(
                             builder: (_) {
-                              if (!store.showAddForm) return const SizedBox.shrink();
+                              if (!store.isAddFormOpen) return const SizedBox.shrink();
 
                               return Column(
                                 children: [
@@ -386,20 +386,65 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                     width: double.infinity,
                                     child: ElevatedButton.icon(
                                       onPressed: () async {
-                                        await store.addServer(
-                                          name: _nameController.text.trim(),
-                                          host: _hostController.text.trim(),
-                                          port: _portController.text.trim(),
-                                          type: _typeController.text.trim(),
-                                          showSnackbar: _showSnackbar,
-                                          nameController: _nameController,
-                                          hostController: _hostController,
-                                          portController: _portController,
-                                          typeController: _typeController,
-                                          showAuthDialog: _showAuthDialog,
+                                        // 1. 입력값 가져오기 및 검증
+                                        final name = _nameController.text.trim();
+                                        final host = _hostController.text.trim();
+                                        final port = _portController.text.trim();
+                                        final type = _typeController.text.trim().isNotEmpty
+                                            ? _typeController.text.trim()
+                                            : 'PostgreSQL';
+
+                                        if (name.isEmpty || host.isEmpty || port.isEmpty) {
+                                          _showSnackbar('서버 이름, 호스트, 포트는 필수입니다.', color: Colors.red);
+                                          return;
+                                        }
+
+                                        // 2. address 조합
+                                        final address = '$host:$port';
+
+                                        // 3. ServerModel 인스턴스 생성 (정확한 필드 사용!)
+                                        final newServer = ServerModel(
+                                          id: null,                    // 저장 시 자동 생성
+                                          name: name,
+                                          address: address,
+                                          type: type,
+                                          isConnected: false,          // 처음엔 연결 안 됨
+                                          username: null,
+                                          password: null,
+                                          keyFilePath: null,
+                                          notes: null,
+                                          createdAt: DateTime.now(),
+                                          updatedAt: DateTime.now(),
                                         );
-                                        store.toggleAddForm();
-                                        store.setIsTestServer(false);
+
+                                        try {
+                                          // 4. Store를 통해 서버 추가 (ServerModel 전달)
+                                          await store.addServer(newServer, _showSnackbar);
+
+                                          // 5. 성공 시 UI 정리
+                                          _nameController.clear();
+                                          _hostController.clear();
+                                          _portController.clear();
+                                          _typeController.clear();
+
+                                          store.toggleAddForm();
+                                          store.setIsTestServer(false);
+
+                                          // SSH/MySQL 등 인증이 필요하면 다이얼로그 띄우기
+                                          if (type.toLowerCase().contains('ssh') ||
+                                              type.toLowerCase().contains('mysql') ||
+                                              type.toLowerCase().contains('sqlserver')) {
+                                            if (context.mounted) {
+                                              if (store.lastAddedServer != null) {
+                                                await _showAuthDialog(store.lastAddedServer!);
+                                              }
+                                            }
+                                          }
+
+                                        } catch (e) {
+                                          // addServer 내부에서 이미 showSnackbar 호출하므로 중복 방지
+                                          // 필요 시 여기서 추가 처리
+                                        }
                                       },
                                       icon: const Icon(Icons.add),
                                       label: const Text('서버 추가'),
@@ -459,11 +504,11 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
                                 // PostgreSQL 서버인 경우 DatabaseHandler 초기화
                                 if (targetServer.type.toLowerCase() == 'postgresql') {
-                                  store.initializeDatabaseHandler(targetServer);
+                                  store.initializeDatabaseHandler();
                                 }
 
                                 navigator.pushNamed('/database-selection',
-                                    arguments: targetServer.toMap());
+                                    arguments: targetServer);
                               },
                               child: ListTile(
                                 leading: CircleAvatar(

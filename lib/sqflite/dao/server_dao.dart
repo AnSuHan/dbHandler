@@ -1,3 +1,5 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../database.dart';
 import '../models/server_model.dart';
 import '../web_storage.dart';
@@ -44,14 +46,25 @@ class ServerDao {
 
   // 서버 추가
   Future<int> insertServer(ServerModel server) async {
+    // 웹 플랫폼
     if (PlatformCheck.isWeb) {
-      return await _webStorage.insertServer(server);
+      return await _webStorage.insertServer(server); // 이 메서드도 아래와 동일한 로직을 따라야 함
     }
-    
+
+    // 모바일/데스크톱 (sqflite)
     final db = await _db.database;
-    if (db == null) return 0;
-    
-    return await db.insert('servers', server.toJson());
+    if (db == null) throw Exception('Database not initialized');
+
+    // 중요: id 필드를 강제로 제거 → AUTOINCREMENT가 제대로 동작하게 함
+    final Map<String, dynamic> data = server.toJson()..remove('id');
+
+    final int newId = await db.insert(
+      'servers',
+      data,
+      conflictAlgorithm: ConflictAlgorithm.replace, // 혹시 모를 충돌 방지
+    );
+
+    return newId; // 이 값이 바로 방금 삽입된 서버의 ID!
   }
 
   // 서버 업데이트
@@ -123,5 +136,39 @@ class ServerDao {
       orderBy: 'createdAt DESC',
     );
     return List.generate(maps.length, (i) => ServerModel.fromJson(maps[i]));
+  }
+
+  Future<void> initialize() async {
+    // 1) 웹인 경우: 로컬스토리지(WebStorageService) 초기화
+    if (PlatformCheck.isWeb) {
+      await _webStorage.initialize();
+      return;
+    }
+
+    // 2) 앱(안드로이드/iOS/데스크톱)인 경우: SQLite(AppDatabase) 초기화
+    await _db.initialize();
+
+    // DB 핸들 가져오기
+    final db = await _db.database;
+    if (db == null) {
+      print("❌ DB 초기화 실패: database is null");
+      return;
+    }
+
+    // 3) 서버 테이블 생성
+    await db.execute('''
+    CREATE TABLE IF NOT EXISTS servers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      address TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      isTestServer INTEGER NOT NULL DEFAULT 0,
+      isConnected INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  ''');
+
+    print("✅ ServerDao initialize() 완료");
   }
 }

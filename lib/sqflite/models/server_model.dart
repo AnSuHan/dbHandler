@@ -86,6 +86,7 @@ class ServerModel {
     String? keyFilePath,
     String? notes,
     DateTime? updatedAt,
+    DateTime? createdAt,
   }) {
     return ServerModel(
       id: id ?? this.id,
@@ -97,7 +98,7 @@ class ServerModel {
       password: password ?? this.password,
       keyFilePath: keyFilePath ?? this.keyFilePath,
       notes: notes ?? this.notes,
-      createdAt: createdAt,
+      createdAt: createdAt ?? DateTime.now(),
       updatedAt: updatedAt ?? DateTime.now(),
     );
   }

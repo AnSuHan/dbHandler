@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models/server_model.dart';
@@ -6,6 +7,14 @@ import 'models/server_model.dart';
 class WebStorageService {
   static const String _serversKey = 'servers';
   static const String _lastIdKey = 'lastServerId';
+
+  // 싱글톤 + 초기화 완료를 추적하는 Completer
+  static final WebStorageService _instance = WebStorageService._internal();
+  factory WebStorageService() => _instance;
+  WebStorageService._internal();
+
+  static final Completer<void> _initCompleter = Completer<void>();
+  static bool _hasTestData = false;
 
   // 모든 서버 가져오기
   Future<List<ServerModel>> getAllServers() async {
@@ -31,18 +40,26 @@ class WebStorageService {
   }
 
   // 서버 추가
+// WebStorageService 클래스 내부
   Future<int> insertServer(ServerModel server) async {
+    await initialize(); // 초기화 보장
+
     final prefs = await SharedPreferences.getInstance();
     final servers = await getAllServers();
     final lastId = prefs.getInt(_lastIdKey) ?? 0;
     final newId = lastId + 1;
-    
-    final newServer = server.copyWith(id: newId);
+
+    final newServer = server.copyWith(
+      id: newId,
+      createdAt: server.createdAt ?? DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
     servers.add(newServer);
-    
     await _saveServers(servers);
     await prefs.setInt(_lastIdKey, newId);
-    return newId;
+
+    return newId; // 반드시 ID 반환!
   }
 
   // 서버 업데이트
@@ -97,6 +114,50 @@ class WebStorageService {
       return server.name.toLowerCase().contains(lowerQuery) ||
           server.address.toLowerCase().contains(lowerQuery);
     }).toList();
+  }
+
+  /// 앱 시작 시 반드시 한 번만 호출해야 하는 초기화 메서드
+  /// main()에서 await WebStorageService().initialize(); 로 사용
+  Future<void> initialize() async {
+    // 이미 초기화 완료된 경우 바로 리턴
+    if (_initCompleter.isCompleted) {
+      return _initCompleter.future;
+    }
+
+    try {
+      // SharedPreferences 인스턴스 강제 생성 (초기화 트리거)
+      final prefs = await SharedPreferences.getInstance();
+
+      // 서버 데이터가 하나도 없는 경우 → 초기 테스트 데이터 삽입
+      final jsonString = prefs.getString(_serversKey);
+      if (jsonString == null || jsonString.isEmpty || jsonString == '[]') {
+        final testServer = ServerModel(
+          id: null, // insertServer 내부에서 자동 생성
+          name: 'Test Local Server',
+          address: 'localhost:5432',
+          type: 'PostgreSQL',
+          isConnected: false,
+          username: null,
+          password: null,
+          keyFilePath: null,
+          notes: '테스트 서버입니다.',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        await insertServer(testServer);
+        _hasTestData = true;
+      }
+
+      // 초기화 성공
+      _initCompleter.complete();
+    } catch (e, stack) {
+      // 초기화 실패 시 에러 전파
+      _initCompleter.completeError(e, stack);
+      rethrow;
+    }
+
+    return _initCompleter.future;
   }
 }
 

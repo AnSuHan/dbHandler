@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +10,8 @@ class AppDatabase {
   static final AppDatabase _instance = AppDatabase._internal();
   static Database? _database;
   static bool _initialized = false;
+  // 이미 존재하는 initializeFfi()와 중복되지 않도록 통합된 초기화
+  static final _initCompleter = Completer<void>();
 
   factory AppDatabase() {
     return _instance;
@@ -101,5 +105,37 @@ class AppDatabase {
     final path = join(documentsDirectory.path, 'db_handler.db');
     await databaseFactory.deleteDatabase(path);
     _database = null;
+  }
+
+  /// 앱 시작 시 반드시 한 번만 호출해야 하는 전체 초기화 메서드
+  /// - FFI 초기화 (데스크톱/모바일)
+  /// - 데이터베이스 연결 준비
+  Future<void> initialize() async {
+    // 이미 초기화 중이거나 완료된 경우 바로 리턴 (중복 방지)
+    if (_initCompleter.isCompleted) {
+      return _initCompleter.future;
+    }
+
+    try {
+      // 1. 플랫폼이 sqflite_ffi를 지원하는 경우에만 FFI 초기화
+      await initializeFfi();
+
+      // 2. 웹이 아닌 경우에만 데이터베이스 미리 열어두기 (선택적 프리로딩)
+      if (!PlatformCheck.isWeb) {
+        await _instance.database; // database getter 호출 → _initDatabase 실행
+      }
+
+      // 초기화 완료 알림
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete();
+      }
+    } catch (e, s) {
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.completeError(e, s);
+      }
+      rethrow;
+    }
+
+    return _initCompleter.future;
   }
 }

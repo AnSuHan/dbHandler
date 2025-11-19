@@ -14,10 +14,11 @@ void main() {
     ProviderScope(  // Riverpod
       child: provider_pkg.MultiProvider(  // MobX용 Provider (alias 사용)
         providers: [
-          provider_pkg.Provider<ServerSelectionStore>(
-            create: (_) => ServerSelectionStore(),
+          provider_pkg.Provider<ServerStore>(
+            create: (_) => ServerStore(),
             dispose: (_, store) {
-              // MobX Store 정리 (필요시)
+              // MobX store cleanup (필요 시)
+              // store.dispose();  <-- 일반적으로 MobX store는 dispose 필요 없음
             },
           ),
           // 다른 DB 타입 사용 예시:
