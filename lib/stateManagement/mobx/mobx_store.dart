@@ -123,6 +123,13 @@ abstract class _ServerStore with Store {
     try {
       isLoading = true;
 
+      // 이미 동일한 ip·port 쌍이 등록되어 있는지 확인 / address에 port 정보 포함
+      final exists = servers.any((s) => s.address == server.address);
+      if (exists) {
+        showSnackbar('이미 동일한 IP와 Port의 서버가 존재합니다.');
+        return;
+      }
+
       // 삽입 후 반환되는 ID를 받도록 DAO 수정 필요 (아래 참고)
       final int newId = await _dao.insertServer(server);  // ← 반환값이 int라고 가정
 

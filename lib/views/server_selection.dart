@@ -35,8 +35,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     );
   }
 
-  Future<ServerModel?> _showAuthDialog(ServerModel server,
-      {bool isTest = false, bool isInitialSetup = false}) async {
+  Future<ServerModel?> _showAuthDialog(ServerModel server, {bool isTest = false, bool isInitialSetup = false}) async {
     final usernameController = TextEditingController(text: server.username ?? '');
     final passwordController = TextEditingController(text: server.password ?? '');
     final keyFilePathController = TextEditingController(text: server.keyFilePath ?? '');
@@ -275,6 +274,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             if (store.error != null) {
               return Center(child: Text('서버 목록 로딩 실패: ${store.error}'));
             }
+            debugPrint("서버 개수: ${store.servers.length}");
 
             return Column(
               children: [
@@ -429,6 +429,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
                                           store.toggleAddForm();
                                           store.setIsTestServer(false);
+                                          store.isAddFormOpen = false;
 
                                           // SSH/MySQL 등 인증이 필요하면 다이얼로그 띄우기
                                           if (type.toLowerCase().contains('ssh') ||
