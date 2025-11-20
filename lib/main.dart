@@ -53,7 +53,7 @@ class MyApp extends StatelessWidget {
         },
         '/table-selection': (context) {
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-          final server = args['server'] as Map<String, dynamic>;
+          final server = args['server'] as ServerModel;
           final database = args['database'] as String;
           return TableSelectionScreen(server: server, database: database);
         },

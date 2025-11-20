@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'package:get/get.dart';
 
+import '../sqflite/models/server_model.dart';
+
 /// getX 상태 관리
 class TableSelectionScreen extends StatelessWidget {
-  final Map<String, dynamic> server;
+  final ServerModel server;
   final String database;
 
   const TableSelectionScreen({
@@ -20,8 +22,8 @@ class TableSelectionScreen extends StatelessWidget {
     final isLoading = true.obs;
 
     Future<PostgreSQLConnection> getConnection() async {
-      final host = server['address'].split(':')[0];
-      final port = int.parse(server['address'].split(':')[1]);
+      final host = server.address.split(':')[0];
+      final port = int.parse(server.address.split(':')[1]);
       final connection = PostgreSQLConnection(
         host,
         port,
