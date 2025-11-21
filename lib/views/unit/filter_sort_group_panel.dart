@@ -77,6 +77,8 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
   }
 
   void _showFilterSortGroupDialog(BuildContext context) {
+    DataEditingState initialState = ref.read(dataEditingProvider(widget.dataEditingParams));
+
     showDialog(
       context: context,
       builder: (dialogContext) => FilterSortGroupDialog(
@@ -86,6 +88,18 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
           // Dialog가 닫힐 때 Controller 정리 (실제로는 dispose에서 처리)
         },
       ),
-    );
+    ).then((result) {
+      // dialog가 닫힌 후 호출됨 (x버튼, 바깥 클릭 모두)
+      // ESC로 종료된 경우 result는 false 또는 null이 되고, 이 때 refreshData 호출 안 함
+      final notifier = ref.read(dataEditingProvider(widget.dataEditingParams).notifier);
+      debugPrint('[_showFilterSortGroupDialog] result: $result');
+      if(result == null || result == true) {
+        // 일반 종료 시: 덮어쓰기 없이 그냥 상태 유지
+        notifier.refreshData();
+      } else if (result == false) {
+        // esc 종료 시: 덮어쓰기 해서 마지막 저장 상태로 덮어쓰기
+        notifier.refreshData(overwriteState: initialState);
+      }
+    });
   }
 }

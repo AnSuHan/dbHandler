@@ -414,13 +414,24 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       selectedCellRange: null,
     );
   }
+
+  /// 데이터 로드 (빌드 중 상태 변경 방지)
+  void refreshData({DataEditingState? overwriteState}) {
+    if(overwriteState != null) {
+      state = overwriteState;
+    } else {
+      // 덮어쓰지 않고 필요한 경우 무시
+      // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
+      Future.microtask(() => loadTableData());
+    }
+  }
   
   /// 필터 추가
   void addFilter(FilterCondition filter) {
     final newFilters = List<FilterCondition>.from(state.filters)..add(filter);
     state = state.copyWith(filters: newFilters);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 필터 제거
@@ -437,7 +448,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     newFilters[index] = filter;
     state = state.copyWith(filters: newFilters);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   // /// 필터 모두 제거
@@ -457,7 +468,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     newFilters.insert(newIndex, item);
     state = state.copyWith(filters: newFilters);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 정렬 추가
@@ -465,7 +476,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final newSorts = List<SortCondition>.from(state.sorts)..add(sort);
     state = state.copyWith(sorts: newSorts);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 정렬 수정
@@ -474,7 +485,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     newSorts[index] = sort;
     state = state.copyWith(sorts: newSorts);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 정렬 제거
@@ -482,14 +493,14 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final newSorts = List<SortCondition>.from(state.sorts)..removeAt(index);
     state = state.copyWith(sorts: newSorts);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 정렬 모두 제거
   void clearSorts() {
     state = state.copyWith(sorts: []);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 정렬 순서 재정렬
@@ -506,7 +517,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     
     state = state.copyWith(sorts: newSorts);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 그룹화 컬럼 추가
@@ -515,7 +526,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       final newGroupByColumns = List<String>.from(state.groupByColumns)..add(columnName);
       state = state.copyWith(groupByColumns: newGroupByColumns);
       // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-      Future.microtask(() => loadTableData());
+      // Future.microtask(() => loadTableData());
     }
   }
   
@@ -524,14 +535,14 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final newGroupByColumns = List<String>.from(state.groupByColumns)..remove(columnName);
     state = state.copyWith(groupByColumns: newGroupByColumns);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 그룹화 모두 제거
   void clearGroupBy() {
     state = state.copyWith(groupByColumns: []);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
   
   /// 그룹화 컬럼 순서 재정렬
@@ -548,7 +559,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     
     state = state.copyWith(groupByColumns: newGroupByColumns);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
-    Future.microtask(() => loadTableData());
+    // Future.microtask(() => loadTableData());
   }
 
   void updateColumnWidth(int index, double newWidth) {

@@ -40,6 +40,12 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
 
   /// 키보드 입력 처리
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // ESC 눌렀을 때 다이얼로그 닫기(정상 종료 플래그 false)
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).pop(false); // ESC로 종료시 false 반환
+      return KeyEventResult.handled;
+    }
+
     final isCtrlPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlLeft) ||
         HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlRight);
     final isShiftPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
