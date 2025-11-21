@@ -14,10 +14,10 @@ class ServerDao {
     if (PlatformCheck.isWeb) {
       return await _webStorage.getAllServers();
     }
-    
+
     final db = await _db.database;
     if (db == null) return [];
-    
+
     final List<Map<String, dynamic>> maps = await db.query(
       'servers',
       orderBy: 'createdAt DESC',
@@ -29,12 +29,16 @@ class ServerDao {
   Future<ServerModel?> getServerById(int id) async {
     if (PlatformCheck.isWeb) {
       final servers = await _webStorage.getAllServers();
-      return servers.firstWhere((s) => s.id == id);
+      try {
+        return servers.firstWhere((s) => s.id == id);
+      } catch (e) {
+        return null;
+      }
     }
-    
+
     final db = await _db.database;
     if (db == null) return null;
-    
+
     final List<Map<String, dynamic>> maps = await db.query(
       'servers',
       where: 'id = ?',
@@ -44,11 +48,36 @@ class ServerDao {
     return ServerModel.fromJson(maps.first);
   }
 
-  // 서버 추가
+  // 2. address로 서버 존재 여부 확인 (중복 체크용)
+  Future<bool> isServerExists(String address) async {
+    if (PlatformCheck.isWeb) {
+      final servers = await _webStorage.getAllServers();
+      return servers.any((s) => s.address == address);
+    }
+
+    final db = await _db.database;
+    if (db == null) return false;
+
+    final List<Map<String, dynamic>> maps = await db.query(
+      'servers',
+      where: 'address = ?',
+      whereArgs: [address],
+      limit: 1,
+    );
+    return maps.isNotEmpty;
+  }
+
+  // 서버 추가 (중복 체크 포함)
   Future<int> insertServer(ServerModel server) async {
+    // 2. 중복 체크
+    final exists = await isServerExists(server.address);
+    if (exists) {
+      throw Exception('동일한 주소의 서버가 이미 존재합니다: ${server.address}');
+    }
+
     // 웹 플랫폼
     if (PlatformCheck.isWeb) {
-      return await _webStorage.insertServer(server); // 이 메서드도 아래와 동일한 로직을 따라야 함
+      return await _webStorage.insertServer(server);
     }
 
     // 모바일/데스크톱 (sqflite)
@@ -61,7 +90,7 @@ class ServerDao {
     final int newId = await db.insert(
       'servers',
       data,
-      conflictAlgorithm: ConflictAlgorithm.replace, // 혹시 모를 충돌 방지
+      conflictAlgorithm: ConflictAlgorithm.abort, // 중복 시 에러 발생
     );
 
     return newId; // 이 값이 바로 방금 삽입된 서버의 ID!
@@ -72,10 +101,10 @@ class ServerDao {
     if (PlatformCheck.isWeb) {
       return await _webStorage.updateServer(server);
     }
-    
+
     final db = await _db.database;
     if (db == null) return 0;
-    
+
     return await db.update(
       'servers',
       server.copyWith(updatedAt: DateTime.now()).toJson(),
@@ -89,10 +118,10 @@ class ServerDao {
     if (PlatformCheck.isWeb) {
       return await _webStorage.deleteServer(id);
     }
-    
+
     final db = await _db.database;
     if (db == null) return 0;
-    
+
     return await db.delete(
       'servers',
       where: 'id = ?',
@@ -105,10 +134,10 @@ class ServerDao {
     if (PlatformCheck.isWeb) {
       return await _webStorage.updateConnectionStatus(id, isConnected);
     }
-    
+
     final db = await _db.database;
     if (db == null) return 0;
-    
+
     return await db.update(
       'servers',
       {
@@ -125,10 +154,10 @@ class ServerDao {
     if (PlatformCheck.isWeb) {
       return await _webStorage.searchServers(query);
     }
-    
+
     final db = await _db.database;
     if (db == null) return [];
-    
+
     final List<Map<String, dynamic>> maps = await db.query(
       'servers',
       where: 'name LIKE ? OR address LIKE ?',
@@ -142,6 +171,7 @@ class ServerDao {
     // 1) 웹인 경우: 로컬스토리지(WebStorageService) 초기화
     if (PlatformCheck.isWeb) {
       await _webStorage.initialize();
+      print("✅ ServerDao (웹) 초기화 완료");
       return;
     }
 
@@ -160,15 +190,24 @@ class ServerDao {
     CREATE TABLE IF NOT EXISTS servers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      address TEXT NOT NULL,
-      port INTEGER NOT NULL,
-      isTestServer INTEGER NOT NULL DEFAULT 0,
+      address TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL DEFAULT 'PostgreSQL',
       isConnected INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      password TEXT,
+      keyFilePath TEXT,
+      notes TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
   ''');
 
-    print("✅ ServerDao initialize() 완료");
+    // 4) address에 인덱스 추가 (중복 체크 성능 향상)
+    await db.execute('''
+    CREATE INDEX IF NOT EXISTS idx_servers_address 
+    ON servers(address);
+  ''');
+
+    print("✅ ServerDao (앱) 초기화 완료");
   }
 }

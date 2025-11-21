@@ -21,6 +21,16 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   final TextEditingController _typeController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // 1. 앱 시작 시 저장된 서버 목록 로드
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final store = Provider.of<ServerStore>(context, listen: false);
+      store.loadServers();
+    });
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _hostController.dispose();
@@ -205,6 +215,17 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
               }
 
               final address = '$host:$port';
+
+              // 2. 수정 시에도 중복 체크 (자기 자신 제외)
+              final isDuplicate = store.servers.any((s) =>
+              s.address == address && s.id != server.id
+              );
+
+              if (isDuplicate) {
+                _showSnackbar('동일한 주소의 서버가 이미 존재합니다.', color: Colors.red);
+                return;
+              }
+
               final updatedServer = server.copyWith(
                 name: name,
                 address: address,
@@ -278,6 +299,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
             return Column(
               children: [
+                // 서버 추가 폼 부분
                 Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Card(
@@ -399,16 +421,23 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                           return;
                                         }
 
-                                        // 2. address 조합
+                                        // 2. address 조합 및 중복 체크
                                         final address = '$host:$port';
 
-                                        // 3. ServerModel 인스턴스 생성 (정확한 필드 사용!)
+                                        // 2-1. 메모리(Store)에서 중복 체크
+                                        final isDuplicate = store.servers.any((s) => s.address == address);
+                                        if (isDuplicate) {
+                                          _showSnackbar('동일한 주소의 서버가 이미 존재합니다.', color: Colors.red);
+                                          return;
+                                        }
+
+                                        // 3. ServerModel 인스턴스 생성
                                         final newServer = ServerModel(
-                                          id: null,                    // 저장 시 자동 생성
+                                          id: null,
                                           name: name,
                                           address: address,
                                           type: type,
-                                          isConnected: false,          // 처음엔 연결 안 됨
+                                          isConnected: false,
                                           username: null,
                                           password: null,
                                           keyFilePath: null,
@@ -418,33 +447,34 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         );
 
                                         try {
-                                          // 4. Store를 통해 서버 추가 (ServerModel 전달)
-                                          await store.addServer(newServer, _showSnackbar);
+                                          // 4. Store를 통해 서버 추가
+                                          final success = await store.addServer(newServer, _showSnackbar);
 
-                                          // 5. 성공 시 UI 정리
-                                          _nameController.clear();
-                                          _hostController.clear();
-                                          _portController.clear();
-                                          _typeController.clear();
+                                          if (success) {
+                                            // 5. 성공 시 UI 정리
+                                            _nameController.clear();
+                                            _hostController.clear();
+                                            _portController.clear();
+                                            _typeController.clear();
 
-                                          store.toggleAddForm();
-                                          store.setIsTestServer(false);
-                                          store.isAddFormOpen = false;
+                                            store.closeAddForm();
+                                            store.setIsTestServer(false);
 
-                                          // SSH/MySQL 등 인증이 필요하면 다이얼로그 띄우기
-                                          if (type.toLowerCase().contains('ssh') ||
-                                              type.toLowerCase().contains('mysql') ||
-                                              type.toLowerCase().contains('sqlserver')) {
-                                            if (context.mounted) {
-                                              if (store.lastAddedServer != null) {
-                                                await _showAuthDialog(store.lastAddedServer!);
+                                            // SSH/MySQL 등 인증이 필요하면 다이얼로그 띄우기
+                                            if (type.toLowerCase().contains('ssh') ||
+                                                type.toLowerCase().contains('mysql') ||
+                                                type.toLowerCase().contains('sqlserver')) {
+                                              if (context.mounted) {
+                                                if (store.lastAddedServer != null) {
+                                                  await _showAuthDialog(store.lastAddedServer!);
+                                                }
                                               }
                                             }
                                           }
 
                                         } catch (e) {
                                           // addServer 내부에서 이미 showSnackbar 호출하므로 중복 방지
-                                          // 필요 시 여기서 추가 처리
+                                          debugPrint('서버 추가 중 오류: $e');
                                         }
                                       },
                                       icon: const Icon(Icons.add),
@@ -464,129 +494,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                     ),
                   ),
                 ),
+                // 3. 서버 목록 부분만 Observer로 감싸기
                 Expanded(
-                  child: Observer(
-                    builder: (_) {
-                      if (store.servers.isEmpty) {
-                        return const Center(
-                          child: Text(
-                            '서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      }
-
-                      return ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                        itemCount: store.servers.length,
-                        itemBuilder: (context, index) {
-                          final server = store.servers[index];
-                          final isTestServer = server.address == '127.0.0.1:5432';
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            elevation: 2,
-                            child: InkWell(
-                              onTap: () async {
-                                final navigator = Navigator.of(context);
-                                ServerModel? targetServer = server;
-                                final username = targetServer?.username;
-                                final password = targetServer?.password;
-                                bool needsAuth = (username?.isEmpty ?? true) &&
-                                    (password?.isEmpty ?? true);
-
-                                if (needsAuth && targetServer != null) {
-                                  targetServer = await _showAuthDialog(server,
-                                      isTest: isTestServer,
-                                      isInitialSetup: true);
-                                }
-
-                                if (!mounted || targetServer == null) return;
-
-                                // PostgreSQL 서버인 경우 DatabaseHandler 초기화
-                                if (targetServer.type.toLowerCase() == 'postgresql') {
-                                  store.initializeDatabaseHandler();
-                                }
-
-                                navigator.pushNamed('/database-selection',
-                                    arguments: targetServer);
-                              },
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: isTestServer
-                                      ? Colors.grey
-                                      : (server.isConnected
-                                      ? const Color(0xFF10B981)
-                                      : const Color(0xFFEF4444)),
-                                  child: const Icon(Icons.dns, color: Colors.white),
-                                ),
-                                title: Text(server.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold)),
-                                subtitle: Text(server.address),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Chip(
-                                        label: Text(server.type),
-                                        backgroundColor:
-                                        const Color(0xFFEDE9FE),
-                                        labelStyle: const TextStyle(
-                                            color: Color(0xFF6366F1))),
-                                    const SizedBox(width: 8),
-                                    PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_vert),
-                                      onSelected: (value) {
-                                        if (value == 'edit_server') {
-                                          _showEditServerDialog(server);
-                                        } else if (value == 'edit_auth') {
-                                          _showAuthDialog(server,
-                                              isInitialSetup: false);
-                                        } else if (value == 'delete') {
-                                          _showDeleteServerDialog(server);
-                                        }
-                                      },
-                                      itemBuilder: (BuildContext context) => [
-                                        const PopupMenuItem<String>(
-                                            value: 'edit_server',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.edit, size: 20),
-                                                SizedBox(width: 8),
-                                                Text('서버 정보 수정')
-                                              ],
-                                            )),
-                                        const PopupMenuItem<String>(
-                                            value: 'edit_auth',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.security, size: 20),
-                                                SizedBox(width: 8),
-                                                Text('인증 정보 수정')
-                                              ],
-                                            )),
-                                        const PopupMenuItem<String>(
-                                            value: 'delete',
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.delete,
-                                                    size: 20, color: Colors.red),
-                                                SizedBox(width: 8),
-                                                Text('삭제',
-                                                    style: TextStyle(
-                                                        color: Colors.red))
-                                              ],
-                                            )),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
+                  child: _ServerListWidget(
+                    onEditServer: _showEditServerDialog,
+                    onEditAuth: _showAuthDialog,
+                    onDeleteServer: _showDeleteServerDialog,
                   ),
                 ),
               ],
@@ -594,6 +507,146 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+// 3. 서버 목록만 별도 위젯으로 분리하여 리빌드 최적화
+class _ServerListWidget extends StatelessWidget {
+  final Function(ServerModel) onEditServer;
+  final Function(ServerModel, {bool isInitialSetup}) onEditAuth;
+  final Function(ServerModel) onDeleteServer;
+
+  const _ServerListWidget({
+    required this.onEditServer,
+    required this.onEditAuth,
+    required this.onDeleteServer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final store = Provider.of<ServerStore>(context, listen: false);
+
+    return Observer(
+      builder: (_) {
+        if (store.servers.isEmpty) {
+          return const Center(
+            child: Text(
+              '서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          itemCount: store.servers.length,
+          itemBuilder: (context, index) {
+            final server = store.servers[index];
+            final isTestServer = server.address == '127.0.0.1:5432';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 2,
+              child: InkWell(
+                onTap: () async {
+                  final navigator = Navigator.of(context);
+                  ServerModel? targetServer = server;
+                  final username = targetServer?.username;
+                  final password = targetServer?.password;
+                  bool needsAuth = (username?.isEmpty ?? true) &&
+                      (password?.isEmpty ?? true);
+
+                  if (needsAuth && targetServer != null) {
+                    targetServer = await onEditAuth(server,
+                        isInitialSetup: true);
+                  }
+
+                  if (!context.mounted || targetServer == null) return;
+
+                  // PostgreSQL 서버인 경우 DatabaseHandler 초기화
+                  if (targetServer.type.toLowerCase() == 'postgresql') {
+                    store.initializeDatabaseHandler();
+                  }
+
+                  navigator.pushNamed('/database-selection',
+                      arguments: targetServer);
+                },
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: isTestServer
+                        ? Colors.grey
+                        : (server.isConnected
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFFEF4444)),
+                    child: const Icon(Icons.dns, color: Colors.white),
+                  ),
+                  title: Text(server.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold)),
+                  subtitle: Text(server.address),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Chip(
+                          label: Text(server.type),
+                          backgroundColor:
+                          const Color(0xFFEDE9FE),
+                          labelStyle: const TextStyle(
+                              color: Color(0xFF6366F1))),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert),
+                        onSelected: (value) {
+                          if (value == 'edit_server') {
+                            onEditServer(server);
+                          } else if (value == 'edit_auth') {
+                            onEditAuth(server, isInitialSetup: false);
+                          } else if (value == 'delete') {
+                            onDeleteServer(server);
+                          }
+                        },
+                        itemBuilder: (BuildContext context) => [
+                          const PopupMenuItem<String>(
+                              value: 'edit_server',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('서버 정보 수정')
+                                ],
+                              )),
+                          const PopupMenuItem<String>(
+                              value: 'edit_auth',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.security, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('인증 정보 수정')
+                                ],
+                              )),
+                          const PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete,
+                                      size: 20, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('삭제',
+                                      style: TextStyle(
+                                          color: Colors.red))
+                                ],
+                              )),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
