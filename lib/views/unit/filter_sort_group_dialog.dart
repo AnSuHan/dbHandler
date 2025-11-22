@@ -8,13 +8,17 @@ import '../../stateManagement/setState/data_editing_riverpod.dart';
 class FilterSortGroupDialog extends ConsumerStatefulWidget {
   final DataEditingParams dataEditingParams;
   final Map<int, TextEditingController> filterControllers;
-  final VoidCallback onDispose;
+  final VoidCallback? onDispose;
+  final VoidCallback? onApply;
+  final VoidCallback? onCancel;
 
   const FilterSortGroupDialog({
     super.key,
     required this.dataEditingParams,
     required this.filterControllers,
-    required this.onDispose,
+    this.onDispose,
+    this.onApply,
+    this.onCancel,
   });
 
   @override
@@ -34,7 +38,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
   @override
   void dispose() {
     focusNode.dispose();
-    widget.onDispose();
+    widget.onDispose?.call();
     super.dispose();
   }
 
@@ -93,8 +97,12 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   ),
                   const Spacer(),
                   IconButton(
+                    icon: const Icon(Icons.save),
+                    onPressed: widget.onApply ?? () => Navigator.of(context).pop(),
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: widget.onCancel ?? () => Navigator.of(context).pop(),
                   ),
                 ],
               ),

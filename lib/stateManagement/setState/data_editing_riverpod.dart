@@ -15,6 +15,7 @@ class FilterCondition {
   final String? logicalOperator; // AND, OR (다음 조건과의 연결)
   final int? openGroupCount; // 괄호 열기 수
   final int? closeGroupCount; // 괄호 닫기 수
+  final bool isNegated; // NOT 연산자 적용 여부
   
   const FilterCondition({
     required this.columnName,
@@ -23,6 +24,7 @@ class FilterCondition {
     this.logicalOperator,
     this.openGroupCount,
     this.closeGroupCount,
+    this.isNegated = false,
   });
   
   FilterCondition copyWith({
@@ -32,6 +34,7 @@ class FilterCondition {
     String? logicalOperator,
     int? openGroupCount,
     int? closeGroupCount,
+    bool? isNegated,
   }) {
     return FilterCondition(
       columnName: columnName ?? this.columnName,
@@ -40,6 +43,7 @@ class FilterCondition {
       logicalOperator: logicalOperator ?? this.logicalOperator,
       openGroupCount: openGroupCount ?? this.openGroupCount,
       closeGroupCount: closeGroupCount ?? this.closeGroupCount,
+      isNegated: isNegated ?? this.isNegated,
     );
   }
   
@@ -51,6 +55,7 @@ class FilterCondition {
       'logicalOperator': logicalOperator,
       'openGroupCount': openGroupCount,
       'closeGroupCount': closeGroupCount,
+      'isNegated': isNegated,
     };
   }
 }
@@ -413,6 +418,187 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       selectedCell: null,
       selectedCellRange: null,
     );
+  }
+
+  /// state 문법 오류 확인
+  bool isValidSyntax() {
+    final filters = state.filters;
+
+    // 빈 필터는 유효함
+    if (filters.isEmpty) {
+      return true;
+    }
+
+    // 1. 첫 번째 필터는 logicalOperator가 null이어야 함
+    if (filters.first.logicalOperator != null) {
+      return false;
+    }
+
+    // 2. 마지막 필터를 제외한 모든 필터는 logicalOperator가 있어야 함
+    for (int i = 0; i < filters.length - 1; i++) {
+      final logicalOp = filters[i].logicalOperator;
+      if (logicalOp == null || (logicalOp != 'AND' && logicalOp != 'OR')) {
+        return false;
+      }
+    }
+
+    // 3. 마지막 필터의 logicalOperator는 null이어야 함
+    if (filters.last.logicalOperator != null) {
+      return false;
+    }
+
+    // 4. 괄호 균형 검증
+    int openCount = 0;
+    for (final filter in filters) {
+      openCount += filter.openGroupCount ?? 0;
+      openCount -= filter.closeGroupCount ?? 0;
+
+      // 중간에 닫는 괄호가 여는 괄호보다 많으면 안됨
+      if (openCount < 0) {
+        return false;
+      }
+    }
+
+    // 최종적으로 괄호가 모두 닫혀야 함
+    if (openCount != 0) {
+      return false;
+    }
+
+    // 5. 각 필터의 연산자와 값 검증
+    for (final filter in filters) {
+      final operator = filter.operator;
+      final value = filter.value;
+
+      // IS NULL, IS NOT NULL은 value가 null이어야 함
+      if (operator == 'IS NULL' || operator == 'IS NOT NULL') {
+        if (value != null) {
+          return false;
+        }
+      }
+      // IN, NOT IN은 value가 List여야 함
+      else if (operator == 'IN' || operator == 'NOT IN') {
+        if (value is! List) {
+          return false;
+        }
+        // 빈 리스트는 허용하지 않음
+        if ((value as List).isEmpty) {
+          return false;
+        }
+      }
+      // LIKE는 value가 String이어야 함
+      else if (operator == 'LIKE') {
+        if (value is! String) {
+          return false;
+        }
+      }
+      // 그 외 연산자는 value가 있어야 함
+      else if (operator == '=' || operator == '!=' ||
+          operator == '<' || operator == '>' ||
+          operator == '<=' || operator == '>=') {
+        if (value == null) {
+          return false;
+        }
+      }
+      // 알 수 없는 연산자
+      else {
+        // 향후 추가될 연산자를 위해 경고만 하고 통과시킬 수도 있음
+        // 여기서는 엄격하게 검증
+        return false;
+      }
+
+      // 6. columnName이 비어있으면 안됨
+      if (filter.columnName.trim().isEmpty) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /// 상세한 검증 오류 메시지 반환 (디버깅용)
+  String? getValidationError() {
+    final filters = state.filters;
+
+    if (filters.isEmpty) {
+      return null;
+    }
+
+    // 1. 첫 번째 필터 검증
+    if (filters.first.logicalOperator != null) {
+      return '첫 번째 필터는 논리 연산자가 없어야 합니다.';
+    }
+
+    // 2. 중간 필터들의 논리 연산자 검증
+    for (int i = 0; i < filters.length - 1; i++) {
+      final logicalOp = filters[i].logicalOperator;
+      if (logicalOp == null) {
+        return '필터 ${i + 1}번은 논리 연산자(AND/OR)가 필요합니다.';
+      }
+      if (logicalOp != 'AND' && logicalOp != 'OR') {
+        return '필터 ${i + 1}번의 논리 연산자가 유효하지 않습니다: $logicalOp';
+      }
+    }
+
+    // 3. 마지막 필터 검증
+    if (filters.last.logicalOperator != null) {
+      return '마지막 필터는 논리 연산자가 없어야 합니다.';
+    }
+
+    // 4. 괄호 균형 검증
+    int openCount = 0;
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      openCount += filter.openGroupCount ?? 0;
+      openCount -= filter.closeGroupCount ?? 0;
+
+      if (openCount < 0) {
+        return '필터 ${i + 1}번에서 닫는 괄호가 여는 괄호보다 많습니다.';
+      }
+    }
+
+    if (openCount > 0) {
+      return '닫히지 않은 괄호가 ${openCount}개 있습니다.';
+    } else if (openCount < 0) {
+      return '여는 괄호보다 닫는 괄호가 ${-openCount}개 더 많습니다.';
+    }
+
+    // 5. 각 필터의 연산자와 값 검증
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      final operator = filter.operator;
+      final value = filter.value;
+
+      if (filter.columnName.trim().isEmpty) {
+        return '필터 ${i + 1}번의 컬럼명이 비어있습니다.';
+      }
+
+      if (operator == 'IS NULL' || operator == 'IS NOT NULL') {
+        if (value != null) {
+          return '필터 ${i + 1}번: $operator 연산자는 값이 없어야 합니다.';
+        }
+      } else if (operator == 'IN' || operator == 'NOT IN') {
+        if (value is! List) {
+          return '필터 ${i + 1}번: $operator 연산자는 리스트 값이 필요합니다.';
+        }
+        if ((value as List).isEmpty) {
+          return '필터 ${i + 1}번: $operator 연산자의 리스트가 비어있습니다.';
+        }
+      } else if (operator == 'LIKE') {
+        if (value is! String) {
+          return '필터 ${i + 1}번: LIKE 연산자는 문자열 값이 필요합니다.';
+        }
+      } else if (operator == '=' || operator == '!=' ||
+          operator == '<' || operator == '>' ||
+          operator == '<=' || operator == '>=') {
+        if (value == null) {
+          return '필터 ${i + 1}번: $operator 연산자는 값이 필요합니다.';
+        }
+      } else {
+        return '필터 ${i + 1}번: 알 수 없는 연산자입니다: $operator';
+      }
+    }
+
+    return null;
   }
 
   /// 데이터 로드 (빌드 중 상태 변경 방지)

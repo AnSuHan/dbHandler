@@ -81,22 +81,46 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
 
     showDialog(
       context: context,
+      barrierDismissible: true, // 바깥 클릭으로 닫을 수 있음
       builder: (dialogContext) => FilterSortGroupDialog(
         dataEditingParams: widget.dataEditingParams,
         filterControllers: _filterControllers,
+        onApply: () {
+          // 적용 버튼 클릭 시 검증
+          final notifier = ref.read(dataEditingProvider(widget.dataEditingParams).notifier);
+
+          if (notifier.isValidSyntax()) {
+            Navigator.of(dialogContext).pop(true); // 검증 성공 시 다이얼로그 닫기
+          } else {
+            // 검증 실패 시 SnackBar 표시
+            final errorMessage = notifier.getValidationError() ?? '필터 조건이 올바르지 않습니다.';
+            ScaffoldMessenger.of(dialogContext).showSnackBar(
+              SnackBar(
+                content: Text(errorMessage),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+        onCancel: () {
+          // 취소 버튼 클릭 시
+          final notifier = ref.read(dataEditingProvider(widget.dataEditingParams).notifier);
+          notifier.refreshData(overwriteState: initialState);
+          Navigator.of(dialogContext).pop(false);
+        },
         onDispose: () {
           // Dialog가 닫힐 때 Controller 정리 (실제로는 dispose에서 처리)
         },
       ),
     ).then((result) {
       // dialog가 닫힌 후 호출됨 (x버튼, 바깥 클릭 모두)
-      // ESC로 종료된 경우 result는 false 또는 null이 되고, 이 때 refreshData 호출 안 함
       final notifier = ref.read(dataEditingProvider(widget.dataEditingParams).notifier);
       debugPrint('[_showFilterSortGroupDialog] result: $result');
-      if(result == null || result == true) {
-        // 일반 종료 시: 덮어쓰기 없이 그냥 상태 유지
+      if(result != null && result == true) {
+        // 적용 버튼으로 정상 종료 (이미 검증 완료)
         notifier.refreshData();
-      } else if (result == false) {
+      } else if (result ==  null || result == false) {
         // esc 종료 시: 덮어쓰기 해서 마지막 저장 상태로 덮어쓰기
         notifier.refreshData(overwriteState: initialState);
       }
