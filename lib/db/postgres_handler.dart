@@ -238,6 +238,23 @@ class PostgresHandler extends DatabaseHandler {
             final value = filter['value'];
             final logicalOperator = filter['logicalOperator'] as String?;
 
+            final isNegated = filter['isNegated'] as bool? ?? false;
+            final openGroupCount = filter['openGroupCount'] as int? ?? 0;
+            final closeGroupCount = filter['closeGroupCount'] as int? ?? 0;
+
+            // 여는 괄호 추가
+            for (int p = 0; p < openGroupCount; p++) {
+              whereClauses.add('(');
+            }
+
+            // NOT 접두사 추가
+            // NOT은 여는 괄호 다음에 위치해야 함
+            // 예: ( NOT "column" = value )
+            if (isNegated) {
+              whereClauses.add('NOT');
+              whereClauses.add('('); // NOT 조건을 괄호로 감싸기
+            }
+
             String condition;
             switch (operator.toUpperCase()) {
               case 'IS NULL':
@@ -290,6 +307,15 @@ class PostgresHandler extends DatabaseHandler {
             }
 
             whereClauses.add(condition);
+
+            // NOT 조건의 닫는 괄호 추가
+            if (isNegated) {
+              whereClauses.add(')'); // NOT 조건을 감싼 괄호 닫기
+            }
+            // 사용자 지정 닫는 괄호 추가
+            for (int p = 0; p < closeGroupCount; p++) {
+              whereClauses.add(')');
+            }
 
             if (i < groupFilters.length - 1 && logicalOperator != null) {
               whereClauses.add(logicalOperator.toUpperCase());

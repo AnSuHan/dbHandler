@@ -469,6 +469,49 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               child: Row(
                 children: [
                   Expanded(
+                    flex: 1,
+                    // not 토글
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: filter.isNegated ? Colors.red.shade50 : Colors.transparent,
+                        border: Border.all(
+                          color: filter.isNegated ? Colors.red.shade300 : Colors.grey.shade300,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            filter.isNegated = !filter.isNegated;
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                filter.isNegated ? Icons.block : Icons.check_circle_outline,
+                                size: 20,
+                                color: filter.isNegated ? Colors.red.shade700 : Colors.grey.shade400,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'NOT',
+                                style: TextStyle(
+                                  color: filter.isNegated ? Colors.red.shade700 : Colors.grey.shade400,
+                                  fontWeight: filter.isNegated ? FontWeight.bold : FontWeight.w300,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
                     flex: 2,
                     child: DropdownButtonFormField<String>(
                       initialValue: filter.columnName,
@@ -856,6 +899,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                     // openGroupCount 만큼 괄호 여는 텍스트 추가
                     final openParens = List.filled(filter.openGroupCount ?? 0, '(').join();
 
+                    // NOT 표시
+                    final notPrefix = filter.isNegated ? 'NOT ' : '';
+
                     // 닫는 괄호 텍스트
                     final closeParens = List.filled(filter.closeGroupCount ?? 0, ')').join();
 
@@ -868,7 +914,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                         ? ' ${filter.logicalOperator ?? 'AND'}'
                         : '';
 
-                    return Text('  $openParens${filter.columnName} ${filter.operator}$valueDisplay$closeParens$logicalOp');
+                    return Text('  $openParens$notPrefix${filter.columnName} ${filter.operator}$valueDisplay$closeParens$logicalOp');
                   }),
                 ],
                 if (state.sorts.isNotEmpty) ...[
@@ -897,11 +943,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     String selectedOperator = '=';
     String? valueText = '';
     // 기본값으로 AND 사용 (마지막 필터가 있으면 그 필터의 논리 연산자 사용)
-    String? logicalOperator = state.filters.isNotEmpty 
-        ? state.filters.last.logicalOperator ?? 'AND'
-        : 'AND';
+    String? logicalOperator = state.filters.isEmpty ? null : 'AND';
     int openGroupCount = 0;
     int closeGroupCount = 0;
+    bool isNegated = false; // 새 필터의 isNegated 상태
 
     showDialog(
       context: context,
@@ -912,6 +957,44 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // NOT 토글
+                Container(
+                  decoration: BoxDecoration(
+                    color: isNegated ? Colors.red.shade50 : Colors.transparent,
+                    border: Border.all(
+                      color: isNegated ? Colors.red.shade300 : Colors.grey.shade300,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: InkWell(
+                    onTap: () {
+                      setStateInDialog(() => isNegated = !isNegated);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isNegated ? Icons.block : Icons.check_circle_outline,
+                            size: 20,
+                            color: isNegated ? Colors.red.shade700 : Colors.grey.shade400,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'NOT',
+                            style: TextStyle(
+                              color: isNegated ? Colors.red.shade700 : Colors.grey.shade400,
+                              fontWeight: isNegated ? FontWeight.bold : FontWeight.w300,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: selectedColumn,
                   decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
@@ -951,42 +1034,42 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                     onChanged: (value) => setStateInDialog(() => valueText = value),
                   ),
                 ],
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Opening brackets count (optional)',
-                          border: OutlineInputBorder(),
-                          hintText: '0 or more',
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          setStateInDialog(() {
-                            openGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Closing brackets count (optional)',
-                          border: OutlineInputBorder(),
-                          hintText: '0 or more',
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          setStateInDialog(() {
-                            closeGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+                // const SizedBox(height: 16),
+                // Row(
+                //   children: [
+                //     Expanded(
+                //       child: TextField(
+                //         decoration: const InputDecoration(
+                //           labelText: 'Opening brackets count (optional)',
+                //           border: OutlineInputBorder(),
+                //           hintText: '0 or more',
+                //         ),
+                //         keyboardType: TextInputType.number,
+                //         onChanged: (value) {
+                //           setStateInDialog(() {
+                //             openGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
+                //           });
+                //         },
+                //       ),
+                //     ),
+                //     const SizedBox(width: 12),
+                //     Expanded(
+                //       child: TextField(
+                //         decoration: const InputDecoration(
+                //           labelText: 'Closing brackets count (optional)',
+                //           border: OutlineInputBorder(),
+                //           hintText: '0 or more',
+                //         ),
+                //         keyboardType: TextInputType.number,
+                //         onChanged: (value) {
+                //           setStateInDialog(() {
+                //             closeGroupCount = value.isEmpty ? 0 : int.tryParse(value) ?? 0;
+                //           });
+                //         },
+                //       ),
+                //     ),
+                //   ],
+                // ),
               ],
             ),
           ),
@@ -1004,14 +1087,37 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                   value = null;
                 }
 
-                notifier.addFilter(FilterCondition(
-                  columnName: selectedColumn,
-                  operator: selectedOperator,
-                  value: value,
-                  logicalOperator: logicalOperator,
-                  openGroupCount: openGroupCount,
-                  closeGroupCount: closeGroupCount,
-                ));
+                // 첫 번째 필터면 그대로 추가, 두 번째 이후면 이전 필터 업데이트 후 추가
+                if (state.filters.isEmpty) {
+                  // 첫 번째 필터 추가 (logicalOperator는 null)
+                  notifier.addFilter(FilterCondition(
+                    columnName: selectedColumn,
+                    operator: selectedOperator,
+                    value: value,
+                    logicalOperator: null,
+                    openGroupCount: openGroupCount,
+                    closeGroupCount: closeGroupCount,
+                    isNegated: isNegated,
+                  ));
+                } else {
+                  // 두 번째 이후 필터: 이전 마지막 필터에 논리 연산자 추가
+                  final lastFilter = state.filters.last;
+                  notifier.updateFilter(
+                    state.filters.length - 1,
+                    lastFilter.copyWith(logicalOperator: logicalOperator),
+                  );
+
+                  // 새 필터 추가 (logicalOperator는 null)
+                  notifier.addFilter(FilterCondition(
+                    columnName: selectedColumn,
+                    operator: selectedOperator,
+                    value: value,
+                    logicalOperator: null,
+                    openGroupCount: openGroupCount,
+                    closeGroupCount: closeGroupCount,
+                    isNegated: isNegated,
+                  ));
+                }
                 Navigator.pop(dialogContext);
               },
               child: const Text('Add'),

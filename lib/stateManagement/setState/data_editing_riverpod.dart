@@ -9,15 +9,15 @@ import '../../sqflite/models/server_model.dart';
 
 /// 필터 조건 클래스
 class FilterCondition {
-  final String columnName;
-  final String operator; // =, !=, <, >, <=, >=, LIKE, IN, NOT IN, IS NULL, IS NOT NULL
-  final dynamic value; // 값 (LIKE의 경우 String, IN의 경우 List)
-  final String? logicalOperator; // AND, OR (다음 조건과의 연결)
-  final int? openGroupCount; // 괄호 열기 수
-  final int? closeGroupCount; // 괄호 닫기 수
-  final bool isNegated; // NOT 연산자 적용 여부
+  String columnName;
+  String operator; // =, !=, <, >, <=, >=, LIKE, IN, NOT IN, IS NULL, IS NOT NULL
+  dynamic value; // 값 (LIKE의 경우 String, IN의 경우 List)
+  String? logicalOperator; // AND, OR (다음 조건과의 연결)
+  int? openGroupCount; // 괄호 열기 수
+  int? closeGroupCount; // 괄호 닫기 수
+  bool isNegated; // NOT 연산자 적용 여부
   
-  const FilterCondition({
+  FilterCondition({
     required this.columnName,
     required this.operator,
     this.value,
@@ -340,6 +340,8 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         isLoading: false,
         error: 'Failed to load table data: $e',
       );
+    } finally {
+      debugPrint("[loadTableData] filter state: ${state.filters.map((f) => f.toMap()).toList()}");
     }
   }
 
@@ -424,13 +426,13 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   bool isValidSyntax() {
     final filters = state.filters;
 
-    // 빈 필터는 유효함
-    if (filters.isEmpty) {
+    // 빈 필터와 필터 하나는 유효함
+    if (filters.isEmpty || filters.length == 1) {
       return true;
     }
 
-    // 1. 첫 번째 필터는 logicalOperator가 null이어야 함
-    if (filters.first.logicalOperator != null) {
+    // 1. 첫 번째 필터는 logicalOperator가 null이 아니어야 함
+    if (filters.first.logicalOperator == null) {
       return false;
     }
 
@@ -519,13 +521,13 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   String? getValidationError() {
     final filters = state.filters;
 
-    if (filters.isEmpty) {
+    if (filters.isEmpty || filters.length == 1) {
       return null;
     }
 
     // 1. 첫 번째 필터 검증
-    if (filters.first.logicalOperator != null) {
-      return '첫 번째 필터는 논리 연산자가 없어야 합니다.';
+    if (filters.first.logicalOperator == null) {
+      return '두 개 이상의 조건이 존재하는 경우, 첫 번째 필터는 논리 연산자가 있어야 합니다.';
     }
 
     // 2. 중간 필터들의 논리 연산자 검증
