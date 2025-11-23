@@ -483,7 +483,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
           return false;
         }
         // 빈 리스트는 허용하지 않음
-        if ((value as List).isEmpty) {
+        if ((value).isEmpty) {
           return false;
         }
       }
@@ -582,7 +582,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         if (value is! List) {
           return '필터 ${i + 1}번: $operator 연산자는 리스트 값이 필요합니다.';
         }
-        if ((value as List).isEmpty) {
+        if (value.isEmpty) {
           return '필터 ${i + 1}번: $operator 연산자의 리스트가 비어있습니다.';
         }
       } else if (operator == 'LIKE') {
@@ -1039,48 +1039,41 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
   // 필터 제거
   void removeFilter(int index) {
-    if (index >= state.filters.length) return;
+    debugPrint("========== removeFilter() 호출 ==========");
+    debugPrint("제거 요청 index = $index");
 
-    final filters = List<FilterCondition>.from(state.filters);
-    filters.removeAt(index);
+    final currentFilters = List<FilterCondition>.from(state.filters);
+    debugPrint("초기 filters = $currentFilters");
 
-    // 연산자 리스트도 조정 (필터가 n개면 연산자는 n-1개)
-    List<String>? operators = state.filterOperators != null
-        ? List<String>.from(state.filterOperators!)
-        : null;
-
-    if (operators != null && operators.isNotEmpty) {
-      // 마지막 필터를 제거하는 경우
-      if (index == filters.length && operators.isNotEmpty) {
-        operators.removeLast();
-      }
-      // 첫 번째나 중간 필터를 제거하는 경우
-      else if (index < operators.length) {
-        operators.removeAt(index);
-      }
-
-      if (operators.isEmpty) {
-        operators = null;
-      }
+    if (index >= currentFilters.length) {
+      debugPrint("index 오류: 필터 개수보다 큼 → 함수 종료");
+      return;
     }
 
-    // 괄호 정보도 조정
-    List<bool>? parenthesis = state.filterParenthesis != null
-        ? List<bool>.from(state.filterParenthesis!)
-        : null;
+    //------------------------------------------------------
+    // 1) 필터 제거
+    //------------------------------------------------------
+    currentFilters.removeAt(index);
+    debugPrint("필터 제거 후 filters = $currentFilters");
 
-    if (parenthesis != null && index < parenthesis.length) {
-      parenthesis.removeAt(index);
-      if (parenthesis.isEmpty) {
-        parenthesis = null;
-      }
-    }
+    //------------------------------------------------------
+    // 2) cleanupFiltersAfterReorder() 적용
+    //------------------------------------------------------
+    final cleanedFilters = _cleanupFiltersAfterReorder(currentFilters);
+    debugPrint("cleanup 적용 후 filters = $cleanedFilters");
 
+    //------------------------------------------------------
+    // 3) 최종 state 반영 (operators, parenthesis 제거!)
+    //------------------------------------------------------
     state = state.copyWith(
-      filters: filters,
-      filterOperators: operators,
-      filterParenthesis: parenthesis,
+      filters: cleanedFilters,
+      filterOperators: null,      // ← cleanup에서 논리연산자 관리
+      filterParenthesis: null,    // ← cleanup에서 괄호 관리
     );
+
+    debugPrint("=== removeFilter() 종료 ===");
+    debugPrint("state.filters = ${state.filters}");
+    debugPrint("======================================");
   }
 
   // 모든 필터 제거
@@ -1130,14 +1123,10 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
       // 새로운 필터 인덱스 계산 (블록 인덱스를 필터 인덱스로 변환)
       int newFilterIndex = 0;
-      int blockCount = 0;
-      for (int i = 0; i < blocks.length && blockCount < newIndex; i++) {
+      for (int i = 0; i < newIndex && i < blocks.length; i++) {
         if (blocks[i]['type'] == 'filter') {
-          if (blockCount < newIndex) {
-            newFilterIndex++;
-          }
+          newFilterIndex++;
         }
-        blockCount++;
       }
 
       // 필터 재정렬
@@ -1146,9 +1135,15 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
       // oldIndex > newIndex인 경우 인덱스 조정
       final adjustedNewIndex = filterIndex < newFilterIndex ? newFilterIndex - 1 : newFilterIndex;
-      newFilters.insert(adjustedNewIndex, filter);
 
-      state = state.copyWith(filters: newFilters);
+      // adjustedNewIndex가 범위를 벗어나지 않도록 보정
+      final finalNewIndex = adjustedNewIndex.clamp(0, newFilters.length);
+      newFilters.insert(finalNewIndex, filter);
+
+      // 빈 괄호 제거 및 연산자 재배치
+      final cleanedFilters = _cleanupFiltersAfterReorder(newFilters);
+
+      state = state.copyWith(filters: cleanedFilters);
     }
     // 괄호 블록인 경우: 괄호만 이동
     else if (movingBlock['type'] == 'openparen' || movingBlock['type'] == 'closeparen') {
@@ -1158,6 +1153,156 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     else {
       return;
     }
+  }
+
+  /// 필터 재정렬 후 정리: 빈 괄호 제거 및 연산자 재배치
+  List<FilterCondition> _cleanupFiltersAfterReorder(List<FilterCondition> filters) {
+    // Step 0: 제거 과정에서 생긴 고아 괄호 제거
+    for (int i = 0; i < filters.length; i++) {
+      final f = filters[i];
+      // open/closeGroupCount가 1이더라도 필터 제거 후 의미 없을 수 있음
+      if ((f.openGroupCount ?? 0) > 0 || (f.closeGroupCount ?? 0) > 0) {
+        // 남아있는 필터 개수 대비 괄호 개수가 성립하지 않으면 제거
+        if (filters.length == 1) {
+          // 필터가 1개 남았는데 괄호가 있으면 무의미하므로 제거
+          filters[i] = f.copyWith(openGroupCount: 0, closeGroupCount: 0);
+        }
+      }
+    }
+
+    if (filters.isEmpty) return filters;
+
+    final cleanedFilters = <FilterCondition>[];
+
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+
+      // 빈 괄호 쌍 제거 체크
+      int openCount = filter.openGroupCount ?? 0;
+      int closeCount = filter.closeGroupCount ?? 0;
+
+      // 여는 괄호와 닫는 괄호가 같은 필터에 있고,
+      // 이것이 유일한 필터이거나 괄호 사이에 다른 필터가 없는 경우 괄호 제거
+      if (openCount > 0 && closeCount > 0) {
+        // 같은 필터에 여는 괄호와 닫는 괄호가 있으면 하나씩 제거
+        final pairsToRemove = openCount < closeCount ? openCount : closeCount;
+        openCount -= pairsToRemove;
+        closeCount -= pairsToRemove;
+      }
+
+      // 연산자 재배치: 마지막 필터가 아니면 연산자 유지, 마지막이면 제거
+      String? logicalOperator;
+      if (i < filters.length - 1) {
+        // 마지막이 아닌 경우: 기존 연산자 유지 또는 기본값 'AND'
+        logicalOperator = filter.logicalOperator ?? 'AND';
+      } else {
+        // 마지막 필터는 연산자가 없어야 함
+        logicalOperator = null;
+      }
+
+      cleanedFilters.add(filter.copyWith(
+        openGroupCount: openCount > 0 ? openCount : 0,
+        closeGroupCount: closeCount > 0 ? closeCount : 0,
+        logicalOperator: logicalOperator,
+      ));
+    }
+    debugPrint("======================================");
+    final debugBlocks = _buildFilterBlockListFromFilters(cleanedFilters);
+    debugPrint("[_cleanupFiltersAfterReorder] blocks.asMap().entries: ${debugBlocks.asMap().entries}");
+
+    // 괄호 균형 검증 및 추가 정리
+    return _balanceParentheses(cleanedFilters);
+  }
+
+  List<Map<String, dynamic>> _buildFilterBlockListFromFilters(List<FilterCondition> filters) {
+    final List<Map<String, dynamic>> blocks = [];
+
+    for (int i = 0; i < filters.length; i++) {
+      final f = filters[i];
+
+      // 여는 괄호
+      if ((f.openGroupCount ?? 0) > 0) {
+        blocks.add({"type": "openparen"});
+      }
+
+      // 필터 자체
+      blocks.add({
+        "type": "filter",
+        "index": i,
+      });
+
+      // 연산자
+      if (f.logicalOperator != null) {
+        blocks.add({
+          "type": "operator",
+          "value": f.logicalOperator,
+        });
+      }
+
+      // 닫는 괄호
+      if ((f.closeGroupCount ?? 0) > 0) {
+        blocks.add({"type": "closeparen"});
+      }
+    }
+
+    return blocks;
+  }
+
+  /// 괄호 균형 맞추기 및 빈 괄호 제거
+  List<FilterCondition> _balanceParentheses(List<FilterCondition> filters) {
+    if (filters.isEmpty) return filters;
+
+    // 1단계: 괄호 균형 확인
+    int balance = 0;
+    final balancedFilters = <FilterCondition>[];
+
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      int openCount = filter.openGroupCount ?? 0;
+      int closeCount = filter.closeGroupCount ?? 0;
+
+      // 닫는 괄호가 너무 많은 경우 조정
+      if (balance + openCount - closeCount < 0) {
+        closeCount = balance + openCount;
+      }
+
+      balance += openCount - closeCount;
+
+      balancedFilters.add(filter.copyWith(
+        openGroupCount: openCount > 0 ? openCount : 0,
+        closeGroupCount: closeCount > 0 ? closeCount : 0,
+      ));
+    }
+
+    // 2단계: 빈 괄호 쌍 제거
+    final result = <FilterCondition>[];
+
+    for (int i = 0; i < balancedFilters.length; i++) {
+      final filter = balancedFilters[i];
+      int openCount = filter.openGroupCount ?? 0;
+      int closeCount = filter.closeGroupCount ?? 0;
+
+      // 같은 필터에 여는/닫는 괄호가 있는 경우 (빈 괄호)
+      if (openCount > 0 && closeCount > 0) {
+        // 괄호 안에 다른 필터가 있는지 확인
+        bool hasContentInside = false;
+
+        // 이 필터 하나만 괄호로 감싸진 경우가 아니라면 유지
+        // 단, 연속된 여는/닫는 괄호는 빈 괄호로 간주하여 제거
+        if (openCount == closeCount) {
+          // 모든 괄호 쌍 제거 (빈 괄호)
+          openCount = 0;
+          closeCount = 0;
+        }
+      }
+
+      result.add(filter.copyWith(
+        openGroupCount: openCount > 0 ? openCount : 0,
+        closeGroupCount: closeCount > 0 ? closeCount : 0,
+      ));
+    }
+
+    return result;
   }
 
   /// 필터 블록 리스트 생성 (내부용)
@@ -1279,19 +1424,42 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       }
     }
 
-    state = state.copyWith(filters: newFilters);
+    // 빈 괄호 제거
+    final cleanedFilters = _cleanupFiltersAfterReorder(newFilters);
+
+    state = state.copyWith(filters: cleanedFilters);
   }
 
+  /// AND & OR 토글
   void toggleFilterOperatorAtBlock(int blockIndex) {
-    final blocks = state.filterBlocks != null
-        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
-        : _createBlocksFromFilters();
+    final blocks = _buildFilterBlockList();
 
-    if (blockIndex < blocks.length && blocks[blockIndex]['type'] == 'operator') {
-      final currentOp = blocks[blockIndex]['value'] as String;
-      blocks[blockIndex]['value'] = currentOp == 'AND' ? 'OR' : 'AND';
-      state = state.copyWith(filterBlocks: blocks);
+    if (blockIndex >= blocks.length) return;
+    final block = blocks[blockIndex];
+
+    if (block['type'] != 'operator') return;
+
+    // 해당 연산자가 몇 번째 필터의 logicalOperator인지 찾기
+    // 연산자는 필터 바로 뒤에 위치하므로, 이전 필터를 찾음
+    int? filterIndex;
+    for (int i = blockIndex - 1; i >= 0; i--) {
+      if (blocks[i]['type'] == 'filter') {
+        filterIndex = blocks[i]['index'] as int;
+        break;
+      }
     }
+
+    if (filterIndex == null || filterIndex >= state.filters.length) return;
+
+    // 해당 필터의 logicalOperator 토글
+    final newFilters = List<FilterCondition>.from(state.filters);
+    final filter = newFilters[filterIndex];
+    final currentOp = filter.logicalOperator ?? 'AND';
+    final newOp = currentOp == 'AND' ? 'OR' : 'AND';
+
+    newFilters[filterIndex] = filter.copyWith(logicalOperator: newOp);
+
+    state = state.copyWith(filters: newFilters);
   }
 
   void removeBlockAt(int blockIndex) {
@@ -1370,10 +1538,6 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
         state = state.copyWith(filters: newFilters);
       }
-    }
-    else if (block['type'] == 'operator') {
-      // 연산자는 직접 제거할 수 없음 (필터와 함께 자동 관리됨)
-      return;
     }
   }
 

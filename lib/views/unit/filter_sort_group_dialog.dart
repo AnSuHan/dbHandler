@@ -163,7 +163,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               label: const Text('Add ( )'),
               onPressed: selectedBlockIndices.isEmpty
                   ? null
-                  : () => _wrapSelectedBlocksWithParenthesis(state),
+                  : () => _wrapSelectedBlocksWithParenthesis(),
             ),
             if (state.filters.isNotEmpty)
               TextButton.icon(
@@ -1328,9 +1328,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
   }
 
   /// 선택된 블록들을 괄호로 감싸기
-  void _wrapSelectedBlocksWithParenthesis(DataEditingState state) {
+  void _wrapSelectedBlocksWithParenthesis() {
     if (selectedBlockIndices.isEmpty) return;
 
+    final state = ref.read(dataEditingProvider(widget.dataEditingParams));
     final blocks = _buildFilterBlockList(state);
 
     // 필터 블록만 추출하여 필터 인덱스 범위 확인
@@ -1353,7 +1354,13 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     for (int i = 0; i < state.filters.length; i++) {
       final filter = state.filters[i];
 
-      if (i == minFilterIndex) {
+      if (i == minFilterIndex && i == maxFilterIndex) {
+        // 하나의 필터만 선택된 경우: 여는 괄호와 닫는 괄호 모두 추가
+        newFilters.add(filter.copyWith(
+          openGroupCount: (filter.openGroupCount ?? 0) + 1,
+          closeGroupCount: (filter.closeGroupCount ?? 0) + 1,
+        ));
+      } else if (i == minFilterIndex) {
         // 첫 번째 선택된 필터에 여는 괄호 추가
         newFilters.add(filter.copyWith(
           openGroupCount: (filter.openGroupCount ?? 0) + 1,
