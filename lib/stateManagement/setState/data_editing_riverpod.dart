@@ -638,6 +638,11 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
     // Future.microtask(() => loadTableData());
   }
+
+  /// 필터 리스트 전체 업데이트 (괄호 조작용)
+  void updateFilters(List<FilterCondition> filters) {
+    state = state.copyWith(filters: filters);
+  }
   
   // /// 필터 모두 제거
   // void clearFilters() {
@@ -1109,18 +1114,172 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   //   state = state.copyWith(filterBlocks: blocks);
   // }
 
+  /// 블록 재정렬 (드래그 앤 드롭)
   void reorderFilterBlock(int oldIndex, int newIndex) {
-    final blocks = state.filterBlocks != null
-        ? List<Map<String, dynamic>>.from(state.filterBlocks!)
-        : _createBlocksFromFilters();
-
     if (oldIndex == newIndex) return;
 
-    final block = blocks.removeAt(oldIndex);
-    final adjustedNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
-    blocks.insert(adjustedNewIndex, block);
+    final blocks = _buildFilterBlockList();
+    if (oldIndex >= blocks.length || newIndex > blocks.length) return;
 
-    state = state.copyWith(filterBlocks: blocks);
+    // 이동할 블록
+    final movingBlock = blocks[oldIndex];
+
+    // 필터 블록인 경우: 필터 자체를 이동 (괄호 포함)
+    if (movingBlock['type'] == 'filter') {
+      final filterIndex = movingBlock['index'] as int;
+
+      // 새로운 필터 인덱스 계산 (블록 인덱스를 필터 인덱스로 변환)
+      int newFilterIndex = 0;
+      int blockCount = 0;
+      for (int i = 0; i < blocks.length && blockCount < newIndex; i++) {
+        if (blocks[i]['type'] == 'filter') {
+          if (blockCount < newIndex) {
+            newFilterIndex++;
+          }
+        }
+        blockCount++;
+      }
+
+      // 필터 재정렬
+      final newFilters = List<FilterCondition>.from(state.filters);
+      final filter = newFilters.removeAt(filterIndex);
+
+      // oldIndex > newIndex인 경우 인덱스 조정
+      final adjustedNewIndex = filterIndex < newFilterIndex ? newFilterIndex - 1 : newFilterIndex;
+      newFilters.insert(adjustedNewIndex, filter);
+
+      state = state.copyWith(filters: newFilters);
+    }
+    // 괄호 블록인 경우: 괄호만 이동
+    else if (movingBlock['type'] == 'openparen' || movingBlock['type'] == 'closeparen') {
+      _moveParenthesis(oldIndex, newIndex, blocks);
+    }
+    // 연산자 블록인 경우: 연산자 토글로 처리하므로 이동 불가
+    else {
+      return;
+    }
+  }
+
+  /// 필터 블록 리스트 생성 (내부용)
+  List<Map<String, dynamic>> _buildFilterBlockList() {
+    final blocks = <Map<String, dynamic>>[];
+    final filters = state.filters;
+
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+
+      // openGroupCount 만큼 여는 괄호 추가
+      final openCount = filter.openGroupCount ?? 0;
+      for (int j = 0; j < openCount; j++) {
+        blocks.add({'type': 'openparen'});
+      }
+
+      blocks.add({'type': 'filter', 'index': i});
+
+      // closeGroupCount 만큼 닫는 괄호 추가
+      final closeCount = filter.closeGroupCount ?? 0;
+      for (int j = 0; j < closeCount; j++) {
+        blocks.add({'type': 'closeparen'});
+      }
+
+      if (i < filters.length - 1) {
+        blocks.add({
+          'type': 'operator',
+          'value': filter.logicalOperator ?? 'AND',
+        });
+      }
+    }
+
+    return blocks;
+  }
+
+  /// 괄호 이동 처리
+  void _moveParenthesis(int oldBlockIndex, int newBlockIndex, List<Map<String, dynamic>> blocks) {
+    if (oldBlockIndex >= blocks.length || newBlockIndex >= blocks.length) return;
+
+    final movingBlock = blocks[oldBlockIndex];
+    final isOpenParen = movingBlock['type'] == 'openparen';
+
+    // 이동할 괄호가 속한 필터 인덱스 찾기
+    int? oldFilterIndex;
+    if (isOpenParen) {
+      // 여는 괄호: 바로 다음 필터
+      for (int i = oldBlockIndex; i < blocks.length; i++) {
+        if (blocks[i]['type'] == 'filter') {
+          oldFilterIndex = blocks[i]['index'] as int;
+          break;
+        }
+      }
+    } else {
+      // 닫는 괄호: 바로 이전 필터
+      for (int i = oldBlockIndex; i >= 0; i--) {
+        if (blocks[i]['type'] == 'filter') {
+          oldFilterIndex = blocks[i]['index'] as int;
+          break;
+        }
+      }
+    }
+
+    if (oldFilterIndex == null) return;
+
+    // 새로운 위치의 필터 인덱스 찾기
+    int? newFilterIndex;
+    if (isOpenParen) {
+      // 여는 괄호: 바로 다음 필터
+      for (int i = newBlockIndex; i < blocks.length; i++) {
+        if (blocks[i]['type'] == 'filter') {
+          newFilterIndex = blocks[i]['index'] as int;
+          break;
+        }
+      }
+    } else {
+      // 닫는 괄호: 바로 이전 필터
+      for (int i = newBlockIndex; i >= 0; i--) {
+        if (blocks[i]['type'] == 'filter') {
+          newFilterIndex = blocks[i]['index'] as int;
+          break;
+        }
+      }
+    }
+
+    if (newFilterIndex == null) return;
+    if (oldFilterIndex == newFilterIndex) return;
+
+    // 필터 리스트 업데이트
+    final newFilters = <FilterCondition>[];
+    for (int i = 0; i < state.filters.length; i++) {
+      final filter = state.filters[i];
+
+      if (i == oldFilterIndex) {
+        // 기존 위치에서 괄호 제거
+        if (isOpenParen) {
+          final newOpenCount = (filter.openGroupCount ?? 0) - 1;
+          newFilters.add(filter.copyWith(
+            openGroupCount: newOpenCount > 0 ? newOpenCount : 0,
+          ));
+        } else {
+          final newCloseCount = (filter.closeGroupCount ?? 0) - 1;
+          newFilters.add(filter.copyWith(
+            closeGroupCount: newCloseCount > 0 ? newCloseCount : 0,
+          ));
+        }
+      } else if (i == newFilterIndex) {
+        // 새로운 위치에 괄호 추가
+        if (isOpenParen) {
+          newFilters.add(filter.copyWith(
+            openGroupCount: (filter.openGroupCount ?? 0) + 1,
+          ));
+        } else {
+          newFilters.add(filter.copyWith(
+            closeGroupCount: (filter.closeGroupCount ?? 0) + 1,
+          ));
+        }
+      } else {
+        newFilters.add(filter);
+      }
+    }
+
+    state = state.copyWith(filters: newFilters);
   }
 
   void toggleFilterOperatorAtBlock(int blockIndex) {
@@ -1158,40 +1317,64 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   }
 
   void removeBlockAtBlockIndex(int blockIndex) {
-    final blocks = state.filterBlocks ?? buildFilterBlockList(state);
+    final blocks = _buildFilterBlockList();
     if (blockIndex < 0 || blockIndex >= blocks.length) {
       return;
     }
 
     final block = blocks[blockIndex];
-    List<FilterCondition> newFilters = List.from(state.filters);
-    List<bool>? newParenthesis = state.filterParenthesis != null
-        ? List<bool>.from(state.filterParenthesis!)
-        : null;
-    List<String>? newOperators = state.filterOperators != null
-        ? List<String>.from(state.filterOperators!)
-        : null;
 
     if (block['type'] == 'filter') {
+      // 필터 제거
       final filterIndex = block['index'] as int;
-      newFilters.removeAt(filterIndex);
+      removeFilter(filterIndex);
     }
     else if (block['type'] == 'openparen' || block['type'] == 'closeparen') {
-      if (newParenthesis != null && blockIndex < newParenthesis.length) {
-        newParenthesis[blockIndex] = false;
+      // 괄호 제거: 해당 괄호가 속한 필터 찾아서 카운트 감소
+      int? filterIndex;
+      final isOpenParen = block['type'] == 'openparen';
+
+      if (isOpenParen) {
+        // 여는 괄호: 바로 다음 필터
+        for (int i = blockIndex; i < blocks.length; i++) {
+          if (blocks[i]['type'] == 'filter') {
+            filterIndex = blocks[i]['index'] as int;
+            break;
+          }
+        }
+      } else {
+        // 닫는 괄호: 바로 이전 필터
+        for (int i = blockIndex; i >= 0; i--) {
+          if (blocks[i]['type'] == 'filter') {
+            filterIndex = blocks[i]['index'] as int;
+            break;
+          }
+        }
+      }
+
+      if (filterIndex != null && filterIndex < state.filters.length) {
+        final filter = state.filters[filterIndex];
+        final newFilters = List<FilterCondition>.from(state.filters);
+
+        if (isOpenParen) {
+          final newOpenCount = (filter.openGroupCount ?? 0) - 1;
+          newFilters[filterIndex] = filter.copyWith(
+            openGroupCount: newOpenCount > 0 ? newOpenCount : 0,
+          );
+        } else {
+          final newCloseCount = (filter.closeGroupCount ?? 0) - 1;
+          newFilters[filterIndex] = filter.copyWith(
+            closeGroupCount: newCloseCount > 0 ? newCloseCount : 0,
+          );
+        }
+
+        state = state.copyWith(filters: newFilters);
       }
     }
     else if (block['type'] == 'operator') {
-      newOperators?.removeAt(blockIndex);
+      // 연산자는 직접 제거할 수 없음 (필터와 함께 자동 관리됨)
+      return;
     }
-
-    // 상태 변경 반영 및 리스너 알림
-    state = state.copyWith(
-      filters: newFilters,
-      filterParenthesis: newParenthesis,
-      filterOperators: newOperators,
-      filterBlocks: null, // 블럭 캐시는 null로 하여 다시 생성하도록 유도
-    );
   }
 
   List<Map<String, dynamic>> buildFilterBlockList(DataEditingState state) {

@@ -160,8 +160,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             ),
             TextButton.icon(
               icon: const Icon(Icons.group, size: 18),
-              label: const Text('Add (, )'),
-              onPressed: () => notifier.addOpenParenthesis(),
+              label: const Text('Add ( )'),
+              onPressed: selectedBlockIndices.isEmpty
+                  ? null
+                  : () => _wrapSelectedBlocksWithParenthesis(state),
             ),
             if (state.filters.isNotEmpty)
               TextButton.icon(
@@ -403,12 +405,109 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              onPressed: () => notifier.removeBlockAtBlockIndex(blockIndex),
+              onPressed: () => _removeParenthesisPair(blockIndex),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// 괄호 쌍 제거 (매칭되는 여는/닫는 괄호 찾아서 제거)
+  void _removeParenthesisPair(int blockIndex) {
+    final state = ref.read(dataEditingProvider(widget.dataEditingParams));
+    final blocks = _buildFilterBlockList(state);
+    if (blockIndex >= blocks.length) return;
+
+    final block = blocks[blockIndex];
+    final isOpenParen = block['type'] == 'openparen';
+
+    if (!isOpenParen && block['type'] != 'closeparen') return;
+
+    // 매칭되는 괄호 찾기
+    int? matchingBlockIndex;
+    int depth = 0;
+
+    if (isOpenParen) {
+      // 여는 괄호: 오른쪽으로 탐색하여 매칭되는 닫는 괄호 찾기
+      for (int i = blockIndex + 1; i < blocks.length; i++) {
+        if (blocks[i]['type'] == 'openparen') {
+          depth++;
+        } else if (blocks[i]['type'] == 'closeparen') {
+          if (depth == 0) {
+            matchingBlockIndex = i;
+            break;
+          }
+          depth--;
+        }
+      }
+    } else {
+      // 닫는 괄호: 왼쪽으로 탐색하여 매칭되는 여는 괄호 찾기
+      for (int i = blockIndex - 1; i >= 0; i--) {
+        if (blocks[i]['type'] == 'closeparen') {
+          depth++;
+        } else if (blocks[i]['type'] == 'openparen') {
+          if (depth == 0) {
+            matchingBlockIndex = i;
+            break;
+          }
+          depth--;
+        }
+      }
+    }
+
+    if (matchingBlockIndex == null) return;
+
+    // 괄호가 속한 필터 인덱스 찾기
+    int? openParenFilterIndex;
+    int? closeParenFilterIndex;
+
+    // blockIndex와 matchingBlockIndex 중 작은 것이 여는 괄호
+    final openBlockIndex = isOpenParen ? blockIndex : matchingBlockIndex;
+    final closeBlockIndex = isOpenParen ? matchingBlockIndex : blockIndex;
+
+    // 여는 괄호가 속한 필터 찾기 (바로 다음 filter 블록)
+    for (int i = openBlockIndex; i < blocks.length; i++) {
+      if (blocks[i]['type'] == 'filter') {
+        openParenFilterIndex = blocks[i]['index'] as int;
+        break;
+      }
+    }
+
+    // 닫는 괄호가 속한 필터 찾기 (바로 이전 filter 블록)
+    for (int i = closeBlockIndex; i >= 0; i--) {
+      if (blocks[i]['type'] == 'filter') {
+        closeParenFilterIndex = blocks[i]['index'] as int;
+        break;
+      }
+    }
+
+    if (openParenFilterIndex == null || closeParenFilterIndex == null) return;
+
+    // 새로운 필터 리스트 생성하여 괄호 카운트 감소
+    final newFilters = <FilterCondition>[];
+    for (int i = 0; i < state.filters.length; i++) {
+      final filter = state.filters[i];
+
+      if (i == openParenFilterIndex) {
+        // 여는 괄호 개수 감소
+        final newOpenCount = (filter.openGroupCount ?? 0) - 1;
+        newFilters.add(filter.copyWith(
+          openGroupCount: newOpenCount > 0 ? newOpenCount : 0,
+        ));
+      } else if (i == closeParenFilterIndex) {
+        // 닫는 괄호 개수 감소
+        final newCloseCount = (filter.closeGroupCount ?? 0) - 1;
+        newFilters.add(filter.copyWith(
+          closeGroupCount: newCloseCount > 0 ? newCloseCount : 0,
+        ));
+      } else {
+        newFilters.add(filter);
+      }
+    }
+
+    ref.read(dataEditingProvider(widget.dataEditingParams).notifier)
+        .updateFilters(newFilters);
   }
 
   Widget _buildFilterBlockContent({
@@ -1226,6 +1325,56 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         ),
       ),
     );
+  }
+
+  /// 선택된 블록들을 괄호로 감싸기
+  void _wrapSelectedBlocksWithParenthesis(DataEditingState state) {
+    if (selectedBlockIndices.isEmpty) return;
+
+    final blocks = _buildFilterBlockList(state);
+
+    // 필터 블록만 추출하여 필터 인덱스 범위 확인
+    final selectedFilterIndices = <int>[];
+    for (final blockIndex in selectedBlockIndices) {
+      if (blockIndex < blocks.length && blocks[blockIndex]['type'] == 'filter') {
+        selectedFilterIndices.add(blocks[blockIndex]['index'] as int);
+      }
+    }
+
+    if (selectedFilterIndices.isEmpty) return;
+
+    // 선택된 필터 중 최소/최대 인덱스 찾기
+    selectedFilterIndices.sort();
+    final minFilterIndex = selectedFilterIndices.first;
+    final maxFilterIndex = selectedFilterIndices.last;
+
+    // 새로운 필터 리스트 생성
+    final newFilters = <FilterCondition>[];
+    for (int i = 0; i < state.filters.length; i++) {
+      final filter = state.filters[i];
+
+      if (i == minFilterIndex) {
+        // 첫 번째 선택된 필터에 여는 괄호 추가
+        newFilters.add(filter.copyWith(
+          openGroupCount: (filter.openGroupCount ?? 0) + 1,
+        ));
+      } else if (i == maxFilterIndex) {
+        // 마지막 선택된 필터에 닫는 괄호 추가
+        newFilters.add(filter.copyWith(
+          closeGroupCount: (filter.closeGroupCount ?? 0) + 1,
+        ));
+      } else {
+        newFilters.add(filter);
+      }
+    }
+
+    ref.read(dataEditingProvider(widget.dataEditingParams).notifier)
+        .updateFilters(newFilters);
+
+    // 선택 해제
+    setState(() {
+      selectedBlockIndices.clear();
+    });
   }
 
   //============================================================================
