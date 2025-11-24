@@ -1,5 +1,6 @@
 // lib/stateManagement/setState/data_editing_riverpod.dart
 import 'dart:math';
+import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -1037,7 +1038,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     state = state.copyWith(filters: filters);
   }
 
-  // 필터 제거
+  /// 필터 제거
   void removeFilter(int index) {
     debugPrint("========== removeFilter() 호출 ==========");
     debugPrint("제거 요청 index = $index");
@@ -1063,10 +1064,16 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     debugPrint("cleanup 적용 후 filters = $cleanedFilters");
 
     //------------------------------------------------------
-    // 3) 최종 state 반영 (operators, parenthesis 제거!)
+    // 3) 빈 괄호로 인한 불필요한 필터가 생겼는지 재귀 체크
+    //------------------------------------------------------
+    final finalFilters = _removeEmptyParenthesisFilters(cleanedFilters);
+    debugPrint("빈 괄호 제거 후 filters = $finalFilters");
+
+    //------------------------------------------------------
+    // 4) 최종 state 반영 (operators, parenthesis 제거!)
     //------------------------------------------------------
     state = state.copyWith(
-      filters: cleanedFilters,
+      filters: finalFilters,
       filterOperators: null,      // ← cleanup에서 논리연산자 관리
       filterParenthesis: null,    // ← cleanup에서 괄호 관리
     );
@@ -1106,6 +1113,105 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   //   blocks.add({'type': 'close_paren'});
   //   state = state.copyWith(filterBlocks: blocks);
   // }
+
+  /// 빈 괄호만 있는 필터를 재귀적으로 제거
+  List<FilterCondition> _removeEmptyParenthesisFilters(List<FilterCondition> filters) {
+    if (filters.isEmpty) return filters;
+
+    bool hasEmptyParenthesis = false;
+
+    // 빈 괄호만 있는 필터 찾기
+    // 예: openGroupCount만 있고 실제 조건은 다음 필터에 있는 경우
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      final openCount = filter.openGroupCount ?? 0;
+      final closeCount = filter.closeGroupCount ?? 0;
+
+      // 여는 괄호만 있고 다음 필터가 없거나
+      // 닫는 괄호만 있고 이전 필터가 없는 경우
+      if (openCount > 0 && closeCount == 0 && i == filters.length - 1) {
+        hasEmptyParenthesis = true;
+        break;
+      }
+
+      // 불균형한 괄호 감지
+      if (openCount > 0 && i > 0) {
+        // 이전 필터들의 괄호 균형 확인
+        int balance = 0;
+        for (int j = 0; j < i; j++) {
+          balance += (filters[j].openGroupCount ?? 0);
+          balance -= (filters[j].closeGroupCount ?? 0);
+        }
+        // 현재 여는 괄호 추가
+        balance += openCount;
+
+        // 닫히지 않은 괄호가 필터 개수보다 많으면 불필요한 괄호
+        if (balance > filters.length - i) {
+          hasEmptyParenthesis = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasEmptyParenthesis) {
+      return filters;
+    }
+
+    // 괄호 재정리
+    final result = <FilterCondition>[];
+
+    for (int i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      int openCount = filter.openGroupCount ?? 0;
+      int closeCount = filter.closeGroupCount ?? 0;
+
+      // 마지막 필터에 여는 괄호만 있으면 제거
+      if (i == filters.length - 1 && openCount > 0 && closeCount == 0) {
+        openCount = 0;
+      }
+
+      // 첫 번째 필터에 닫는 괄호만 있으면 제거
+      if (i == 0 && closeCount > 0 && openCount == 0) {
+        closeCount = 0;
+      }
+
+      // 괄호 균형 체크 후 과도한 괄호 제거
+      int currentBalance = 0;
+      for (int j = 0; j <= i; j++) {
+        currentBalance += (result.length > j ? result[j].openGroupCount ?? 0 :
+        (j == i ? openCount : filters[j].openGroupCount ?? 0));
+        currentBalance -= (result.length > j ? result[j].closeGroupCount ?? 0 :
+        (j == i ? closeCount : filters[j].closeGroupCount ?? 0));
+      }
+
+      // 균형이 음수가 되면 닫는 괄호가 너무 많음
+      if (currentBalance < 0) {
+        closeCount = Math.max(0, closeCount + currentBalance);
+      }
+
+      result.add(filter.copyWith(
+        openGroupCount: openCount > 0 ? openCount : 0,
+        closeGroupCount: closeCount > 0 ? closeCount : 0,
+      ));
+    }
+
+    // 변경사항이 있으면 재귀 호출
+    bool changed = false;
+    for (int i = 0; i < filters.length; i++) {
+      if ((filters[i].openGroupCount ?? 0) != (result[i].openGroupCount ?? 0) ||
+          (filters[i].closeGroupCount ?? 0) != (result[i].closeGroupCount ?? 0)) {
+        changed = true;
+        break;
+      }
+    }
+
+    if (changed) {
+      debugPrint("괄호 정리 후 재귀 호출");
+      return _removeEmptyParenthesisFilters(result);
+    }
+
+    return result;
+  }
 
   /// 블록 재정렬 (드래그 앤 드롭)
   void reorderFilterBlock(int oldIndex, int newIndex) {
@@ -1252,7 +1358,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   List<FilterCondition> _balanceParentheses(List<FilterCondition> filters) {
     if (filters.isEmpty) return filters;
 
-    // 1단계: 괄호 균형 확인
+    // 1단계: 괄호 균형 확인 및 조정
     int balance = 0;
     final balancedFilters = <FilterCondition>[];
 
@@ -1274,6 +1380,52 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       ));
     }
 
+    // 여는 괄호가 남아있는 경우 (balance > 0), 마지막부터 제거
+    if (balance > 0) {
+      debugPrint("[_balanceParentheses] 닫히지 않은 여는 괄호 ${balance}개 감지 - 제거 시작");
+
+      for (int i = balancedFilters.length - 1; i >= 0 && balance > 0; i--) {
+        final filter = balancedFilters[i];
+        int openCount = filter.openGroupCount ?? 0;
+
+        if (openCount > 0) {
+          // 제거할 여는 괄호 개수 계산
+          final removeCount = Math.min(openCount, balance);
+          final newOpenCount = openCount - removeCount;
+          balance -= removeCount;
+
+          balancedFilters[i] = filter.copyWith(
+            openGroupCount: newOpenCount > 0 ? newOpenCount : 0,
+          );
+
+          debugPrint("[_balanceParentheses] 필터 $i의 여는 괄호 $removeCount개 제거 (남은 불균형: $balance)");
+        }
+      }
+    }
+
+    // 닫는 괄호가 남아있는 경우 (balance < 0), 처음부터 제거
+    if (balance < 0) {
+      debugPrint("[_balanceParentheses] 열리지 않은 닫는 괄호 ${-balance}개 감지 - 제거 시작");
+
+      for (int i = 0; i < balancedFilters.length && balance < 0; i++) {
+        final filter = balancedFilters[i];
+        int closeCount = filter.closeGroupCount ?? 0;
+
+        if (closeCount > 0) {
+          // 제거할 닫는 괄호 개수 계산
+          final removeCount = Math.min(closeCount, -balance);
+          final newCloseCount = closeCount - removeCount;
+          balance += removeCount;
+
+          balancedFilters[i] = filter.copyWith(
+            closeGroupCount: newCloseCount > 0 ? newCloseCount : 0,
+          );
+
+          debugPrint("[_balanceParentheses] 필터 $i의 닫는 괄호 $removeCount개 제거 (남은 불균형: $balance)");
+        }
+      }
+    }
+
     // 2단계: 빈 괄호 쌍 제거
     final result = <FilterCondition>[];
 
@@ -1285,12 +1437,10 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       // 같은 필터에 여는/닫는 괄호가 있는 경우 (빈 괄호)
       if (openCount > 0 && closeCount > 0) {
         // 괄호 안에 다른 필터가 있는지 확인
-        bool hasContentInside = false;
-
-        // 이 필터 하나만 괄호로 감싸진 경우가 아니라면 유지
         // 단, 연속된 여는/닫는 괄호는 빈 괄호로 간주하여 제거
         if (openCount == closeCount) {
           // 모든 괄호 쌍 제거 (빈 괄호)
+          debugPrint("[_balanceParentheses] 필터 $i의 빈 괄호 쌍 ${openCount}개 제거");
           openCount = 0;
           closeCount = 0;
         }
