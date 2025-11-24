@@ -1,5 +1,8 @@
 // lib/views/server_selection.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
@@ -20,9 +23,18 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   final TextEditingController _portController = TextEditingController();
   final TextEditingController _typeController = TextEditingController();
 
+  // DB 포트 매핑 데이터
+  Map<String, String> _portToDbMap = {};
+
   @override
   void initState() {
     super.initState();
+
+    // JSON 파일 로드
+    _loadPortMapping();
+    // 포트 컨트롤러에 리스너 추가
+    _portController.addListener(_onPortChanged);
+
     // 1. 앱 시작 시 저장된 서버 목록 로드
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final store = Provider.of<ServerStore>(context, listen: false);
@@ -30,8 +42,35 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     });
   }
 
+  Future<void> _loadPortMapping() async {
+    try {
+      final jsonString = await rootBundle.loadString('assets/file/defaultDBPort.json');
+      final Map<String, dynamic> jsonData = json.decode(jsonString);
+      setState(() {
+        _portToDbMap = jsonData.map((key, value) => MapEntry(key, value.toString()));
+      });
+    } catch (e) {
+      _portToDbMap = {};
+    }
+  }
+
+  void _onPortChanged() {
+    final port = _portController.text.trim();
+
+    // DB 타입이 비어있거나 자동으로 설정된 값인 경우에만 업데이트
+    debugPrint("[_onPortChanged] _portToDbMap: $_portToDbMap, port: $port");
+    if (_portToDbMap.containsKey(port)) {
+      final dbType = _portToDbMap[port]!;
+      // 현재 타입이 비어있거나 매핑된 다른 값인 경우에만 변경
+      if (_typeController.text.isEmpty || _portToDbMap.values.contains(_typeController.text)) {
+        _typeController.text = dbType;
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _portController.removeListener(_onPortChanged);
     _nameController.dispose();
     _hostController.dispose();
     _portController.dispose();
