@@ -1085,7 +1085,7 @@ class _RowWidget extends ConsumerWidget {
     final columns = ref.watch(
       dataEditingProvider(dataEditingParams).select((state) => state.columns),
     );
-    
+
     // 행 선택 상태만 watch
     final isRowSelected = ref.watch(
       dataEditingProvider(dataEditingParams).select(
@@ -1093,42 +1093,85 @@ class _RowWidget extends ConsumerWidget {
       ),
     );
 
-    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+    // groupByColumns와 rows를 가져와서 구분선 표시 여부 결정
+    final state = ref.watch(dataEditingProvider(dataEditingParams));
+    final groupByColumns = state.groupByColumns;
+    final rows = state.rows;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        children: [
-          // Row number cell
-          _RowNumberCellWidget(
-            rowIndex: rowIndex,
-            dataEditingParams: dataEditingParams,
-            columnWidth: columnWidths.first,
+    // 이전 행과 현재 행의 groupBy 컬럼 값이 다른지 확인
+    bool shouldShowGroupDivider = false;
+    if (groupByColumns.isNotEmpty && rowIndex > 0 && rowIndex < rows.length) {
+      final currentRow = rows[rowIndex];
+      final previousRow = rows[rowIndex - 1];
+
+      // groupByColumns 중 하나라도 값이 다르면 구분선 표시
+      for (final groupCol in groupByColumns) {
+        if (currentRow[groupCol] != previousRow[groupCol]) {
+          shouldShowGroupDivider = true;
+          break;
+        }
+      }
+    }
+    // 전체 테이블 너비 계산
+    final totalWidth = columnWidths.reduce((a, b) => a + b);
+
+    return Column(
+      children: [
+        // 구분선 표시 - HR 태그처럼 전체 너비
+        if (shouldShowGroupDivider)
+          SizedBox(
+            width: totalWidth,
+            child: Container(
+              height: 2,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade800,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.shade400,
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
           ),
-          // Data cells - 독립적인 EditableDataCell 위젯 사용
-          ...columns.asMap().entries.map((entry) {
-            final colIndex = entry.key;
-            final col = entry.value;
-            return EditableDataCell(
-              key: ValueKey('cell_${rowIndex}_${colIndex}'),
-              rowIndex: rowIndex,
-              colIndex: colIndex,
-              columnName: col['name']!,
-              dataEditingParams: dataEditingParams,
-              columnWidth: columnWidths[colIndex + 1],
-            );
-          }).toList(),
-          // Actions cell
-          _RowActionsCellWidget(
-            rowIndex: rowIndex,
-            dataEditingParams: dataEditingParams,
-            columnWidth: columnWidths.last,
+        // 기존 행 컨테이너
+        Container(
+          decoration: BoxDecoration(
+            color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
           ),
-        ],
-      ),
+          child: Row(
+            children: [
+              // Row number cell
+              _RowNumberCellWidget(
+                rowIndex: rowIndex,
+                dataEditingParams: dataEditingParams,
+                columnWidth: columnWidths.first,
+              ),
+              // Data cells - 독립적인 EditableDataCell 위젯 사용
+              ...columns.asMap().entries.map((entry) {
+                final colIndex = entry.key;
+                final col = entry.value;
+                return EditableDataCell(
+                  key: ValueKey('cell_${rowIndex}_$colIndex'),
+                  rowIndex: rowIndex,
+                  colIndex: colIndex,
+                  columnName: col['name']!,
+                  dataEditingParams: dataEditingParams,
+                  columnWidth: columnWidths[colIndex + 1],
+                );
+              }).toList(),
+              // Actions cell
+              _RowActionsCellWidget(
+                rowIndex: rowIndex,
+                dataEditingParams: dataEditingParams,
+                columnWidth: columnWidths.last,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

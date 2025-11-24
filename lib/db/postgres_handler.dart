@@ -186,21 +186,17 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<List<Map<String, dynamic>>> getDataWithFilters(
-      String tableName, {
-        List<Map<String, dynamic>>? filters,
-        List<Map<String, dynamic>>? sorts,
-        List<String>? groupByColumns,
-      }) {
+    String tableName, {
+      List<Map<String, dynamic>>? filters,
+      List<Map<String, dynamic>>? sorts,
+      List<String>? groupByColumns,
+    })
+  {
     return _withConnection(databaseName!, (conn) async {
       final substitutionValues = <String, dynamic>{};
 
-      String selectClause;
-      if (groupByColumns != null && groupByColumns.isNotEmpty) {
-        selectClause = 'SELECT ${groupByColumns.map((c) => '"$c"').join(', ')} FROM "$tableName"';
-      } else {
-        selectClause = 'SELECT * FROM "$tableName"';
-      }
-
+      // GROUP BY가 있어도 SELECT *를 사용하여 모든 행 반환
+      String selectClause = 'SELECT * FROM "$tableName"';
       var query = selectClause;
 
       // WHERE 절 생성
@@ -248,11 +244,9 @@ class PostgresHandler extends DatabaseHandler {
             }
 
             // NOT 접두사 추가
-            // NOT은 여는 괄호 다음에 위치해야 함
-            // 예: ( NOT "column" = value )
             if (isNegated) {
               whereClauses.add('NOT');
-              whereClauses.add('('); // NOT 조건을 괄호로 감싸기
+              whereClauses.add('(');
             }
 
             String condition;
@@ -308,11 +302,10 @@ class PostgresHandler extends DatabaseHandler {
 
             whereClauses.add(condition);
 
-            // NOT 조건의 닫는 괄호 추가
             if (isNegated) {
-              whereClauses.add(')'); // NOT 조건을 감싼 괄호 닫기
+              whereClauses.add(')');
             }
-            // 사용자 지정 닫는 괄호 추가
+
             for (int p = 0; p < closeGroupCount; p++) {
               whereClauses.add(')');
             }
@@ -338,26 +331,34 @@ class PostgresHandler extends DatabaseHandler {
         }
       }
 
-      // GROUP BY 절
+      // ORDER BY 절 생성
+      // groupByColumns가 있으면 해당 컬럼들로 먼저 정렬하고, sorts를 추가
+      final orderByColumns = <String>[];
+
       if (groupByColumns != null && groupByColumns.isNotEmpty) {
-        query += ' GROUP BY ${groupByColumns.map((c) => '"$c"').join(', ')}';
+        // GROUP BY 컬럼들을 ORDER BY에 먼저 추가 (ASC 기본값)
+        for (final col in groupByColumns) {
+          orderByColumns.add('"$col" ASC');
+        }
       }
 
-      // ORDER BY 절
+      // 추가 정렬 조건 적용
       if (sorts != null && sorts.isNotEmpty) {
-        final orderByClauses = sorts.map((sort) {
+        for (final sort in sorts) {
           final column = sort['column'] as String;
           final ascending = sort['ascending'] as bool;
-          if (groupByColumns != null && groupByColumns.isNotEmpty) {
-            if (!groupByColumns.contains(column)) {
-              return null;
-            }
+          final sortClause = '"$column" ${ascending ? 'ASC' : 'DESC'}';
+
+          // 중복 방지: 이미 groupByColumns에 포함된 컬럼은 제외
+          if (groupByColumns != null && groupByColumns.contains(column)) {
+            continue;
           }
-          return '"$column" ${ascending ? 'ASC' : 'DESC'}';
-        }).where((clause) => clause != null).join(', ');
-        if (orderByClauses.isNotEmpty) {
-          query += ' ORDER BY $orderByClauses';
+          orderByColumns.add(sortClause);
         }
+      }
+
+      if (orderByColumns.isNotEmpty) {
+        query += ' ORDER BY ${orderByColumns.join(', ')}';
       }
 
       final results = await conn.query(query, substitutionValues: substitutionValues.isEmpty ? null : substitutionValues);
