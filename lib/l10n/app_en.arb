@@ -1,0 +1,274 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Database Manager",
+  "@appTitle": {
+    "description": "Application title"
+  },
+  "appSubTitle": "Database Management System",
+
+  "connectedServer": "Connected Server",
+  "@connectedServer": {
+    "description": "Title for connected server section"
+  },
+
+  "serverList": "Server List",
+  "@serverList": {
+    "description": "Title for server list screen"
+  },
+
+  "addServer": "Add Server",
+  "@addServer": {
+    "description": "Button to add a new server"
+  },
+
+  "serverName": "Server Name",
+  "@serverName": {
+    "description": "Label for server name input"
+  },
+
+  "hostAddress": "Host Address",
+  "@hostAddress": {
+    "description": "Label for host address input"
+  },
+
+  "port": "Port",
+  "@port": {
+    "description": "Label for port input"
+  },
+
+  "dbType": "DB Type",
+  "@dbType": {
+    "description": "Label for database type input"
+  },
+
+  "testServer": "Test Server",
+  "addTestServer": "Add Test Server",
+  "@testServer": {
+    "description": "Label for test server toggle"
+  },
+
+  "accountInfo": "Account Information",
+  "@accountInfo": {
+    "description": "Title for account info dialog"
+  },
+
+  "account": "Account",
+  "@account": {
+    "description": "Label for username input"
+  },
+
+  "password": "Password",
+  "@password": {
+    "description": "Label for password input"
+  },
+
+  "keyFilePath": "Key File Path",
+  "@keyFilePath": {
+    "description": "Label for SSH key file path"
+  },
+
+  "save": "Save",
+  "@save": {
+    "description": "Save button text"
+  },
+
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button text"
+  },
+
+  "skip": "Skip",
+  "@skip": {
+    "description": "Skip button text"
+  },
+
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete button text"
+  },
+
+  "edit": "Edit",
+  "@edit": {
+    "description": "Edit button text"
+  },
+
+  "editServerInfo": "Edit Server Information",
+  "@editServerInfo": {
+    "description": "Title for edit server dialog"
+  },
+
+  "editAuthInfo": "Edit Authentication Information",
+  "@editAuthInfo": {
+    "description": "Menu item for editing auth info"
+  },
+
+  "deleteServer": "Delete Server",
+  "@deleteServer": {
+    "description": "Title for delete confirmation dialog"
+  },
+
+  "deleteServerConfirm": "Are you sure you want to delete {serverName}?",
+  "@deleteServerConfirm": {
+    "description": "Confirmation message for server deletion",
+    "placeholders": {
+      "serverName": {
+        "type": "String",
+        "example": "Test Server"
+      }
+    }
+  },
+
+  "noServers": "No servers available. Press + button to add a server.",
+  "@noServers": {
+    "description": "Message when server list is empty"
+  },
+
+  "requiredFields": "Name, host, and port are required.",
+  "@requiredFields": {
+    "description": "Error message for empty required fields"
+  },
+
+  "duplicateServer": "A server with the same address already exists.",
+  "@duplicateServer": {
+    "description": "Error message for duplicate server address"
+  },
+
+  "serverLoadError": "Failed to load server list: {error}",
+  "@serverLoadError": {
+    "description": "Error message when loading servers fails",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Connection timeout"
+      }
+    }
+  },
+
+  "createDatabaseSuccess": "Database {dbName} created successfully",
+  "@createDatabaseSuccess": {
+    "description": "Success message for creating a new database"
+  },
+
+  "createDatabaseFailure": "Failed to create database",
+  "@createDatabaseFailure": {
+    "description": "Error message for failed databasecreate a new database"
+  },
+
+  "renameDatabaseSuccess": "Database {oldName} renamed to {newName}",
+  "@renameDatabaseSuccess": {
+    "description": "Success message for renaming a database"
+  },
+
+  "renameDatabaseFailure": "Failed to rename database",
+  "@renameDatabaseFailure": {
+    "description": "Error message for failed database rename"
+  },
+
+  "deleteDatabaseSuccess": "Database {dbName} deleted successfully",
+  "@deleteDatabaseSuccess": {
+    "description": "Success message for deleting a database"
+  },
+
+  "deleteDatabase": "Delete database",
+  "deleteDatabaseConfirm": "Are you sure you want to delete the database {dbName}? This action cannot be undone.",
+  "deleteDatabaseFailure": "Failed to delete database",
+  "@deleteDatabaseFailure": {
+    "description": "Error message for failed database deletion"
+  },
+
+  "goBack": "Go Back",
+  "newDatabase": "New Database",
+  "noDatabaseFound": "No databases found. Please add a new one.",
+
+  "createNewDatabase": "Create New Database",
+  "@createNewDatabase": {
+    "description": "Title for create new database dialog"
+  },
+
+  "databaseName": "Database Name",
+  "@databaseName": {
+    "description": "Label for database name input"
+  },
+
+  "create": "Create",
+  "editDatabaseName": "Edit Database Name",
+  "newDatabaseName": "New Database Name",
+  "failedToLoadTable": "Failed to Load Table List",
+  "tableCreationSuccess": "Success to Create table {tableName}",
+  "tableCreationFailure": "Failed to Create Table",
+  "renameTableSuccess": "Rename tableName Complete from {oldName} to {newName}",
+  "renameTableFailure": "Failed to rename TableName",
+  "deleteTableSuccess": "Remove {tableName} Table Completed",
+  "deleteTableFailure": "Failed to delete Table",
+  "deleteTable": "Delete Table",
+  "deleteTableConfirm": "Are you sure you want to delete {tableName} table? This action is irreversible.",
+  "createNewTable": "Create New Table",
+  "tableName": "Table Name",
+  "modifyTableName": "Modify Table Name",
+  "newTableName": "New Table Name",
+  "database": "Database",
+  "selectedDatabase": "Selected Database",
+  "newTable": "New Table",
+  "noTableExist": "No Table Exist. Add New Table.",
+  "column": "column",
+  "row": "row",
+  "operationFailed": "Operation failed",
+  "cellCopied": "{cellCount} cell(s) copied to clipboard.",
+  "cellPasteSuccess": "{cellCount} cell(s) pasted successfully.",
+  "cellPasteSuccessPartial": "{successCount} cell(s) pasted, {failCount} failed.",
+  "cannotPastePk": "Error: Cannot paste without a primary key.",
+  "cannotPasteNothing": "Nothing to paste from clipboard.",
+  "transactionFailed": "Transaction failed: {error}",
+  "dataEditing": "Data Editing",
+  "refresh": "Refresh",
+  "addRow": "Add Row",
+  "addColumn": "Add Column",
+  "tableHasNoColumn": "Table has no columns. Please add one.",
+  "addNewColumn": "Add New Column",
+  "columnName": "Column Name",
+  "selectDataType": "Select Data Type",
+  "constraints": "Constraints",
+  "add": "Add",
+  "requiredAddingNewColumn": "Column name and data type are required.",
+  "columnAddedSuccess": "Column added successfully.",
+  "modifyColumn": "Modify Column",
+  "modifyColumnSuccess": "Column modified successfully.",
+  "modify": "Modify",
+  "addNewRow": "Add New Row",
+  "editRow": "Edit Row",
+  "addRowSuccess": "Row added successfully.",
+  "updateRowSuccess": "Row updated successfully.",
+  "addRowFailurePK": "Error: Cannot update without a primary key",
+  "deleteFailedPk": "Error: Cannot delete without a primary key.",
+  "deleteRow": "Delete Row",
+  "deleteRowConfirm": "Are you sure you want to delete this row? (Primary Key: {pkValue})",
+  "deleteRowSuccess": "Row deleted successfully.",
+  "copyCell": "Copy Cell",
+  "pasteCell": "Paste Cell",
+  "actions": "Actions",
+  "cannotEditCellPK": "Error: Cannot edit cell without a primary key.",
+  "editCell": "Edit Cell",
+  "updateCellSuccess": "Cell updated successfully.",
+  "filterMenuTitle": "Filter, Sort & Group",
+  "filters": "Filters",
+  "addFilter": "Add Filter",
+  "addParenthesis": "Add ( )",
+  "clearAll": "Clear All",
+  "noteAddFilter": "Click \"{addFilter}\" button for Adding Filter",
+  "operator": "Op",
+  "value": "Value",
+  "sorts": "Sorts",
+  "addSort": "Add Sort",
+  "group": "Group",
+  "groupBy": "Group By",
+  "addGroup": "Add Group",
+  "currentState": "Current State",
+  "noConditionApplied": "No filters, sorts, or groups applied.",
+  "asc": "ASC",
+  "desc": "DESC",
+  "order": "Order",
+  "allColumnGrouped": "All columns are already in group by.",
+  "addGroupBy": "Add Group By",
+  "filterConditionError": "Filter Condition is not Correct"
+}

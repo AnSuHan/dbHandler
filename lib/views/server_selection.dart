@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
+import '../l10n/LocalizationManager.dart';
 import '../stateManagement/mobx/mobx_store.dart';
 import '../sqflite/models/server_model.dart';
 
@@ -101,24 +102,24 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
         bool isPasswordObscured = true;
         return StatefulBuilder(
           builder: (context, setState) => AlertDialog(
-            title: const Text('계정 정보 입력'),
+            title: Text(intl.getString((l) => l.accountInfo)),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
                     controller: usernameController,
-                    decoration: const InputDecoration(
-                        labelText: '계정',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.person)),
+                    decoration: InputDecoration(
+                        labelText: intl.getString((l) => l.account),
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.person)),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: passwordController,
                     obscureText: isPasswordObscured,
                     decoration: InputDecoration(
-                      labelText: '비밀번호',
+                      labelText: intl.getString((l) => l.password),
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
@@ -139,10 +140,10 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                       Expanded(
                         child: TextField(
                           controller: keyFilePathController,
-                          decoration: const InputDecoration(
-                              labelText: '키 파일 경로',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.vpn_key)),
+                          decoration: InputDecoration(
+                              labelText: intl.getString((l) => l.keyFilePath),
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.vpn_key)),
                         ),
                       ),
                       IconButton(
@@ -151,8 +152,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                           FilePickerResult? result =
                           await FilePicker.platform.pickFiles();
                           if (result != null) {
-                            keyFilePathController.text =
-                                result.files.single.path ?? '';
+                            keyFilePathController.text = result.files.single.path ?? '';
                           }
                         },
                       ),
@@ -164,7 +164,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, null),
-                child: Text(isInitialSetup ? '건너뛰기' : '취소'),
+                child: Text(isInitialSetup ? intl.getString((l) => l.skip) : intl.getString((l) => l.cancel)),
               ),
               ElevatedButton(
                 onPressed: () async {
@@ -176,7 +176,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                   await store.updateServer(updatedServer, _showSnackbar);
                   if (dialogContext.mounted) Navigator.pop(dialogContext, updatedServer);
                 },
-                child: const Text('저장'),
+                child: Text(intl.getString((l) => l.save)),
               ),
             ],
           ),
@@ -195,50 +195,50 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('서버 정보 수정'),
+        title: Text(intl.getString((l) => l.editServerInfo)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                      labelText: '서버 이름',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.dns))),
+                  decoration: InputDecoration(
+                      labelText: intl.getString((l) => l.serverName),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.dns))),
               const SizedBox(height: 16),
               TextField(
                 controller: hostController,
-                decoration: const InputDecoration(
-                    labelText: '호스트 주소',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.link),
+                decoration: InputDecoration(
+                    labelText: intl.getString((l) => l.hostAddress),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.link),
                     hintText: 'localhost'),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: portController,
-                decoration: const InputDecoration(
-                    labelText: '포트',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.numbers),
+                decoration: InputDecoration(
+                    labelText: intl.getString((l) => l.port),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.numbers),
                     hintText: '5432'),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: typeController,
-                decoration: const InputDecoration(
-                    labelText: 'DB 타입',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.storage),
+                decoration: InputDecoration(
+                    labelText: intl.getString((l) => l.dbType),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.storage),
                     hintText: 'PostgreSQL'),
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(intl.getString((l) => l.cancel))),
           ElevatedButton(
             onPressed: () async {
               final name = nameController.text.trim();
@@ -249,7 +249,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                   : typeController.text.trim();
 
               if (name.isEmpty || host.isEmpty || port.isEmpty) {
-                _showSnackbar('이름, 호스트, 포트는 필수입니다.', color: Colors.red);
+                _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
                 return;
               }
 
@@ -261,7 +261,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
               );
 
               if (isDuplicate) {
-                _showSnackbar('동일한 주소의 서버가 이미 존재합니다.', color: Colors.red);
+                _showSnackbar(intl.getString((l) => l.duplicateServer), color: Colors.red);
                 return;
               }
 
@@ -274,7 +274,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
               await store.updateServer(updatedServer, _showSnackbar);
               if (context.mounted) Navigator.pop(context);
             },
-            child: const Text('저장'),
+            child: Text(intl.getString((l) => l.save)),
           ),
         ],
       ),
@@ -287,8 +287,11 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('서버 삭제'),
-        content: Text('${server.name} 서버를 삭제하시겠습니까?'),
+        title: Text(intl.getString((l) => l.deleteServer)),
+        content: Text(intl.getStringWithParams(
+          (l, serverName) => l.deleteServerConfirm(serverName),
+          server.name
+        )),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
           ElevatedButton(
@@ -298,7 +301,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             },
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text('삭제'),
+            child: Text(intl.getString((l) => l.cancel)),
           ),
         ],
       ),
@@ -311,7 +314,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('서버 목록'),
+        title: Text(intl.getString((l) => l.serverList)),
         backgroundColor: const Color(0xFF6366F1),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -332,9 +335,14 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             }
 
             if (store.error != null) {
-              return Center(child: Text('서버 목록 로딩 실패: ${store.error}'));
+              return Center(
+                child: Text(intl.getStringWithParams(
+                  (l, serverName) => l.deleteServerConfirm(serverName),
+                  store.error)
+                )
+              );
             }
-            debugPrint("서버 개수: ${store.servers.length}");
+            debugPrint("[ServerSelection] 서버 개수: ${store.servers.length}");
 
             return Column(
               children: [
@@ -351,10 +359,11 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                '서버 추가',
-                                style: TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold),
+                              Text(
+                                intl.getString((l) => l.addServer),
+                                style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold
+                                ),
                               ),
                               Observer(
                                 builder: (_) => IconButton(
@@ -383,8 +392,8 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Text('테스트 서버 추가',
-                                          style: TextStyle(fontSize: 16)),
+                                      Text(intl.getString((l) => l.addTestServer),
+                                        style: const TextStyle(fontSize: 16)),
                                       Observer(
                                         builder: (_) => Switch(
                                           value: store.isTestServer,
@@ -409,37 +418,37 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                   const SizedBox(height: 16),
                                   TextField(
                                     controller: _nameController,
-                                    decoration: const InputDecoration(
-                                        labelText: '서버 이름',
-                                        border: OutlineInputBorder(),
-                                        prefixIcon: Icon(Icons.dns)),
+                                    decoration: InputDecoration(
+                                        labelText: intl.getString((l) => l.serverName),
+                                        border: const OutlineInputBorder(),
+                                        prefixIcon: const Icon(Icons.dns)),
                                   ),
                                   const SizedBox(height: 16),
                                   TextField(
                                     controller: _hostController,
-                                    decoration: const InputDecoration(
-                                        labelText: '호스트 주소',
-                                        border: OutlineInputBorder(),
-                                        prefixIcon: Icon(Icons.link),
+                                    decoration: InputDecoration(
+                                        labelText: intl.getString((l) => l.hostAddress),
+                                        border: const OutlineInputBorder(),
+                                        prefixIcon: const Icon(Icons.link),
                                         hintText: 'localhost'),
                                   ),
                                   const SizedBox(height: 16),
                                   TextField(
                                     controller: _portController,
-                                    decoration: const InputDecoration(
-                                        labelText: '포트',
-                                        border: OutlineInputBorder(),
-                                        prefixIcon: Icon(Icons.numbers),
+                                    decoration: InputDecoration(
+                                        labelText: intl.getString((l) => l.port),
+                                        border: const OutlineInputBorder(),
+                                        prefixIcon: const Icon(Icons.numbers),
                                         hintText: '5432'),
                                     keyboardType: TextInputType.number,
                                   ),
                                   const SizedBox(height: 16),
                                   TextField(
                                     controller: _typeController,
-                                    decoration: const InputDecoration(
-                                        labelText: 'DB 타입',
-                                        border: OutlineInputBorder(),
-                                        prefixIcon: Icon(Icons.storage),
+                                    decoration: InputDecoration(
+                                        labelText: intl.getString((l) => l.dbType),
+                                        border: const OutlineInputBorder(),
+                                        prefixIcon: const Icon(Icons.storage),
                                         hintText: 'PostgreSQL'),
                                   ),
                                   const SizedBox(height: 16),
@@ -456,7 +465,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                             : 'PostgreSQL';
 
                                         if (name.isEmpty || host.isEmpty || port.isEmpty) {
-                                          _showSnackbar('서버 이름, 호스트, 포트는 필수입니다.', color: Colors.red);
+                                          _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
                                           return;
                                         }
 
@@ -466,7 +475,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         // 2-1. 메모리(Store)에서 중복 체크
                                         final isDuplicate = store.servers.any((s) => s.address == address);
                                         if (isDuplicate) {
-                                          _showSnackbar('동일한 주소의 서버가 이미 존재합니다.', color: Colors.red);
+                                          _showSnackbar(intl.getString((l) => l.duplicateServer), color: Colors.red);
                                           return;
                                         }
 
@@ -517,7 +526,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         }
                                       },
                                       icon: const Icon(Icons.add),
-                                      label: const Text('서버 추가'),
+                                      label: Text(intl.getString((l) => l.addServer)),
                                       style: ElevatedButton.styleFrom(
                                           backgroundColor: const Color(0xFF6366F1),
                                           foregroundColor: Colors.white,
@@ -569,10 +578,10 @@ class _ServerListWidget extends StatelessWidget {
     return Observer(
       builder: (_) {
         if (store.servers.isEmpty) {
-          return const Center(
+          return Center(
             child: Text(
-              '서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              intl.getString((l) => l.noServers),
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           );
@@ -591,14 +600,13 @@ class _ServerListWidget extends StatelessWidget {
                 onTap: () async {
                   final navigator = Navigator.of(context);
                   ServerModel? targetServer = server;
-                  final username = targetServer?.username;
-                  final password = targetServer?.password;
+                  final username = targetServer.username;
+                  final password = targetServer.password;
                   bool needsAuth = (username?.isEmpty ?? true) &&
                       (password?.isEmpty ?? true);
 
-                  if (needsAuth && targetServer != null) {
-                    targetServer = await onEditAuth(server,
-                        isInitialSetup: true);
+                  if (needsAuth) {
+                    targetServer = await onEditAuth(server, isInitialSetup: true);
                   }
 
                   if (!context.mounted || targetServer == null) return;
@@ -646,34 +654,33 @@ class _ServerListWidget extends StatelessWidget {
                           }
                         },
                         itemBuilder: (BuildContext context) => [
-                          const PopupMenuItem<String>(
+                          PopupMenuItem<String>(
                               value: 'edit_server',
                               child: Row(
                                 children: [
-                                  Icon(Icons.edit, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('서버 정보 수정')
+                                  const Icon(Icons.edit, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(intl.getString((l) => l.editServerInfo))
                                 ],
                               )),
-                          const PopupMenuItem<String>(
+                          PopupMenuItem<String>(
                               value: 'edit_auth',
                               child: Row(
                                 children: [
-                                  Icon(Icons.security, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('인증 정보 수정')
+                                  const Icon(Icons.security, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(intl.getString((l) => l.editAuthInfo))
                                 ],
                               )),
-                          const PopupMenuItem<String>(
+                          PopupMenuItem<String>(
                               value: 'delete',
                               child: Row(
                                 children: [
-                                  Icon(Icons.delete,
-                                      size: 20, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text('삭제',
-                                      style: TextStyle(
-                                          color: Colors.red))
+                                  const Icon(Icons.delete,
+                                    size: 20, color: Colors.red),
+                                  const SizedBox(width: 8),
+                                  Text(intl.getString((l) => l.delete),
+                                    style: const TextStyle(color: Colors.red))
                                 ],
                               )),
                         ],

@@ -1,0 +1,161 @@
+{
+  "@@locale": "ko",
+
+  "appTitle": "데이터베이스 관리자",
+  "appSubTitle": "데이터베이스 관리 시스템",
+  "serverList": "서버 목록",
+  "addServer": "서버 추가",
+  "serverName": "서버 이름",
+  "hostAddress": "호스트 주소",
+  "port": "포트",
+  "dbType": "DB 타입",
+  "testServer": "테스트 서버",
+  "addTestServer": "테스트 서버 추가",
+  "accountInfo": "계정 정보 입력",
+  "account": "계정",
+  "password": "비밀번호",
+  "keyFilePath": "키 파일 경로",
+  "save": "저장",
+  "cancel": "취소",
+  "skip": "건너뛰기",
+  "delete": "삭제",
+  "edit": "수정",
+  "editServerInfo": "서버 정보 수정",
+  "editAuthInfo": "인증 정보 수정",
+  "deleteServer": "서버 삭제",
+  "deleteServerConfirm": "{serverName} 서버를 삭제하시겠습니까?",
+  "noServers": "서버가 없습니다. + 버튼을 눌러 서버를 추가해주세요.",
+  "requiredFields": "이름, 호스트, 포트는 필수입니다.",
+  "duplicateServer": "동일한 주소의 서버가 이미 존재합니다.",
+  "serverLoadError": "서버 목록 로딩 실패: {error}",
+  "createDatabaseSuccess": "{dbName} 데이터베이스 생성 성공",
+  "@createDatabaseSuccess": {
+    "description": "Success message for creating a new database"
+  },
+
+  "createDatabaseFailure": "데이터베이스 생성 실패",
+  "@createDatabaseFailure": {
+    "description": "Error message for failed databasecreate a new database"
+  },
+  "renameDatabaseSuccess": "데이터베이스 이름 {oldName}(이)가 {newName}로 변경되었습니다.",
+  "@renameDatabaseSuccess": {
+    "description": "Success message for renaming a database"
+  },
+
+  "renameDatabaseFailure": "데이터베이스 이름 변경에 실패하였습니다.",
+  "@renameDatabaseFailure": {
+    "description": "Error message for failed database rename"
+  },
+
+  "deleteDatabaseSuccess": "데이터베이스 {dbName} 삭제에 성공하였습니다.",
+  "@deleteDatabaseSuccess": {
+    "description": "Success message for deleting a database"
+  },
+
+  "deleteDatabaseFailure": "데이터베이스 삭제에 실패하였습니다.",
+  "@deleteDatabaseFailure": {
+    "description": "Error message for failed database deletion"
+  },
+
+  "connectedServer": "접속 서버",
+  "@connectedServer": {
+    "description": "Title for connected server section"
+  },
+
+  "goBack": "뒤로 가기",
+  "newDatabase": "새로운 데이터베이스",
+  "noDatabaseFound": "데이터베이스가 존재하지 않습니다. 새로 생성해주세요.",
+
+  "createNewDatabase": "새로운 데이터베이스 생성",
+  "@createNewDatabase": {
+    "description": "Title for create new database dialog"
+  },
+
+  "databaseName": "데이터베이스 이름",
+  "@databaseName": {
+    "description": "Label for database name input"
+  },
+
+  "create": "생성하기",
+  "editDatabaseName": "데이터베이스 이름 수정하기",
+  "newDatabaseName": "새로운 데이터베이스 이름",
+  "deleteDatabase": "데이터베이스 삭제",
+  "deleteDatabaseConfirm": "데이터베이스 {dbName}를 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+  "failedToLoadTable": "테이블 목록을 불러오는데 실패했습니다",
+  "tableCreationSuccess": "테이블 {tableName} 생성 완료",
+  "tableCreationFailure": "테이블 생성 실패",
+  "renameTableSuccess": "테이블 이름이 {oldName}에서 {newName} (으)로 변경되었습니다.",
+  "renameTableFailure": "테이블 이름 변경에 실패하였습니다.",
+  "deleteTableSuccess": "{tableName} 테이블이 삭제되었습니다.",
+  "deleteTableFailure": "테이블 삭제 실패",
+  "deleteTable": "테이블 삭제",
+  "deleteTableConfirm": "{tableName} 테이블을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+  "createNewTable": "새 테이블 생성",
+  "tableName": "테이블 이름",
+  "modifyTableName": "테이블 이름 수정",
+  "newTableName": "새 테이블 이름",
+  "database": "데이터베이스",
+  "selectedDatabase": "선택된 데이터베이스",
+  "newTable": "새 테이블",
+  "noTableExist": "테이블이 없습니다. 새 테이블을 추가해주세요.",
+  "column": "컬럼",
+  "row": "행",
+  "operationFailed": "작업 실패",
+  "cellCopied": "{cellCount} 셀이 클립보드에 복사되었습니다.",
+  "cellPasteSuccess": "{cellCount} 셀에 붙여넣기가 성공했습니다.",
+  "cellPasteSuccessPartial": "{successCount} cell(s) pasted, {failCount} failed.",
+  "cannotPastePk": "오류: 기본 키 없이는 붙여넣을 수 없습니다.",
+  "cannotPasteNothing": "클립보드에서 붙여넣을 내용이 없습니다.",
+  "transactionFailed": "트랜잭션 실패: {error}",
+  "dataEditing": "데이터 수정",
+  "refresh": "다시 불러오기",
+  "addRow": "행 추가",
+  "addColumn": "열 추가",
+  "tableHasNoColumn": "테이블에 컬럼이 없습니다. 컬럼을 추가해주세요.",
+  "addNewColumn": "새로운 열 추가",
+  "columnName": "컬럼명",
+  "selectDataType": "데이터 타입 선택",
+  "constraints": "제약조건",
+  "add": "추가",
+  "requiredAddingNewColumn": "컬럼명과 데이터 타입이 필요합니다.",
+  "columnAddedSuccess": "컬럼 추가에 성공했습니다.",
+  "modifyColumn": "열 수정",
+  "modifyColumnSuccess": "열 수정에 섲공했습니다.",
+  "modify": "수정",
+  "addNewRow": "새로운 행 추가",
+  "editRow": "행 수정",
+  "addRowSuccess": "행 추가에 성공했습니다.",
+  "updateRowSuccess": "행 업데이트에 성공했습니다.",
+  "addRowFailurePK": "오류: PK 없이 추가할 수 없습니다.",
+  "deleteFailedPk": "오류: PK 없이 삭제할 수 없습니다.",
+  "deleteRow": "행 삭제",
+  "deleteRowConfirm": "이 행을 정말로 삭제하시겠습니까? (Primary Key: {pkValue})",
+  "deleteRowSuccess": "행이 성공적으로 삭제되었습니다.",
+  "copyCell": "셀 복사",
+  "pasteCell": "셀 붙여넣기",
+  "actions": "작업",
+  "cannotEditCellPK": "오류: PK 없이 셀을 수정할 수 없습니다.",
+  "editCell": "셀 수정",
+  "updateCellSuccess": "셀 업데이트에 성공하였습니다.",
+  "filterMenuTitle": "필터, 정렬 & 그룹",
+  "filters": "필터",
+  "addFilter": "필터 추가",
+  "addParenthesis": "추가 ( )",
+  "clearAll": "전체 삭제",
+  "noteAddFilter": "조건을 추가하려면 \"{addFilter}\" 버튼을 클릭하세요",
+  "operator": "연산자",
+  "value": "값",
+  "sorts": "정렬",
+  "addSort": "정렬 추가",
+  "group": "그룹",
+  "groupBy": "그룹",
+  "addGroup": "그룹 추가",
+  "currentState": "현재 상태",
+  "noConditionApplied": "적용된 필터, 정렬, 그룹이 존재하지 않습니다.",
+  "asc": "오름차순",
+  "desc": "내림차순",
+  "order": "정렬",
+  "allColumnGrouped": "모든 컬럼이 이미 그룹지어져 있습니다.",
+  "addGroupBy": "그룹 추가",
+  "filterConditionError": "필터 조건이 올바르지 않습니다."
+}

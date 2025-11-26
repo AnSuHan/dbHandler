@@ -2,6 +2,7 @@ import 'package:db_handler/db/database_handler.dart';
 import 'package:db_handler/db/postgres_handler.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/LocalizationManager.dart';
 import '../sqflite/models/server_model.dart';
 
 class DatabaseSelectionScreen extends StatefulWidget {
@@ -96,24 +97,30 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Future<void> _createDatabase(String dbName) async {
     await _performDbOperation(
       () => _dbHandler.createDatabase(dbName),
-      'Database $dbName created successfully.',
-      'Failed to create database.',
+      intl.getStringWithParams(
+        (l, dbName) => l.createDatabaseSuccess(dbName),
+        dbName,
+      ),
+      intl.getString((l) => l.createDatabaseFailure),
     );
   }
 
   Future<void> _renameDatabase(String oldName, String newName) async {
     await _performDbOperation(
       () => _dbHandler.renameDatabase(oldName, newName),
-      'Database renamed to $newName.',
-      'Failed to rename database.',
+      intl.getStringWithMultiParams(
+        (l, params) => l.renameDatabaseSuccess(params[0], params[1]),
+        [oldName, newName],
+      ),
+      intl.getString((l) => l.renameDatabaseFailure),
     );
   }
 
   Future<void> _deleteDatabase(String dbName) async {
     await _performDbOperation(
       () => _dbHandler.deleteDatabase(dbName),
-      'Database $dbName deleted successfully.',
-      'Failed to delete database.',
+      intl.getStringWithParams((l, dbName) => l.deleteDatabaseSuccess(dbName), dbName),
+      intl.getString((l) => l.deleteDatabaseFailure),
     );
   }
 
@@ -121,7 +128,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Server - ${widget.server.name}"),
+        title: Text("${intl.getString((l) => l.connectedServer)} - ${widget.server.name}"),
         backgroundColor: const Color(0xFF8B5CF6),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -150,7 +157,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('Go Back'),
+                        child: Text(intl.getString((l) => l.goBack)),
                       ),
                     ],
                   ),
@@ -172,9 +179,9 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Connected Server',
-                                    style: TextStyle(
+                                  Text(
+                                    intl.getString((l) => l.connectedServer),
+                                    style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey,
                                     ),
@@ -194,7 +201,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                 _showCreateDatabaseDialog();
                               },
                               icon: const Icon(Icons.add),
-                              label: const Text('New Database'),
+                              label: Text(intl.getString((l) => l.newDatabase)),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF8B5CF6),
                                 foregroundColor: Colors.white,
@@ -209,10 +216,10 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                     child: _isLoading
                         ? const Center(child: CircularProgressIndicator())
                         : _databases.isEmpty
-                            ? const Center(
+                            ? Center(
                                 child: Text(
-                                  'No databases found. Please add a new one.',
-                                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                                  intl.getString((l) => l.noDatabaseFound),
+                                  style: const TextStyle(fontSize: 16, color: Colors.grey),
                                   textAlign: TextAlign.center,
                                 ),
                               )
@@ -237,10 +244,10 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                         );
                                       },
                                       child: ListTile(
-                                        leading: CircleAvatar(
-                                          backgroundColor: const Color(0xFF8B5CF6),
+                                        leading: const CircleAvatar(
+                                          backgroundColor: Color(0xFF8B5CF6),
                                           radius: 24,
-                                          child: const Icon(
+                                          child: Icon(
                                             Icons.storage,
                                             color: Colors.white,
                                           ),
@@ -257,23 +264,23 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                             }
                                           },
                                           itemBuilder: (BuildContext context) => [
-                                            const PopupMenuItem<String>(
+                                            PopupMenuItem<String>(
                                               value: 'edit',
                                               child: Row(
                                                 children: [
-                                                  Icon(Icons.edit, size: 20),
-                                                  SizedBox(width: 8),
-                                                  Text('Edit'),
+                                                  const Icon(Icons.edit, size: 20),
+                                                  const SizedBox(width: 8),
+                                                  Text(intl.getString((l) => l.edit)),
                                                 ],
                                               ),
                                             ),
-                                            const PopupMenuItem<String>(
+                                            PopupMenuItem<String>(
                                               value: 'delete',
                                               child: Row(
                                                 children: [
-                                                  Icon(Icons.delete, size: 20, color: Colors.red),
-                                                  SizedBox(width: 8),
-                                                  Text('Delete', style: TextStyle(color: Colors.red)),
+                                                  const Icon(Icons.delete, size: 20, color: Colors.red),
+                                                  const SizedBox(width: 8),
+                                                  Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red)),
                                                 ],
                                               ),
                                             ),
@@ -296,19 +303,19 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Create New Database'),
+        title: Text(intl.getString((l) => l.createNewDatabase)),
         content: TextField(
           controller: nameController,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Database Name',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: intl.getString((l) => l.databaseName),
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(intl.getString((l) => l.cancel)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -318,7 +325,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                 _createDatabase(dbName);
               }
             },
-            child: const Text('Create'),
+            child: Text(intl.getString((l) => l.create)),
           ),
         ],
       ),
@@ -330,19 +337,19 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit Database Name'),
+        title: Text(intl.getString((l) => l.editDatabaseName)),
         content: TextField(
           controller: nameController,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'New Database Name',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: intl.getString((l) => l.newDatabaseName),
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(intl.getString((l) => l.cancel)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -352,7 +359,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                 _renameDatabase(oldName, newName);
               }
             },
-            child: const Text('Save'),
+            child: Text(intl.getString((l) => l.save)),
           ),
         ],
       ),
@@ -363,12 +370,12 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Database'),
-        content: Text('Are you sure you want to delete the database $dbName? This action cannot be undone.'),
+        title: Text(intl.getString((l) => l.deleteDatabase)),
+        content: Text(intl.getStringWithParams((l, dbName) => l.deleteDatabaseConfirm(dbName), dbName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(intl.getString((l) => l.cancel)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -379,7 +386,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Delete'),
+            child: Text(intl.getString((l) => l.delete)),
           ),
         ],
       ),

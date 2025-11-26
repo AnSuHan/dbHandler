@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/LocalizationManager.dart';
 import '../sqflite/models/server_model.dart';
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
@@ -89,7 +90,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -135,7 +136,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     for (int row = minRow; row <= maxRow; row++) {
       final rowData = <String>[];
       for (int col = minCol; col <= maxCol; col++) {
-        final key = '${row}_${col}';
+        final key = '${row}_$col';
         // 선택된 셀이고 유효한 범위 내에 있으면 값 복사, 아니면 빈 문자열
         if (selectedKeys.contains(key) && 
             row < state.rows.length && 
@@ -154,7 +155,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     final cellCount = selectedKeys.length;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$cellCount cell(s) copied to clipboard'),
+        content: Text(intl.getStringWithParams((l, cellCount) => l.cellCopied(cellCount), cellCount)),
         duration: const Duration(seconds: 1),
       ),
     );
@@ -175,8 +176,8 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     // 선택된 셀이 없으면 종료
     if (state.selectedCell == null && state.selectedCellRange == null) return;
     if (state.primaryKeyColumn == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Error: Cannot paste without a primary key.'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(intl.getString((l) => l.cannotPastePk)), backgroundColor: Colors.red));
       return;
     }
 
@@ -184,8 +185,8 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     final clipboardText = clipboardData?.text;
 
     if (clipboardText == null || clipboardText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Nothing to paste from clipboard.'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(intl.getString((l) => l.cannotPasteNothing)), backgroundColor: Colors.orange));
       return;
     }
 
@@ -264,7 +265,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
         // 트랜잭션 실패시 처리 (UI 알림, 로그 등)
         failCount = pasteData.length * (state.columns.length); // 최대 실패 개수 가정
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Transaction failed: ${e.toString()}'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${intl.getStringWithParams((l, error) => l.transactionFailed(error), e)}: ${e.toString()}'), backgroundColor: Colors.red),
         );
         return; // 추가 처리를 중단함
       }
@@ -279,14 +280,15 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
         if (failCount == 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$successCount cell(s) pasted successfully.'),
+              content: Text(intl.getStringWithParams((l, cellPaste) => l.cellPasteSuccess(cellPaste), successCount)),
               backgroundColor: Colors.green,
             ),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$successCount cell(s) pasted, $failCount failed.'),
+              content: Text(intl.getStringWithMultiParams(
+                (l, params) => l.cellPasteSuccessPartial(successCount, failCount), [successCount, failCount])),
               backgroundColor: Colors.orange,
             ),
           );
@@ -295,7 +297,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text(intl.getStringWithParams((l, error) => l.transactionFailed(error), e)), backgroundColor: Colors.red),
         );
       }
     }
@@ -334,23 +336,23 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           autofocus: true,
           child: Scaffold(
             appBar: AppBar(
-              title: Text('${widget.table} - Data Editing'),
+              title: Text('${widget.table} - ${intl.getString((l) => l.dataEditing)}'),
               backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
               actions: [
                 IconButton(
                   icon: const Icon(Icons.refresh),
-                  tooltip: 'Refresh',
+                  tooltip: intl.getString((l) => l.refresh),
                   onPressed: () => notifier.loadTableData(),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add),
-                  tooltip: 'Add Row',
+                  tooltip: intl.getString((l) => l.addRow),
                   onPressed: () => _showEditRowDialog(null, dataEditingParams),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_box_outlined),
-                  tooltip: 'Add Column',
+                  tooltip: intl.getString((l) => l.addColumn),
                   onPressed: () => _showAddColumnDialog(dataEditingParams),
                 ),
                 _AppBarMenu(dataEditingParams: dataEditingParams),
@@ -376,7 +378,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   return Center(child: Text(error, style: const TextStyle(color: Colors.red)));
                 }
                 if (columnsLength == 0) {
-                  return const Center(child: Text('Table has no columns. Please add one.'));
+                  return Center(child: Text(intl.getString((l) => l.tableHasNoColumn)));
                 }
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,7 +521,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
             }
 
             return AlertDialog(
-              title: const Text('Add New Column'),
+              title: Text(intl.getString((l) => l.addNewColumn)),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -527,11 +529,11 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   children: [
                     TextField(
                         controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Column Name', border: OutlineInputBorder())),
+                        decoration: InputDecoration(labelText: intl.getString((l) => l.columnName), border: const OutlineInputBorder())),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedDataType,
-                      hint: const Text('Select Data Type'),
+                      hint: Text(intl.getString((l) => l.selectDataType)),
                       items: dataTypes.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
                       onChanged: (newValue) => setStateInDialog(() => selectedDataType = newValue),
                       decoration: const InputDecoration(border: OutlineInputBorder()),
@@ -540,9 +542,9 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Constraints', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text(intl.getString((l) => l.constraints), style: const TextStyle(fontWeight: FontWeight.bold)),
                         DropdownButton<String>(
-                          hint: const Text('Add'),
+                          hint: Text(intl.getString((l) => l.add)),
                           icon: const Icon(Icons.add_circle_outline),
                           items:
                               commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
@@ -594,8 +596,8 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   onPressed: () {
                     final columnName = nameController.text.trim();
                     if (columnName.isEmpty || selectedDataType == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Column name and data type are required.'), backgroundColor: Colors.red));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(intl.getString((l) => l.requiredAddingNewColumn)), backgroundColor: Colors.red));
                       return;
                     }
                     Navigator.pop(dialogContext);
@@ -606,10 +608,10 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     )));
                     _performOperation(
                       () => dbHandler.addColumn(widget.table, columnName, selectedDataType!, constraintsString),
-                      'Column added successfully.',
+                      intl.getString((l) => l.columnAddedSuccess),
                     );
                   },
-                  child: const Text('Add'),
+                  child: Text(intl.getString((l) => l.add)),
                 ),
               ],
             );
@@ -711,7 +713,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
             }
 
             return AlertDialog(
-              title: const Text('Modify Column'),
+              title: Text(intl.getString((l) => l.modifyColumn)),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -719,11 +721,11 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   children: [
                     TextField(
                         controller: nameController,
-                        decoration: const InputDecoration(labelText: 'Column Name', border: OutlineInputBorder())),
+                        decoration: InputDecoration(labelText: intl.getString((l) => l.columnName), border: const OutlineInputBorder())),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedDataType,
-                      hint: const Text('Select Data Type'),
+                      hint: Text(intl.getString((l) => l.selectDataType)),
                       items: dataTypes.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
                       onChanged: (newValue) => setStateInDialog(() => selectedDataType = newValue),
                       decoration: const InputDecoration(border: OutlineInputBorder()),
@@ -732,12 +734,11 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Constraints', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text(intl.getString((l) => l.constraints), style: const TextStyle(fontWeight: FontWeight.bold)),
                         DropdownButton<String>(
-                          hint: const Text('Add'),
+                          hint: Text(intl.getString((l) => l.add)),
                           icon: const Icon(Icons.add_circle_outline),
-                          items:
-                              commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                          items: commonConstraints.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
                           onChanged: (value) {
                             if (value != null && !constraints.any((c) => c['type'] == value)) {
                               addConstraint(value);
@@ -781,13 +782,13 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(intl.getString((l) => l.cancel))),
                 ElevatedButton(
                   onPressed: () {
                     final newColumnName = nameController.text.trim();
                     if (newColumnName.isEmpty || selectedDataType == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Column name and data type are required.'), backgroundColor: Colors.red));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(intl.getString((l) => l.requiredAddingNewColumn)), backgroundColor: Colors.red));
                       return;
                     }
                     Navigator.pop(dialogContext);
@@ -799,10 +800,10 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     _performOperation(
                       () => dbHandler.modifyColumn(
                           widget.table, columnData['name'], newColumnName, selectedDataType!, constraintsString),
-                      'Column modified successfully.',
+                      intl.getString((l) => l.modifyColumnSuccess),
                     );
                   },
-                  child: const Text('Modify'),
+                  child: Text(intl.getString((l) => l.modify)),
                 ),
               ],
             );
@@ -888,14 +889,14 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       if (isNewRow && colName == pkColName && (col['type']!.contains('int') || col['type']!.contains('serial'))) {
         continue;
       }
-      final value = isNewRow ? '' : (rowData![colName]?.toString() ?? '');
+      final value = isNewRow ? '' : (rowData[colName]?.toString() ?? '');
       controllers[colName] = TextEditingController(text: value);
     }
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(isNewRow ? 'Add New Row' : 'Edit Row'),
+        title: Text(isNewRow ? intl.getString((l) => l.addNewRow) : intl.getString((l) => l.editRow)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -909,7 +910,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(intl.getString((l) => l.cancel))),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
@@ -930,14 +931,14 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   await notifier.loadTableData();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Row added successfully.'), backgroundColor: Colors.green),
+                      SnackBar(content: Text(intl.getString((l) => l.addRowSuccess)), backgroundColor: Colors.green),
                     );
                   }
                 } else {
                   if (pkColName == null) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Error: Cannot update without a primary key.'), backgroundColor: Colors.red));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(intl.getString((l) => l.addRowFailurePK)), backgroundColor: Colors.red));
                     }
                     return;
                   }
@@ -962,21 +963,21 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Row updated successfully.'), backgroundColor: Colors.green),
+                      SnackBar(content: Text(intl.getString((l) => l.updateRowSuccess)), backgroundColor: Colors.green),
                     );
                   }
                 }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
                   );
                 }
               } finally {
                 notifier.setLoading(false);
               }
             },
-            child: const Text('Save'),
+            child: Text(intl.getString((l) => l.save)),
           ),
         ],
       ),
@@ -989,7 +990,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     
     if (state.primaryKeyColumn == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error: Cannot delete without a primary key.'), backgroundColor: Colors.red));
+        SnackBar(content: Text(intl.getString((l) => l.deleteFailedPk)), backgroundColor: Colors.red));
       return;
     }
     final pkValue = row[state.primaryKeyColumn!];
@@ -997,10 +998,10 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Row'),
-        content: Text('Are you sure you want to delete this row? (Primary Key: $pkValue)'),
+        title: Text(intl.getString((l) => l.deleteRow)),
+        content: Text(intl.getStringWithParams((l, pkValue) => l.deleteRowConfirm(pkValue), pkValue)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(intl.getString((l) => l.cancel))),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
@@ -1015,13 +1016,13 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                 await notifier.loadTableData();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Row deleted successfully.'), backgroundColor: Colors.green),
+                    SnackBar(content: Text(intl.getStringWithParams((l, pkValue) => l.deleteRowConfirm(pkValue), pkValue)), backgroundColor: Colors.green),
                   );
                 }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
                   );
                 }
               } finally {
@@ -1029,7 +1030,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text('Delete'),
+            child: Text(intl.getString((l) => l.delete)),
           ),
         ],
       ),
@@ -1206,12 +1207,12 @@ class _AppBarMenu extends ConsumerWidget {
         PopupMenuItem<String>(
           value: 'copy',
           enabled: selectedCell != null,
-          child: const Text('Copy Cell'),
+          child: Text(intl.getString((i) => i.copyCell)),
         ),
         PopupMenuItem<String>(
           value: 'paste',
           enabled: selectedCell != null,
-          child: const Text('Paste Cell'),
+          child: Text(intl.getString((i) => i.pasteCell)),
         ),
       ],
       icon: const Icon(Icons.more_vert),
@@ -1287,7 +1288,7 @@ class _TableHeader extends ConsumerWidget {
                   bottom: BorderSide(color: Colors.grey.shade300, width: 2),
                 ),
               ),
-              child: const Text('Actions', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: Text(intl.getString((i) => i.actions), style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -1363,7 +1364,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                   Offset.zero & overlay.size,
                 ),
                 items: [
-                  PopupMenuItem(value: 'edit', child: Text('Modify')),
+                  PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
                 ],
               );
 
@@ -1388,7 +1389,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                   screenSize.height - tapPosition.dy,
                 ),
                 items: [
-                  PopupMenuItem(value: 'edit', child: Text('Modify')),
+                  PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
                 ],
               );
 

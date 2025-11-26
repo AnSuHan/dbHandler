@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/LocalizationManager.dart';
 import '../../stateManagement/setState/data_editing_riverpod.dart';
 
 /// 필터, 정렬, 그룹 다이얼로그 위젯
@@ -91,9 +92,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               // 헤더
               Row(
                 children: [
-                  const Text(
-                    'Filter, Sort & Group',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  Text(
+                    intl.getString((l) => l.filterMenuTitle),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const Spacer(),
                   IconButton(
@@ -151,16 +152,16 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       children: [
         Row(
           children: [
-            const Text('Filters', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(intl.getString((l) => l.filterMenuTitle), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const Spacer(),
             TextButton.icon(
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Filter'),
+              label: Text(intl.getString((l) => l.addFilter)),
               onPressed: () => _showAddFilterDialog(notifier, state),
             ),
             TextButton.icon(
               icon: const Icon(Icons.group, size: 18),
-              label: const Text('Add ( )'),
+              label: Text(intl.getString((l) => l.addParenthesis)),
               onPressed: selectedBlockIndices.isEmpty
                   ? null
                   : () => _wrapSelectedBlocksWithParenthesis(),
@@ -168,7 +169,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             if (state.filters.isNotEmpty)
               TextButton.icon(
                 icon: const Icon(Icons.clear, size: 18),
-                label: const Text('Clear All'),
+                label: Text(intl.getString((l) => l.clearAll)),
                 onPressed: () {
                   // 모든 Controller 정리
                   for (final controller in widget.filterControllers.values) {
@@ -202,7 +203,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         ),
         child: Center(
           child: Text(
-            '조건을 추가하려면 "Add Filter" 버튼을 클릭하세요',
+            intl.getStringWithParams((l, addFilter) => l.noteAddFilter(addFilter), intl.getString((l) => l.addFilter)),
             style: TextStyle(color: Colors.grey.shade600),
           ),
         ),
@@ -615,7 +616,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                     child: DropdownButtonFormField<String>(
                       initialValue: filter.columnName,
                       decoration: InputDecoration(
-                        labelText: 'Column',
+                        labelText: intl.getString((l) => l.column),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
                         isDense: true,
@@ -641,7 +642,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                       isExpanded: true,
                       initialValue: filter.operator,
                       decoration: InputDecoration(
-                        labelText: 'Op',
+                        labelText: intl.getString((l) => l.operator),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
                         isDense: true,
@@ -673,7 +674,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                       child: TextField(
                         controller: controller,
                         decoration: InputDecoration(
-                          labelText: 'Value',
+                          labelText: intl.getString((l) => l.value),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
                           isDense: true,
@@ -705,17 +706,17 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       children: [
         Row(
           children: [
-            const Text('Sorts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(intl.getString((l) => l.sorts), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const Spacer(),
             TextButton.icon(
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Sort'),
+              label: Text(intl.getString((l) => l.addSort)),
               onPressed: () => _showAddSortDialog(notifier, state),
             ),
             if (state.sorts.isNotEmpty)
               TextButton.icon(
                 icon: const Icon(Icons.clear, size: 18),
-                label: const Text('Clear All'),
+                label: Text(intl.getString((l) => l.clearAll)),
                 onPressed: () => notifier.clearSorts(),
               ),
           ],
@@ -855,17 +856,17 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       children: [
         Row(
           children: [
-            const Text('Group By', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(intl.getString((l) => l.groupBy), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             const Spacer(),
             TextButton.icon(
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Group'),
+              label: Text(intl.getString((l) => l.addGroup)),
               onPressed: () => _showAddGroupDialog(notifier, state),
             ),
             if (state.groupByColumns.isNotEmpty)
               TextButton.icon(
                 icon: const Icon(Icons.clear, size: 18),
-                label: const Text('Clear All'),
+                label: Text(intl.getString((l) => l.clearAll)),
                 onPressed: () => notifier.clearGroupBy(),
               ),
           ],
@@ -978,19 +979,19 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Current State',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          Text(
+            intl.getString((l) => l.currentState),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
           const SizedBox(height: 8),
           if (state.filters.isEmpty && state.sorts.isEmpty && state.groupByColumns.isEmpty)
-            const Text('No filters, sorts, or groups applied.', style: TextStyle(color: Colors.grey))
+            Text(intl.getString((l) => l.noConditionApplied), style: const TextStyle(color: Colors.grey))
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (state.filters.isNotEmpty) ...[
-                  const Text('Filters:', style: TextStyle(fontWeight: FontWeight.w500)),
+                  Text('${intl.getString((l) => l.filters)}:', style: const TextStyle(fontWeight: FontWeight.w500)),
                   ...state.filters.asMap().entries.map((entry) {
                     final index = entry.key;
                     final filter = entry.value;
@@ -1018,14 +1019,14 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 ],
                 if (state.sorts.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  const Text('Sorts:', style: TextStyle(fontWeight: FontWeight.w500)),
+                  Text('${intl.getString((l) => l.sorts)}:', style: const TextStyle(fontWeight: FontWeight.w500)),
                   ...state.sorts.map((sort) {
-                    return Text('  ${sort.columnName} ${sort.ascending ? 'ASC' : 'DESC'}');
+                    return Text('  ${sort.columnName} ${sort.ascending ? intl.getString((l) => l.asc) : intl.getString((l) => l.desc)}');
                   }),
                 ],
                 if (state.groupByColumns.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  const Text('Groups:', style: TextStyle(fontWeight: FontWeight.w500)),
+                  Text('${intl.getString((l) => l.group)}:', style: const TextStyle(fontWeight: FontWeight.w500)),
                   Text('  ${state.groupByColumns.join(', ')}'),
                 ],
               ],
@@ -1051,7 +1052,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setStateInDialog) => AlertDialog(
-          title: const Text('Add Filter'),
+          title: Text(intl.getString((l) => l.addFilter)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1096,7 +1097,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: selectedColumn,
-                  decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: intl.getString((l) => l.column), border: const OutlineInputBorder()),
                   items: state.columns.map((col) {
                     return DropdownMenuItem(value: col['name']!, child: Text(col['name']!));
                   }).toList(),
@@ -1105,7 +1106,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   initialValue: selectedOperator,
-                  decoration: const InputDecoration(labelText: 'Operator', border: OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: intl.getString((l) => l.operator), border: const OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: '=', child: Text('=')),
                     DropdownMenuItem(value: '!=', child: Text('!=')),
@@ -1175,7 +1176,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: Text(intl.getString((l) => l.cancel)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -1219,7 +1220,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 }
                 Navigator.pop(dialogContext);
               },
-              child: const Text('Add'),
+              child: Text(intl.getString((l) => l.add)),
             ),
           ],
         ),
@@ -1237,13 +1238,13 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setStateInDialog) => AlertDialog(
-          title: const Text('Add Sort'),
+          title: Text(intl.getString((l) => l.addSort)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
                 initialValue: selectedColumn,
-                decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: intl.getString((l) => l.column), border: const OutlineInputBorder()),
                 items: state.columns.map((col) {
                   return DropdownMenuItem(value: col['name']!, child: Text(col['name']!));
                 }).toList(),
@@ -1252,10 +1253,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
               const SizedBox(height: 16),
               DropdownButtonFormField<bool>(
                 initialValue: ascending,
-                decoration: const InputDecoration(labelText: 'Order', border: OutlineInputBorder()),
-                items: const [
-                  DropdownMenuItem(value: true, child: Text('ASC')),
-                  DropdownMenuItem(value: false, child: Text('DESC')),
+                decoration: InputDecoration(labelText: intl.getString((l) => l.order), border: const OutlineInputBorder()),
+                items: [
+                  DropdownMenuItem(value: true, child: Text(intl.getString((l) => l.asc))),
+                  DropdownMenuItem(value: false, child: Text(intl.getString((l) => l.desc))),
                 ],
                 onChanged: (value) => setStateInDialog(() => ascending = value!),
               ),
@@ -1264,14 +1265,14 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: Text(intl.getString((l) => l.cancel)),
             ),
             ElevatedButton(
               onPressed: () {
                 notifier.addSort(SortCondition(columnName: selectedColumn, ascending: ascending));
                 Navigator.pop(dialogContext);
               },
-              child: const Text('Add'),
+              child: Text(intl.getString((l) => l.add)),
             ),
           ],
         ),
@@ -1289,7 +1290,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
 
     if (availableColumns.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('All columns are already in group by.')),
+        SnackBar(content: Text(intl.getString((l) => l.allColumnGrouped))),
       );
       return;
     }
@@ -1300,10 +1301,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setStateInDialog) => AlertDialog(
-          title: const Text('Add Group By'),
+          title: Text(intl.getString((l) => l.addGroupBy)),
           content: DropdownButtonFormField<String>(
             initialValue: selectedColumn,
-            decoration: const InputDecoration(labelText: 'Column', border: OutlineInputBorder()),
+            decoration: InputDecoration(labelText: intl.getString((l) => l.column), border: const OutlineInputBorder()),
             items: availableColumns.map((col) {
               return DropdownMenuItem(value: col, child: Text(col));
             }).toList(),
@@ -1312,14 +1313,14 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: Text(intl.getString((l) => l.cancel)),
             ),
             ElevatedButton(
               onPressed: () {
                 notifier.addGroupByColumn(selectedColumn);
                 Navigator.pop(dialogContext);
               },
-              child: const Text('Add'),
+              child: Text(intl.getString((l) => l.add)),
             ),
           ],
         ),

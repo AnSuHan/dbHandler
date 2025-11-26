@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/LocalizationManager.dart';
 import '../../stateManagement/setState/data_editing_riverpod.dart';
 import 'filter_sort_group_dialog.dart';
 
@@ -51,21 +52,21 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
             children: [
               const Icon(Icons.filter_list),
               const SizedBox(width: 8),
-              const Text(
-                'Filter, Sort & Group',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              Text(
+                intl.getString((l) => l.filterMenuTitle),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const Spacer(),
               // 현재 상태 표시
               if (state.filters.isNotEmpty || state.sorts.isNotEmpty || state.groupByColumns.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade100,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${state.filters.length} filter(s), ${state.sorts.length} sort(s), ${state.groupByColumns.length} group(s)',
+                    '${state.filters.length} ${intl.getString((l) => l.filters)}, ${state.sorts.length} ${intl.getString((l) => l.sorts)}, ${state.groupByColumns.length} ${intl.getString((l) => l.group)}',
                     style: const TextStyle(fontSize: 12, color: Colors.blue),
                   ),
                 ),
@@ -93,12 +94,12 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
             Navigator.of(dialogContext).pop(true); // 검증 성공 시 다이얼로그 닫기
           } else {
             // 검증 실패 시 SnackBar 표시
-            final errorMessage = notifier.getValidationError() ?? '필터 조건이 올바르지 않습니다.';
+            final errorMessage = notifier.getValidationError() ?? intl.getString((l) => l.filterConditionError);
             ScaffoldMessenger.of(dialogContext).showSnackBar(
               SnackBar(
                 content: Text(errorMessage),
                 backgroundColor: Colors.red,
-                duration: Duration(seconds: 3),
+                duration: const Duration(seconds: 3),
               ),
             );
           }

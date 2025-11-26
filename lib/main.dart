@@ -9,6 +9,9 @@ import 'package:db_handler/views/database_selection.dart';
 import 'package:db_handler/views/table_selection.dart';
 import 'package:db_handler/views/data_editing.dart';
 
+import 'l10n/LocalizationManager.dart';
+import 'l10n/app_localizations.dart';
+
 void main() {
   runApp(
     ProviderScope(  // Riverpod
@@ -38,7 +41,37 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DB Handler',
+      // 앱 제목을 국제화
+      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+
+      // ===== 국제화 설정 시작 =====
+
+      // 지원하는 로케일 목록
+      supportedLocales: AppLocalizations.supportedLocales,
+      // 국제화 delegates 설정
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+
+      // 로케일 결정 로직 (선택사항)
+      localeResolutionCallback: (locale, supportedLocales) {
+        // 기기 언어가 지원 언어에 있는지 확인
+        for (var supportedLocale in supportedLocales) {
+          if (supportedLocale.languageCode == locale?.languageCode) {
+            return supportedLocale;
+          }
+        }
+        // 지원하지 않는 언어면 첫 번째 언어(영어) 반환
+        return supportedLocales.first;
+      },
+
+      // ===== LocalizationManager context 설정 =====
+      builder: (context, child) {
+        // 여기서 context를 LocalizationManager에 설정
+        intl.setContext(context);
+        return child!;
+      },
+
+      // ===== 국제화 설정 끝 =====
+      title: intl.getString((l) => l.appTitle),
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,

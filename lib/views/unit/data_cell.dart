@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/LocalizationManager.dart';
 import '../../stateManagement/setState/data_editing_riverpod.dart';
 import '../../db/database_handler.dart';
 
@@ -134,8 +135,8 @@ class EditableDataCell extends ConsumerWidget {
     int targetColIndex,
   ) async {
     if (state.primaryKeyColumn == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Error: Cannot edit cell without a primary key.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(intl.getString((i) => i.cannotEditCellPK)),
           backgroundColor: Colors.red));
       return;
     }
@@ -156,7 +157,7 @@ class EditableDataCell extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Edit Cell: $columnName'),
+        title: Text('${intl.getString((i) => i.editCell)}: $columnName'),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -167,7 +168,7 @@ class EditableDataCell extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(intl.getString((i) => i.cancel)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -203,18 +204,18 @@ class EditableDataCell extends ConsumerWidget {
                 
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Cell updated successfully.'), backgroundColor: Colors.green),
+                    SnackBar(content: Text(intl.getString((l) => l.updateCellSuccess)), backgroundColor: Colors.green),
                   );
                 }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Operation failed: $e'), backgroundColor: Colors.red),
+                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
                   );
                 }
               }
             },
-            child: const Text('Save'),
+            child: Text(intl.getString((l) => l.save)),
           ),
         ],
       ),

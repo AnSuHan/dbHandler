@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'package:get/get.dart';
 
+import '../l10n/LocalizationManager.dart';
 import '../sqflite/models/server_model.dart';
 
 /// getX 상태 관리
@@ -97,7 +98,7 @@ class TableSelectionScreen extends StatelessWidget {
         if (ctx.mounted) {
           ScaffoldMessenger.of(ctx).showSnackBar(
             SnackBar(
-              content: Text('테이블 목록을 불러오는데 실패했습니다: $e'),
+              content: Text(intl.getString((l) => l.failedToLoadTable)),
               backgroundColor: Colors.red,
             ),
           );
@@ -144,8 +145,8 @@ class TableSelectionScreen extends StatelessWidget {
       await performTableOperation(
         ctx,
             (conn) => conn.query('CREATE TABLE "$tableName" (id SERIAL PRIMARY KEY);'),
-        '테이블 $tableName 생성 완료',
-        '테이블 생성 실패',
+        intl.getStringWithParams(((l, params) => l.tableCreationSuccess(params)), tableName),
+        intl.getString((l) => l.tableCreationFailure),
       );
     }
 
@@ -153,8 +154,11 @@ class TableSelectionScreen extends StatelessWidget {
       await performTableOperation(
         ctx,
             (conn) => conn.query('ALTER TABLE "$oldName" RENAME TO "$newName"'),
-        '테이블 이름이 $newName (으)로 변경되었습니다.',
-        '테이블 이름 변경 실패',
+        intl.getStringWithMultiParams(
+          (l, params) => l.renameTableSuccess(params[0], params[1]),
+          [oldName, newName],
+        ),
+        intl.getString((l) => l.renameTableFailure),
       );
     }
 
@@ -162,8 +166,8 @@ class TableSelectionScreen extends StatelessWidget {
       await performTableOperation(
         ctx,
             (conn) => conn.query('DROP TABLE "$tableName"'),
-        '$tableName 테이블이 삭제되었습니다.',
-        '테이블 삭제 실패',
+        intl.getStringWithParams((l, param) => l.deleteTableSuccess(param), tableName),
+        intl.getString((l) => l.deleteTableFailure),
       );
     }
 
@@ -172,19 +176,19 @@ class TableSelectionScreen extends StatelessWidget {
       showDialog(
         context: ctx,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('새 테이블 생성'),
+          title: Text(intl.getString((l) => l.createNewTable)),
           content: TextField(
             controller: nameController,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '테이블 이름',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: intl.getString((l) => l.tableName),
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('취소'),
+              child: Text(intl.getString((l) => l.cancel)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -194,7 +198,7 @@ class TableSelectionScreen extends StatelessWidget {
                   createTable(ctx, tableName);
                 }
               },
-              child: const Text('생성'),
+              child: Text(intl.getString((l) => l.create)),
             ),
           ],
         ),
@@ -206,19 +210,19 @@ class TableSelectionScreen extends StatelessWidget {
       showDialog(
         context: ctx,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('테이블 이름 수정'),
+          title: Text(intl.getString((l) => l.modifyTableName)),
           content: TextField(
             controller: nameController,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '새 테이블 이름',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: intl.getString((l) => l.newTableName),
+              border: const OutlineInputBorder(),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('취소'),
+              child: Text(intl.getString((l) => l.cancel)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -228,7 +232,7 @@ class TableSelectionScreen extends StatelessWidget {
                   renameTable(ctx, oldName, newName);
                 }
               },
-              child: const Text('저장'),
+              child: Text(intl.getString((l) => l.save)),
             ),
           ],
         ),
@@ -239,12 +243,12 @@ class TableSelectionScreen extends StatelessWidget {
       showDialog(
         context: ctx,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('테이블 삭제'),
-          content: Text('$tableName 테이블을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
+          title: Text(intl.getString((l) => l.deleteTable)),
+          content: Text(intl.getStringWithParams((l, tableName) => l.deleteTableConfirm(tableName), tableName)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('취소'),
+              child: Text(intl.getString((l) => l.cancel)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -255,7 +259,7 @@ class TableSelectionScreen extends StatelessWidget {
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('삭제'),
+              child: Text(intl.getString((l) => l.delete)),
             ),
           ],
         ),
@@ -269,7 +273,7 @@ class TableSelectionScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('데이터베이스 - $database'),
+        title: Text('${intl.getString((l) => l.database)} - $database'),
         backgroundColor: const Color(0xFF10B981),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -299,9 +303,9 @@ class TableSelectionScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              '선택된 데이터베이스',
-                              style: TextStyle(
+                            Text(
+                              intl.getString((l) => l.selectedDatabase),
+                              style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
                               ),
@@ -319,7 +323,7 @@ class TableSelectionScreen extends StatelessWidget {
                       ElevatedButton.icon(
                         onPressed: () => showCreateTableDialog(context),
                         icon: const Icon(Icons.add),
-                        label: const Text('새 테이블'),
+                        label: Text(intl.getString((l) => l.newTable)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF10B981),
                           foregroundColor: Colors.white,
@@ -337,10 +341,10 @@ class TableSelectionScreen extends StatelessWidget {
                 }
 
                 if (tables.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Text(
-                      '테이블이 없습니다. 새 테이블을 추가해주세요.',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                      intl.getString((l) => l.noTableExist),
+                      style: const TextStyle(fontSize: 16, color: Colors.grey),
                       textAlign: TextAlign.center,
                     ),
                   );
@@ -390,7 +394,7 @@ class TableSelectionScreen extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          subtitle: Text('컬럼: $columnCount, 행: $rowCount'),
+                          subtitle: Text('${intl.getString((l) => l.column)}: $columnCount, ${intl.getString((l) => l.row)}: $rowCount'),
                           trailing: PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert),
                             onSelected: (value) {
@@ -401,23 +405,23 @@ class TableSelectionScreen extends StatelessWidget {
                               }
                             },
                             itemBuilder: (BuildContext context) => [
-                              const PopupMenuItem<String>(
+                              PopupMenuItem<String>(
                                 value: 'edit',
                                 child: Row(
                                   children: [
-                                    Icon(Icons.edit, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('수정'),
+                                    const Icon(Icons.edit, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(intl.getString((l) => l.edit)),
                                   ],
                                 ),
                               ),
-                              const PopupMenuItem<String>(
+                              PopupMenuItem<String>(
                                 value: 'delete',
                                 child: Row(
                                   children: [
-                                    Icon(Icons.delete, size: 20, color: Colors.red),
-                                    SizedBox(width: 8),
-                                    Text('삭제', style: TextStyle(color: Colors.red)),
+                                    const Icon(Icons.delete, size: 20, color: Colors.red),
+                                    const SizedBox(width: 8),
+                                    Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red)),
                                   ],
                                 ),
                               ),

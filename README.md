@@ -6,6 +6,10 @@ Tools • Dart 3.9.2 • DevTools 2.48.0
 fvm flutter clean
 fvm flutter pub get
 
+# 국제화 코드 자동 생성 - arb 파일 수정 시 호출
+flutter gen-l10n
+## 호출 시 
+intl.getString((l) => l.appTitle)
 ---
 # MobX 코드 생성 [1회성] (mobx_store.g.dart 파일 생성)
 dart run build_runner build --delete-conflicting-outputs

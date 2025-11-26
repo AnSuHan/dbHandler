@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:db_handler/views/server_selection.dart';
+import '../l10n/LocalizationManager.dart';
 import '../sqflite/database.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -108,9 +109,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     ),
                   ),
                   const SizedBox(height: 32),
-                  const Text(
-                    'DB Handler',
-                    style: TextStyle(
+                  Text(
+                    intl.getString((l) => l.appTitle),
+                    style: const TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
@@ -118,9 +119,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Database Management System',
-                    style: TextStyle(
+                  Text(
+                    intl.getString((l) => l.appSubTitle),
+                    style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white70,
                       letterSpacing: 0.5,
