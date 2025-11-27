@@ -172,7 +172,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       server: widget.server,
       database: widget.database,
     )));
-    
+
     // 선택된 셀이 없으면 종료
     if (state.selectedCell == null && state.selectedCellRange == null) return;
     if (state.primaryKeyColumn == null) {
@@ -191,7 +191,6 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     }
 
     // TSV 형식 파싱 (탭으로 구분된 값)
-    // 줄바꿈 문자 처리: \r\n, \n, \r 모두 지원
     final normalizedText = clipboardText.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final lines = normalizedText.split('\n').where((l) => l.trim().isNotEmpty || l.contains('\t')).toList();
     if (lines.isEmpty) return;
@@ -208,6 +207,29 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     final startColIndex = topLeftCell['colIndex']!;
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
 
+    // 선택된 범위 계산
+    final selectedKeys = state.getSelectedCellKeys();
+    int? minRow, maxRow, minCol, maxCol;
+
+    for (final key in selectedKeys) {
+      final parts = key.split('_');
+      if (parts.length != 2) continue;
+
+      final rowIndex = int.tryParse(parts[0]);
+      final colIndex = int.tryParse(parts[1]);
+
+      if (rowIndex == null || colIndex == null) continue;
+
+      minRow = minRow == null ? rowIndex : (minRow < rowIndex ? minRow : rowIndex);
+      maxRow = maxRow == null ? rowIndex : (maxRow > rowIndex ? maxRow : rowIndex);
+      minCol = minCol == null ? colIndex : (minCol < colIndex ? minCol : colIndex);
+      maxCol = maxCol == null ? colIndex : (maxCol > colIndex ? maxCol : colIndex);
+    }
+
+    // 복사된 데이터가 1x1인지 확인
+    final isSingleCellCopy = pasteData.length == 1 && pasteData[0].length == 1;
+    final singleValue = isSingleCellCopy ? pasteData[0][0] : null;
+
     int successCount = 0;
     int failCount = 0;
     final cellUpdates = <Map<String, dynamic>>[];
@@ -215,63 +237,105 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     try {
       try {
         await dbHandler.runInTransaction(() async {
-          for (int rowOffset = 0; rowOffset < pasteData.length; rowOffset++) {
-            final targetRowIndex = startRowIndex + rowOffset;
-            if (targetRowIndex >= state.rows.length) break;
+          if (isSingleCellCopy && minRow != null && maxRow != null && minCol != null && maxCol != null) {
+            // 케이스 1: 1개 셀 복사 -> m*n 범위에 모두 동일한 값 붙여넣기
+            for (int rowIdx = minRow; rowIdx <= maxRow; rowIdx++) {
+              if (rowIdx >= state.rows.length) break;
 
-            final rowData = pasteData[rowOffset];
-            if (rowData.isEmpty) continue;
+              final pkValue = state.rows[rowIdx][state.primaryKeyColumn!];
 
-            final pkValue = state.rows[targetRowIndex][state.primaryKeyColumn!];
+              for (int colIdx = minCol; colIdx <= maxCol; colIdx++) {
+                if (colIdx >= state.columns.length) break;
 
-            for (int colOffset = 0; colOffset < rowData.length; colOffset++) {
-              final targetColIndex = startColIndex + colOffset;
-              if (targetColIndex >= state.columns.length) break;
+                final trimmedValue = singleValue!.trim();
+                final newValue = trimmedValue.isEmpty ? null : trimmedValue;
+                final targetColumnName = state.columns[colIdx]['name']!;
+                final oldValue = state.rows[rowIdx][targetColumnName];
+                final isValueChanged = oldValue != newValue;
 
-              final cellValue = rowData[colOffset];
-              final trimmedValue = cellValue.trim();
-              final newValue = trimmedValue.isEmpty ? null : trimmedValue;
-              final targetColumnName = state.columns[targetColIndex]['name']!;
-              final oldValue = state.rows[targetRowIndex][targetColumnName];
-              final isValueChanged = oldValue != newValue;
-
-              if (isValueChanged) {
-                try {
-                  await dbHandler.updateCell(
-                    widget.table,
-                    targetColumnName,
-                    newValue,
-                    state.primaryKeyColumn!,
-                    pkValue,
-                  );
-                  cellUpdates.add({
-                    'rowIndex': targetRowIndex,
-                    'colIndex': targetColIndex,
-                    'columnName': targetColumnName,
-                    'newValue': newValue,
-                  });
+                if (isValueChanged) {
+                  try {
+                    await dbHandler.updateCell(
+                      widget.table,
+                      targetColumnName,
+                      newValue,
+                      state.primaryKeyColumn!,
+                      pkValue,
+                    );
+                    cellUpdates.add({
+                      'rowIndex': rowIdx,
+                      'colIndex': colIdx,
+                      'columnName': targetColumnName,
+                      'newValue': newValue,
+                    });
+                    successCount++;
+                  } catch (e) {
+                    throw Exception('Failed to update cell at row $rowIdx, col $colIdx: $e');
+                  }
+                } else {
                   successCount++;
-                } catch (e) {
-                  // 실패 발생시 즉시 예외 throw하여 트랜잭션 롤백 유도
-                  throw Exception('Failed to update cell at row $targetRowIndex, col $targetColIndex: $e');
                 }
-              } else {
-                successCount++;
+              }
+            }
+          } else {
+            // 케이스 2: m*n 복사 -> 기존 로직대로 붙여넣기
+            for (int rowOffset = 0; rowOffset < pasteData.length; rowOffset++) {
+              final targetRowIndex = startRowIndex + rowOffset;
+              if (targetRowIndex >= state.rows.length) break;
+
+              final rowData = pasteData[rowOffset];
+              if (rowData.isEmpty) continue;
+
+              final pkValue = state.rows[targetRowIndex][state.primaryKeyColumn!];
+
+              for (int colOffset = 0; colOffset < rowData.length; colOffset++) {
+                final targetColIndex = startColIndex + colOffset;
+                if (targetColIndex >= state.columns.length) break;
+
+                final cellValue = rowData[colOffset];
+                final trimmedValue = cellValue.trim();
+                final newValue = trimmedValue.isEmpty ? null : trimmedValue;
+                final targetColumnName = state.columns[targetColIndex]['name']!;
+                final oldValue = state.rows[targetRowIndex][targetColumnName];
+                final isValueChanged = oldValue != newValue;
+
+                if (isValueChanged) {
+                  try {
+                    await dbHandler.updateCell(
+                      widget.table,
+                      targetColumnName,
+                      newValue,
+                      state.primaryKeyColumn!,
+                      pkValue,
+                    );
+                    cellUpdates.add({
+                      'rowIndex': targetRowIndex,
+                      'colIndex': targetColIndex,
+                      'columnName': targetColumnName,
+                      'newValue': newValue,
+                    });
+                    successCount++;
+                  } catch (e) {
+                    throw Exception('Failed to update cell at row $targetRowIndex, col $targetColIndex: $e');
+                  }
+                } else {
+                  successCount++;
+                }
               }
             }
           }
         });
       } catch (e) {
-        // 트랜잭션 실패시 처리 (UI 알림, 로그 등)
-        failCount = pasteData.length * (state.columns.length); // 최대 실패 개수 가정
+        failCount = isSingleCellCopy
+            ? ((maxRow! - minRow! + 1) * (maxCol! - minCol! + 1))
+            : (pasteData.length * (state.columns.length));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${intl.getStringWithParams((l, error) => l.transactionFailed(error), e)}: ${e.toString()}'), backgroundColor: Colors.red),
         );
-        return; // 추가 처리를 중단함
+        return;
       }
 
       // 2단계: 모든 셀을 한 번에 업데이트 (배치 업데이트로 리빌드 최소화)
-      // updateMultipleCellValues는 변경된 셀이 있는 경우에만 state를 업데이트함
       if (cellUpdates.isNotEmpty) {
         await notifier.updateMultipleCellValues(cellUpdates);
       }
@@ -288,7 +352,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(intl.getStringWithMultiParams(
-                (l, params) => l.cellPasteSuccessPartial(successCount, failCount), [successCount, failCount])),
+                      (l, params) => l.cellPasteSuccessPartial(successCount, failCount), [successCount, failCount])),
               backgroundColor: Colors.orange,
             ),
           );
@@ -301,7 +365,6 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
         );
       }
     }
-    // setLoading을 호출하지 않았으므로 finally에서도 호출하지 않음
   }
 
   @override
@@ -420,9 +483,9 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                 );
                 
                 // columns와 columnWidths도 watch (구조 변경 시에만 리빌드)
-                final columns = ref.watch(
-                  dataEditingProvider(dataEditingParams).select((state) => state.columns),
-                );
+                // final columns = ref.watch(
+                //   dataEditingProvider(dataEditingParams).select((state) => state.columns),
+                // );
                 final columnWidths = ref.watch(
                   dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
                 );
@@ -443,8 +506,6 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
 
 
   void _showAddColumnDialog(DataEditingParams dataEditingParams) {
-    final state = ref.read(dataEditingProvider(dataEditingParams));
-    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
     final nameController = TextEditingController();
     String? selectedDataType;
     final List<Map<String, dynamic>> constraints = [];
@@ -532,7 +593,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                         decoration: InputDecoration(labelText: intl.getString((l) => l.columnName), border: const OutlineInputBorder())),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: selectedDataType,
+                      initialValue: selectedDataType,
                       hint: Text(intl.getString((l) => l.selectDataType)),
                       items: dataTypes.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
                       onChanged: (newValue) => setStateInDialog(() => selectedDataType = newValue),
@@ -622,8 +683,6 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   }
 
   void _showModifyColumnDialog(Map<String, dynamic> columnData, DataEditingParams dataEditingParams) {
-    final state = ref.read(dataEditingProvider(dataEditingParams));
-    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
     final nameController = TextEditingController(text: columnData['name']);
     final List<String> dataTypes = [
       'VARCHAR(255)',
@@ -724,7 +783,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                         decoration: InputDecoration(labelText: intl.getString((l) => l.columnName), border: const OutlineInputBorder())),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: selectedDataType,
+                      initialValue: selectedDataType,
                       hint: Text(intl.getString((l) => l.selectDataType)),
                       items: dataTypes.map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
                       onChanged: (newValue) => setStateInDialog(() => selectedDataType = newValue),
@@ -813,64 +872,36 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     );
   }
 
-  void _showEditCellDialog(Map<String, dynamic> rowData, String columnName, DataEditingState state, DataEditingNotifier notifier) {
-    if (state.primaryKeyColumn == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Error: Cannot edit cell without a primary key.'),
-          backgroundColor: Colors.red));
-      return;
-    }
-
-    final pkValue = rowData[state.primaryKeyColumn!];
-    final currentValue = rowData[columnName];
-    final controller = TextEditingController(text: currentValue?.toString() ?? '');
-
-    // 행 인덱스 찾기 (부분 리빌드를 위해 필요)
-    int? rowIndex;
-    for (int i = 0; i < state.rows.length; i++) {
-      if (state.rows[i][state.primaryKeyColumn!] == pkValue) {
-        rowIndex = i;
-        break;
-      }
-    }
+  void _showDeleteColumnDialog(Map<String, String> column, DataEditingParams dataEditingParams) {
+    final columnName = column['name']!;
 
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Edit Cell: $columnName'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-          ),
-        ),
+        title: Text(intl.getString((l) => l.deleteColumn)),
+        content: Text(intl.getStringWithParams((l, columnName) => l.deleteColumnMessage(columnName), columnName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(intl.getString((l) => l.cancel)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              final newValue = controller.text.trim();
               final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
                 server: widget.server,
                 database: widget.database,
               )));
               _performOperation(
-                () => dbHandler.updateCell(
-                  widget.table,
-                  columnName,
-                  newValue.isEmpty ? null : newValue,
-                  state.primaryKeyColumn!,
-                  pkValue,
-                ),
-                'Cell updated successfully.',
-                updatedRowIndex: rowIndex, // 특정 행만 업데이트
+                    () => dbHandler.deleteColumn(widget.table, columnName),
+                intl.getStringWithParams((l, columnName) => l.deleteColumnSuccess(columnName), columnName),
               );
             },
-            child: const Text('Save'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(intl.getString((l) => l.delete)),
           ),
         ],
       ),
@@ -942,7 +973,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     }
                     return;
                   }
-                  final pkValue = rowData![pkColName];
+                  final pkValue = rowData[pkColName];
                   await dbHandler.updateRow(dataEditingParams.table, values, pkColName, pkValue);
                   
                   // 행 인덱스 찾기
@@ -1045,7 +1076,6 @@ class _TableBodyWidget extends StatelessWidget {
   final List<double> columnWidths;
 
   const _TableBodyWidget({
-    super.key,
     required this.rowsCount,
     required this.dataEditingParams,
     required this.columnWidths,
@@ -1139,7 +1169,7 @@ class _RowWidget extends ConsumerWidget {
         // 기존 행 컨테이너
         Container(
           decoration: BoxDecoration(
-            color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withOpacity(0.1) : null,
+            color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withValues(alpha: 0.1) : null,
             border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
           ),
           child: Row(
@@ -1187,16 +1217,22 @@ class _AppBarMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // selectedCell 상태만 watch
+    // selectedCell과 selectedCellRange 모두 watch
     final selectedCell = ref.watch(
       dataEditingProvider(dataEditingParams).select((state) => state.selectedCell),
     );
+    final selectedCellRange = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) => state.selectedCellRange),
+    );
+
+    // 단일 셀이나 범위가 선택되어 있으면 활성화
+    final hasSelection = selectedCell != null || selectedCellRange != null;
 
     return PopupMenuButton<String>(
       onSelected: (value) {
         final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
         if (screen == null) return;
-        
+
         if (value == 'copy') {
           screen._copyCell();
         } else if (value == 'paste') {
@@ -1206,12 +1242,12 @@ class _AppBarMenu extends ConsumerWidget {
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
         PopupMenuItem<String>(
           value: 'copy',
-          enabled: selectedCell != null,
+          enabled: hasSelection,
           child: Text(intl.getString((i) => i.copyCell)),
         ),
         PopupMenuItem<String>(
           value: 'paste',
-          enabled: selectedCell != null,
+          enabled: hasSelection,
           child: Text(intl.getString((i) => i.pasteCell)),
         ),
       ],
@@ -1240,8 +1276,6 @@ class _TableHeader extends ConsumerWidget {
       dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
     );
     
-    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
-
     return Align(
       alignment: Alignment.topLeft,
       child: SingleChildScrollView(
@@ -1277,6 +1311,12 @@ class _TableHeader extends ConsumerWidget {
                     screen._showModifyColumnDialog(column, dataEditingParams);
                   }
                 },
+                onDeleteColumn: (column) {
+                  final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+                  if (screen != null) {
+                    screen._showDeleteColumnDialog(column, dataEditingParams);
+                  }
+                },
               );
             }).toList(),
             Container(
@@ -1304,6 +1344,7 @@ class _HeaderColumnCell extends ConsumerWidget {
   final double columnWidth;
   final DataEditingParams dataEditingParams;
   final void Function(Map<String, String>) onModifyColumn;
+  final void Function(Map<String, String>) onDeleteColumn;
 
   const _HeaderColumnCell({
     required this.columnIndex,
@@ -1311,6 +1352,7 @@ class _HeaderColumnCell extends ConsumerWidget {
     required this.columnWidth,
     required this.dataEditingParams,
     required this.onModifyColumn,
+    required this.onDeleteColumn,
   });
 
   @override
@@ -1336,7 +1378,7 @@ class _HeaderColumnCell extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
-            color: isSelected ? Colors.blue.withOpacity(0.2) : null,
+            color: isSelected ? Colors.blue.withValues(alpha: 0.2) : null,
             border: Border(
               right: BorderSide(color: Colors.grey.shade300),
               bottom: BorderSide(color: Colors.grey.shade300, width: 2),
@@ -1365,11 +1407,23 @@ class _HeaderColumnCell extends ConsumerWidget {
                 ),
                 items: [
                   PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.delete, size: 20, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Text(intl.getString((i) => i.delete), style: const TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
                 ],
               );
 
               if (selected == 'edit') {
                 onModifyColumn(column);
+              } else if (selected == 'delete') {
+                onDeleteColumn(column);
               }
             },
             onSecondaryTapDown: (TapDownDetails details) async {
@@ -1390,11 +1444,23 @@ class _HeaderColumnCell extends ConsumerWidget {
                 ),
                 items: [
                   PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.delete, size: 20, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Text(intl.getString((i) => i.delete), style: const TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
                 ],
               );
 
               if (selected == 'edit') {
                 onModifyColumn(column);
+              } else if (selected == 'delete') {
+                onDeleteColumn(column);
               }
             },
             child: Text(
@@ -1434,7 +1500,6 @@ class _RowNumberCellWidget extends ConsumerWidget {
   final double columnWidth;
 
   const _RowNumberCellWidget({
-    super.key,
     required this.rowIndex,
     required this.dataEditingParams,
     required this.columnWidth,
@@ -1457,7 +1522,7 @@ class _RowNumberCellWidget extends ConsumerWidget {
         width: columnWidth,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
+          color: isRowSelected ? Colors.blue.withValues(alpha: 0.2) : null,
           border: Border(right: BorderSide(color: Colors.grey.shade200)),
         ),
         child: Text('${rowIndex + 1}'),
@@ -1473,7 +1538,6 @@ class _RowActionsCellWidget extends ConsumerWidget {
   final double columnWidth;
 
   const _RowActionsCellWidget({
-    super.key,
     required this.rowIndex,
     required this.dataEditingParams,
     required this.columnWidth,
@@ -1490,8 +1554,7 @@ class _RowActionsCellWidget extends ConsumerWidget {
 
     // 행 데이터 가져오기 (수정/삭제 다이얼로그용)
     final state = ref.read(dataEditingProvider(dataEditingParams));
-    final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
-    
+
     if (rowIndex >= state.rows.length) {
       return Container(width: columnWidth);
     }
@@ -1501,7 +1564,7 @@ class _RowActionsCellWidget extends ConsumerWidget {
     return Container(
       width: columnWidth,
       decoration: BoxDecoration(
-        color: isRowSelected ? Colors.blue.withOpacity(0.2) : null,
+        color: isRowSelected ? Colors.blue.withValues(alpha: 0.2) : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

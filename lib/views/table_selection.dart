@@ -6,7 +6,7 @@ import '../sqflite/models/server_model.dart';
 import '../stateManagement/getx/TableSelectionController.dart';
 
 /// getX 상태 관리
-class TableSelectionScreen extends StatelessWidget {
+class TableSelectionScreen extends StatefulWidget {
   final ServerModel server;
   final String database;
 
@@ -17,19 +17,66 @@ class TableSelectionScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  State<TableSelectionScreen> createState() => _TableSelectionScreenState();
+}
+
+class _TableSelectionScreenState extends State<TableSelectionScreen> {
+  late final TableSelectionController controller;
+  // Worker들을 저장
+  Worker? successWorker;
+  Worker? errorWorker;
+
+  @override
+  void initState() {
+    super.initState();
+
     // GetX Controller 초기화
-    final controller = Get.put(
+    controller = Get.put(
       TableSelectionController(
-        server: server,
-        database: database,
+        server: widget.server,
+        database: widget.database,
       ),
-      tag: '${server.id}_$database',
+      tag: '${widget.server.id}_${widget.database}',
     );
 
+    // 메시지 리스너 추가 - initState에서 한 번만 등록
+    successWorker = ever(controller.successMessage, (message) {
+      if (message != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+          ),
+        );
+        controller.successMessage.value = null;
+      }
+    });
+
+    errorWorker = ever(controller.errorMessage, (message) {
+      if (message != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+          ),
+        );
+        controller.errorMessage.value = null;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    successWorker?.dispose();
+    errorWorker?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${intl.getString((l) => l.database)} - $database'),
+        title: Text('${intl.getString((l) => l.database)} - ${widget.database}'),
         backgroundColor: const Color(0xFF10B981),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -67,7 +114,7 @@ class TableSelectionScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              database,
+                              widget.database,
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -125,8 +172,8 @@ class TableSelectionScreen extends StatelessWidget {
                               context,
                               '/data-editing',
                               arguments: {
-                                'server': server,
-                                'database': database,
+                                'server': widget.server,
+                                'database': widget.database,
                                 'table': tableName,
                               },
                             );

@@ -1,6 +1,6 @@
+// ignore_for_file: file_names
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 import 'package:postgres/postgres.dart';
 
 import '../../l10n/LocalizationManager.dart';
@@ -12,6 +12,9 @@ class TableSelectionController extends GetxController {
 
   final tables = <Map<String, dynamic>>[].obs;
   final isLoading = true.obs;
+
+  final successMessage = Rxn<String>();
+  final errorMessage = Rxn<String>();
 
   TableSelectionController({
     required this.server,
@@ -107,10 +110,10 @@ class TableSelectionController extends GetxController {
   }
 
   Future<void> performTableOperation(
-      Future<void> Function(PostgreSQLConnection) operation,
-      String successMessage,
-      String failureMessage,
-      ) async {
+    Future<void> Function(PostgreSQLConnection) operation,
+    String successMsg,
+    String failureMsg,
+  ) async {
     isLoading.value = true;
 
     try {
@@ -118,19 +121,9 @@ class TableSelectionController extends GetxController {
       await operation(connection);
       await connection.close();
 
-      Get.snackbar(
-        successMessage,
-        '',
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-      );
+      successMessage.value = successMsg;
     } catch (e) {
-      Get.snackbar(
-        failureMessage,
-        e.toString(),
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      errorMessage.value = '$failureMsg: $e';
     }
 
     await loadTables();

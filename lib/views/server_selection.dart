@@ -293,7 +293,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
           server.name
         )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(intl.getString((l) => l.cancel))),
           ElevatedButton(
             onPressed: () async {
               await store.deleteServer(server, _showSnackbar);
@@ -301,7 +301,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
             },
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: Text(intl.getString((l) => l.cancel)),
+            child: Text(intl.getString((l) => l.delete)),
           ),
         ],
       ),

@@ -270,5 +270,8 @@
   "order": "Order",
   "allColumnGrouped": "All columns are already in group by.",
   "addGroupBy": "Add Group By",
-  "filterConditionError": "Filter Condition is not Correct"
+  "filterConditionError": "Filter Condition is not Correct",
+  "deleteColumn": "Delete Column",
+  "deleteColumnMessage": "Are you sure to delete {columnName} column?",
+  "deleteColumnSuccess": "The {columnName} column has been deleted."
 }

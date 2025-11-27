@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/LocalizationManager.dart';
 import '../../stateManagement/setState/data_editing_riverpod.dart';
-import '../../db/database_handler.dart';
 
 /// 개별 데이터 셀 위젯
 /// Riverpod의 select를 사용하여 해당 셀의 값만 정밀하게 구독
@@ -68,9 +67,9 @@ class EditableDataCell extends ConsumerWidget {
     // 셀 배경색 결정
     Color? cellColor;
     if (isCellSelected) {
-      cellColor = Colors.green.withOpacity(0.4);
+      cellColor = Colors.green.withValues(alpha: 0.4);
     } else if (isRowSelected || isColSelected) {
-      cellColor = Colors.blue.withOpacity(0.2);
+      cellColor = Colors.blue.withValues(alpha: 0.2);
     }
 
     // 드래그 상태 추적을 위한 전역 변수 대신, 각 셀에서 마우스 이벤트 처리

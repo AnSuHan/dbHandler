@@ -2,6 +2,9 @@
 Flutter 3.35.6 • channel stable • https://github.com/flutter/flutter.git
 Tools • Dart 3.9.2 • DevTools 2.48.0
 
+## 지원하는 데이터베이스
+- postgreSQL
+
 ## 기본 명령어
 fvm flutter clean
 fvm flutter pub get

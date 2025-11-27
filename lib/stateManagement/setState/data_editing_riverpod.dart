@@ -560,7 +560,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     }
 
     if (openCount > 0) {
-      return '닫히지 않은 괄호가 ${openCount}개 있습니다.';
+      return '닫히지 않은 괄호가 $openCount개 있습니다.';
     } else if (openCount < 0) {
       return '여는 괄호보다 닫는 괄호가 ${-openCount}개 더 많습니다.';
     }
@@ -1382,7 +1382,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
     // 여는 괄호가 남아있는 경우 (balance > 0), 마지막부터 제거
     if (balance > 0) {
-      debugPrint("[_balanceParentheses] 닫히지 않은 여는 괄호 ${balance}개 감지 - 제거 시작");
+      debugPrint("[_balanceParentheses] 닫히지 않은 여는 괄호 $balance개 감지 - 제거 시작");
 
       for (int i = balancedFilters.length - 1; i >= 0 && balance > 0; i--) {
         final filter = balancedFilters[i];
@@ -1440,7 +1440,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         // 단, 연속된 여는/닫는 괄호는 빈 괄호로 간주하여 제거
         if (openCount == closeCount) {
           // 모든 괄호 쌍 제거 (빈 괄호)
-          debugPrint("[_balanceParentheses] 필터 $i의 빈 괄호 쌍 ${openCount}개 제거");
+          debugPrint("[_balanceParentheses] 필터 $i의 빈 괄호 쌍 $openCount개 제거");
           openCount = 0;
           closeCount = 0;
         }
