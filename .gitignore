@@ -38,6 +38,7 @@ analysis_benchmark.json
 .packages
 .pub-preload-cache/
 .pub/
+.idea/
 build/
 flutter_*.png
 linked_*.ds
@@ -118,3 +119,7 @@ app.*.symbols
 
 # FVM Version Cache
 .fvm/
+
+# l10n
+lib/gen/*
+!lib/gen/.gitkeep

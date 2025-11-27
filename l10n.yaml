@@ -1,0 +1,29 @@
+# l10n.yaml
+# 프로젝트 루트 디렉토리에 생성하세요
+
+# ARB 파일들이 위치할 디렉토리
+arb-dir: lib/l10n
+
+# 템플릿 ARB 파일 (기본 언어 파일)
+template-arb-file: app_en.arb
+
+# 생성될 Dart 파일명
+output-localization-file: app_localizations.dart
+
+# 생성될 클래스명
+output-class: AppLocalizations
+
+# 출력 디렉토리 지정
+output-dir: lib/gen
+
+# (선택) 언어 파일에서 발생한 키 누락 확인
+untranslated-messages-file: lib/gen/untranslated.json
+
+# (선택) 합성 패키지 사용 여부
+# synthetic-package: false
+
+# (선택) nullable getter 생성 여부
+# nullable-getter: true
+
+# (선택) 선호하는 지원 로케일 설정
+# preferred-supported-locales: ["en"]

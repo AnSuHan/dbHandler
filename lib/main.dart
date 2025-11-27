@@ -1,115 +1,103 @@
+import 'package:db_handler/sqflite/models/server_model.dart';
+import 'package:db_handler/stateManagement/mobx/mobx_store.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider_pkg;  // provider 패키지 alias
+import 'package:db_handler/views/splash.dart';
+import 'package:db_handler/views/server_selection.dart';
+import 'package:db_handler/views/database_selection.dart';
+import 'package:db_handler/views/table_selection.dart';
+import 'package:db_handler/views/data_editing.dart';
+
+import 'l10n/LocalizationManager.dart';
+import 'gen/app_localizations.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    ProviderScope(  // Riverpod
+      child: provider_pkg.MultiProvider(  // MobX용 Provider (alias 사용)
+        providers: [
+          provider_pkg.Provider<ServerStore>(
+            create: (_) => ServerStore(),
+            dispose: (_, store) {
+              // MobX store cleanup (필요 시)
+              // store.dispose();  <-- 일반적으로 MobX store는 dispose 필요 없음
+            },
+          ),
+          // 다른 DB 타입 사용 예시:
+          // provider_pkg.Provider<ServerSelectionStore>(
+          //   create: (_) => ServerSelectionStore(dbType: 'MySQL'),
+          // ),
+        ],
+        child: const MyApp(),
+      ),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      // 앱 제목을 국제화
+      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+
+      // ===== 국제화 설정 시작 =====
+
+      // 지원하는 로케일 목록
+      supportedLocales: AppLocalizations.supportedLocales,
+      // 국제화 delegates 설정
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+
+      // 로케일 결정 로직 (선택사항)
+      localeResolutionCallback: (locale, supportedLocales) {
+        // 기기 언어가 지원 언어에 있는지 확인
+        for (var supportedLocale in supportedLocales) {
+          if (supportedLocale.languageCode == locale?.languageCode) {
+            return supportedLocale;
+          }
+        }
+        // 지원하지 않는 언어면 첫 번째 언어(영어) 반환
+        return supportedLocales.first;
+      },
+
+      // ===== LocalizationManager context 설정 =====
+      builder: (context, child) {
+        // 여기서 context를 LocalizationManager에 설정
+        intl.setContext(context);
+        return child!;
+      },
+
+      // ===== 국제화 설정 끝 =====
+      title: intl.getString((l) => l.appTitle),
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
         primarySwatch: Colors.blue,
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const SplashScreen(),
+        '/server-selection': (context) => const ServerSelectionScreen(),
+        '/database-selection': (context) {
+          final server = ModalRoute.of(context)!.settings.arguments as ServerModel;
+          return DatabaseSelectionScreen(server: server);
+        },
+        '/table-selection': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final server = args['server'] as ServerModel;
+          final database = args['database'] as String;
+          return TableSelectionScreen(server: server, database: database);
+        },
+        '/data-editing': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final server = args['server'] as ServerModel;
+          final database = args['database'] as String;
+          final table = args['table'] as String;
+          return DataEditingScreen(server: server, database: database, table: table);
+        },
+      },
     );
   }
 }

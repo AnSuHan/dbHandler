@@ -31,10 +31,31 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # 국제화를 위한 flutter_localizations 추가
+  flutter_localizations:
+    sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.2
+  sqflite_common: ^2.5.6
+  path_provider: ^2.1.1
+  path: ^1.9.0
+  shared_preferences: ^2.2.2
+  postgres: ^2.6.1
+  file_picker: ^6.2.0
+  # 상태관리
+  flutter_riverpod: ^3.0.3
+  riverpod: ^3.0.3
+  state_notifier: ^1.0.0
+  get: ^4.6.6
+  mobx: ^2.3.0+1
+  flutter_mobx: ^2.2.0+2
+  provider: ^6.1.1
+  # 번역
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
@@ -46,12 +67,16 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^2.0.0
+  build_runner: ^2.4.7
+  mobx_codegen: ^2.6.0+1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
 flutter:
+  # 국제화 활성화 (중요!)
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
@@ -59,7 +84,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
+  assets:
+    - assets/file/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
