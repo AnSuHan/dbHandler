@@ -10,7 +10,7 @@ import 'package:db_handler/views/table_selection.dart';
 import 'package:db_handler/views/data_editing.dart';
 
 import 'l10n/LocalizationManager.dart';
-import 'l10n/app_localizations.dart';
+import 'gen/app_localizations.dart';
 
 void main() {
   runApp(

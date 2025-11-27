@@ -13,8 +13,11 @@ output-localization-file: app_localizations.dart
 # 생성될 클래스명
 output-class: AppLocalizations
 
+# 출력 디렉토리 지정
+output-dir: lib/gen
+
 # (선택) 언어 파일에서 발생한 키 누락 확인
-untranslated-messages-file: untranslated.json
+untranslated-messages-file: lib/gen/untranslated.json
 
 # (선택) 합성 패키지 사용 여부
 # synthetic-package: false

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'app_localizations.dart';
+import '../gen/app_localizations.dart';
 
 /// Localization을 관리하는 싱글턴 클래스
 /// context 없이 어디서든 localization 문자열에 접근 가능
