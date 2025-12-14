@@ -123,3 +123,6 @@ app.*.symbols
 # l10n
 lib/gen/*
 !lib/gen/.gitkeep
+
+.devtools/
+devtools_options.yaml

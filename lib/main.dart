@@ -1,4 +1,5 @@
 import 'package:db_handler/sqflite/models/server_model.dart';
+import 'package:db_handler/stateManagement/bloc/setting_bloc.dart';
 import 'package:db_handler/stateManagement/mobx/mobx_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,9 @@ import 'l10n/LocalizationManager.dart';
 import 'gen/app_localizations.dart';
 
 void main() {
+  // SettingsBloc 싱글턴 초기화 (앱 시작 시 미리 생성)
+  final settingsBloc = SettingsBloc();
+
   runApp(
     ProviderScope(  // Riverpod
       child: provider_pkg.MultiProvider(  // MobX용 Provider (alias 사용)
@@ -24,10 +28,10 @@ void main() {
               // store.dispose();  <-- 일반적으로 MobX store는 dispose 필요 없음
             },
           ),
-          // 다른 DB 타입 사용 예시:
-          // provider_pkg.Provider<ServerSelectionStore>(
-          //   create: (_) => ServerSelectionStore(dbType: 'MySQL'),
-          // ),
+          // BLoC Pattern - SettingsBloc (싱글턴)
+          provider_pkg.Provider<SettingsBloc>.value(
+            value: settingsBloc,
+          ),
         ],
         child: const MyApp(),
       ),
@@ -40,64 +44,98 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      // 앱 제목을 국제화
-      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+    // SettingsBloc에서 언어 설정 가져오기
+    final settingsBloc = provider_pkg.Provider.of<SettingsBloc>(context, listen: false);
 
-      // ===== 국제화 설정 시작 =====
+    return StreamBuilder<Locale>(
+        stream: settingsBloc.localeStream,
+        initialData: settingsBloc.currentLocale,
+        builder: (context, snapshot) {
+          final locale = snapshot.data ?? const Locale('en');
 
-      // 지원하는 로케일 목록
-      supportedLocales: AppLocalizations.supportedLocales,
-      // 국제화 delegates 설정
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
+          return StreamBuilder<ThemeMode>(
+              stream: settingsBloc.themeModeStream,
+              initialData: settingsBloc.currentThemeMode,
+              builder: (context, themeModeSnapshot) {
+                final themeMode = themeModeSnapshot.data ?? ThemeMode.system;
 
-      // 로케일 결정 로직 (선택사항)
-      localeResolutionCallback: (locale, supportedLocales) {
-        // 기기 언어가 지원 언어에 있는지 확인
-        for (var supportedLocale in supportedLocales) {
-          if (supportedLocale.languageCode == locale?.languageCode) {
-            return supportedLocale;
-          }
+                return MaterialApp(
+                  // 앱 제목을 국제화
+                  onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+
+                  // ===== 국제화 설정 시작 =====
+                  locale: locale,  // BLoC에서 관리하는 locale 사용
+
+                  // 지원하는 로케일 목록
+                  supportedLocales: AppLocalizations.supportedLocales,
+                  // 국제화 delegates 설정
+                  localizationsDelegates: AppLocalizations.localizationsDelegates,
+
+                  // 로케일 결정 로직 (선택사항)
+                  localeResolutionCallback: (deviceLocale, supportedLocales) {
+                    // BLoC에 저장된 locale이 있으면 그것을 우선 사용
+                    if (supportedLocales.contains(locale)) {
+                      return locale;
+                    }
+                    // 기기 언어가 지원 언어에 있는지 확인
+                    for (var supportedLocale in supportedLocales) {
+                      if (supportedLocale.languageCode == deviceLocale?.languageCode) {
+                        return supportedLocale;
+                      }
+                    }
+                    // 지원하지 않는 언어면 첫 번째 언어(영어) 반환
+                    return supportedLocales.first;
+                  },
+
+                  // ===== LocalizationManager context 설정 =====
+                  builder: (context, child) {
+                    // 여기서 context를 LocalizationManager에 설정
+                    intl.setContext(context);
+                    return child!;
+                  },
+
+                  // ===== 국제화 설정 끝 =====
+                  title: intl.getString((l) => l.appTitle),
+
+                  // ===== 테마 설정 =====
+                  theme: ThemeData(
+                    primarySwatch: Colors.blue,
+                    useMaterial3: true,
+                    brightness: Brightness.light,
+                  ),
+                  darkTheme: ThemeData(
+                    primarySwatch: Colors.blue,
+                    useMaterial3: true,
+                    brightness: Brightness.dark,
+                  ),
+                  themeMode: themeMode,  // BLoC에서 관리하는 themeMode 사용
+
+                  initialRoute: '/',
+                  routes: {
+                    '/': (context) => const SplashScreen(),
+                    '/server-selection': (context) => const ServerSelectionScreen(),
+                    '/database-selection': (context) {
+                      final server = ModalRoute.of(context)!.settings.arguments as ServerModel;
+                      return DatabaseSelectionScreen(server: server);
+                    },
+                    '/table-selection': (context) {
+                      final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+                      final server = args['server'] as ServerModel;
+                      final database = args['database'] as String;
+                      return TableSelectionScreen(server: server, database: database);
+                    },
+                    '/data-editing': (context) {
+                      final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+                      final server = args['server'] as ServerModel;
+                      final database = args['database'] as String;
+                      final table = args['table'] as String;
+                      return DataEditingScreen(server: server, database: database, table: table);
+                    },
+                  },
+                );
+              }
+          );
         }
-        // 지원하지 않는 언어면 첫 번째 언어(영어) 반환
-        return supportedLocales.first;
-      },
-
-      // ===== LocalizationManager context 설정 =====
-      builder: (context, child) {
-        // 여기서 context를 LocalizationManager에 설정
-        intl.setContext(context);
-        return child!;
-      },
-
-      // ===== 국제화 설정 끝 =====
-      title: intl.getString((l) => l.appTitle),
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const SplashScreen(),
-        '/server-selection': (context) => const ServerSelectionScreen(),
-        '/database-selection': (context) {
-          final server = ModalRoute.of(context)!.settings.arguments as ServerModel;
-          return DatabaseSelectionScreen(server: server);
-        },
-        '/table-selection': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-          final server = args['server'] as ServerModel;
-          final database = args['database'] as String;
-          return TableSelectionScreen(server: server, database: database);
-        },
-        '/data-editing': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-          final server = args['server'] as ServerModel;
-          final database = args['database'] as String;
-          final table = args['table'] as String;
-          return DataEditingScreen(server: server, database: database, table: table);
-        },
-      },
     );
   }
 }

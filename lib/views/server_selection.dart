@@ -1,6 +1,7 @@
 // lib/views/server_selection.dart
 import 'dart:convert';
 
+import 'package:db_handler/views/util/SettingDialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
@@ -313,12 +314,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     final store = Provider.of<ServerStore>(context, listen: false);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(intl.getString((l) => l.serverList)),
-        backgroundColor: const Color(0xFF6366F1),
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
+      appBar: buildAppBarWithSettings(context, intl.getString((l) => l.serverList)),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -555,6 +551,28 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
           },
         ),
       ),
+    );
+  }
+
+  /// 설정 메뉴가 포함된 AppBar를 생성하는 헬퍼 함수
+  AppBar buildAppBarWithSettings(BuildContext context, String title) {
+    return AppBar(
+      title: Text(title),
+      backgroundColor: const Color(0xFF6366F1),
+      foregroundColor: Colors.white,
+      elevation: 0,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.settings),
+          tooltip: intl.getString((l) => l.settings),
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (context) => const SettingsDialog(),
+            );
+          },
+        ),
+      ],
     );
   }
 }

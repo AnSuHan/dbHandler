@@ -7,6 +7,10 @@ import '../gen/app_localizations.dart';
 class LocalizationManager {
   // 싱글턴 인스턴스
   static final LocalizationManager _instance = LocalizationManager._internal();
+  final languageWithFlag = [
+    {'code': 'en', 'name': 'English', 'flag': '🇺🇸'},
+    {'code': 'ko', 'name': '한국어', 'flag': '🇰🇷'}
+  ];
 
   // private 생성자
   LocalizationManager._internal();
