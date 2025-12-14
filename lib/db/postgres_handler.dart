@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:postgres/postgres.dart';
 import 'package:db_handler/sqflite/models/server_model.dart';
 import 'database_handler.dart';
@@ -8,25 +9,34 @@ class PostgresHandler extends DatabaseHandler {
 
   PostgresHandler(this.server, {this.databaseName});
 
-  Future<PostgreSQLConnection> _getConnection(String db) async {
+  Future<Connection> _getConnection(String db) async {
     final host = server.address.split(':')[0];
     final port = int.parse(server.address.split(':')[1]);
     final username = server.username;
     final password = server.password;
 
-    final connection = PostgreSQLConnection(
-      host,
-      port,
-      db,
+    // Endpoint 생성 (새 API)
+    final endpoint = Endpoint(
+      host: host,
+      port: port,
+      database: db,
       username: username,
       password: password,
     );
-    await connection.open();
+
+    // postgres 3.5.9 방식
+    final connection = await Connection.open(
+      endpoint,
+      settings: const ConnectionSettings(
+        sslMode: SslMode.disable,
+      ),
+    );
+
     return connection;
   }
 
   Future<T> _withConnection<T>(
-      String dbName, Future<T> Function(PostgreSQLConnection) action) async {
+      String dbName, Future<T> Function(Connection) action) async {  // 타입 변경
     final connection = await _getConnection(dbName);
     try {
       return await action(connection);
@@ -64,7 +74,7 @@ class PostgresHandler extends DatabaseHandler {
   @override
   Future<List<Map<String, dynamic>>> getDatabases() {
     return _withConnection('postgres', (conn) async {
-      final results = await conn.query(
+      final results = await conn.execute(
           'SELECT d.datname FROM pg_database d WHERE d.datistemplate = false AND d.datallowconn = true;'
       );
       return results.map((row) => {'name': row[0] as String}).toList();
@@ -73,17 +83,17 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> createDatabase(String dbName) {
-    return _withConnection('postgres', (conn) => conn.query('CREATE DATABASE "$dbName"'));
+    return _withConnection('postgres', (conn) => conn.execute('CREATE DATABASE "$dbName"'));
   }
 
   @override
   Future<void> renameDatabase(String oldName, String newName) {
-    return _withConnection('postgres', (conn) => conn.query('ALTER DATABASE "$oldName" RENAME TO "$newName"'));
+    return _withConnection('postgres', (conn) => conn.execute('ALTER DATABASE "$oldName" RENAME TO "$newName"'));
   }
 
   @override
   Future<void> deleteDatabase(String dbName) {
-    return _withConnection('postgres', (conn) => conn.query('DROP DATABASE "$dbName"'));
+    return _withConnection('postgres', (conn) => conn.execute('DROP DATABASE "$dbName"'));
   }
 
   // ========== 테이블 관리 메서드 ==========
@@ -91,12 +101,15 @@ class PostgresHandler extends DatabaseHandler {
   @override
   Future<List<Map<String, dynamic>>> getTables(String databaseName) {
     return _withConnection(databaseName, (conn) async {
-      final results = await conn.query('''
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
-      ''');
-      return results.map((row) => {'name': row[0] as String}).toList();
+      final result = await conn.execute('''
+      SELECT table_schema, table_name
+      FROM information_schema.tables
+      WHERE table_type = 'BASE TABLE'
+      ORDER BY table_schema, table_name;
+    ''');
+
+      debugPrint("[getTables] result: ${result.toString()}");
+      return result.map((row) => row.toColumnMap()).toList();
     });
   }
 
@@ -106,21 +119,21 @@ class PostgresHandler extends DatabaseHandler {
       final columnDefs = columns.entries
           .map((e) => '"${e.key}" ${e.value}')
           .join(', ');
-      return conn.query('CREATE TABLE "$tableName" ($columnDefs)');
+      return conn.execute('CREATE TABLE "$tableName" ($columnDefs)');
     });
   }
 
   @override
   Future<void> renameTable(String oldName, String newName) {
     return _withConnection(databaseName!, (conn) {
-      return conn.query('ALTER TABLE "$oldName" RENAME TO "$newName"');
+      return conn.execute('ALTER TABLE "$oldName" RENAME TO "$newName"');
     });
   }
 
   @override
   Future<void> deleteTable(String tableName) {
     return _withConnection(databaseName!, (conn) {
-      return conn.query('DROP TABLE "$tableName"');
+      return conn.execute('DROP TABLE "$tableName"');
     });
   }
 
@@ -129,30 +142,53 @@ class PostgresHandler extends DatabaseHandler {
   @override
   Future<List<Map<String, dynamic>>> getColumns(String tableName) {
     return _withConnection(databaseName!, (conn) async {
-      final results = await conn.query('''
-        SELECT column_name, data_type 
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = '$tableName';
-      ''');
-      return results.map((row) => {'name': row[0], 'type': row[1]}).toList();
+      // Sql.named() 사용
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT column_name, data_type
+          FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = @table
+        '''),
+        parameters: {'table': tableName},
+      );
+
+      // 'name'과 'type' 키로 변환
+      return result.map((row) {
+        final map = row.toColumnMap();
+        return {
+          'name': map['column_name'] as String,
+          'type': map['data_type'] as String,
+        };
+      }).toList();
     });
   }
 
   @override
   Future<String?> getPrimaryKey(String tableName) {
     return _withConnection(databaseName!, (conn) async {
-      final pkResult = await conn.query(
-        "SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = @tableName",
-        substitutionValues: {'tableName': tableName},
+      final result = await conn.execute(
+        Sql.named("""
+        SELECT kcu.column_name 
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu 
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+        WHERE tc.constraint_type = 'PRIMARY KEY'
+          AND tc.table_name = @tableName
+      """),
+        parameters: {'tableName': tableName},
       );
-      return pkResult.isNotEmpty ? pkResult.first[0] as String : null;
+
+      if (result.isEmpty) return null;
+
+      return result.first.toColumnMap()['column_name'] as String?;
     });
   }
 
   @override
   Future<void> addColumn(String tableName, String columnName, String dataType, String constraints) {
     return _withConnection(databaseName!, (conn) {
-      return conn.query('ALTER TABLE "$tableName" ADD COLUMN "$columnName" $dataType $constraints');
+      return conn.execute('ALTER TABLE "$tableName" ADD COLUMN "$columnName" $dataType $constraints');
     });
   }
 
@@ -160,17 +196,17 @@ class PostgresHandler extends DatabaseHandler {
   Future<void> modifyColumn(String tableName, String oldColumnName, String newColumnName, String newDataType, String newConstraints) {
     return _withConnection(databaseName!, (conn) async {
       if (oldColumnName != newColumnName) {
-        await conn.query('ALTER TABLE "$tableName" RENAME COLUMN "$oldColumnName" TO "$newColumnName"');
+        await conn.execute('ALTER TABLE "$tableName" RENAME COLUMN "$oldColumnName" TO "$newColumnName"');
       }
       final query = 'ALTER TABLE "$tableName" ALTER COLUMN "$newColumnName" TYPE $newDataType USING "$newColumnName"::text::$newDataType';
-      await conn.query(query);
+      await conn.execute(query);
     });
   }
 
   @override
   Future<void> deleteColumn(String tableName, String columnName) {
     return _withConnection(databaseName!, (conn) {
-      return conn.query('ALTER TABLE "$tableName" DROP COLUMN "$columnName"');
+      return conn.execute('ALTER TABLE "$tableName" DROP COLUMN "$columnName"');
     });
   }
 
@@ -179,8 +215,9 @@ class PostgresHandler extends DatabaseHandler {
   @override
   Future<List<Map<String, dynamic>>> getData(String tableName) {
     return _withConnection(databaseName!, (conn) async {
-      final results = await conn.query('SELECT * FROM "$tableName"');
-      return results.map((row) => row.toColumnMap()).toList();
+      final result = await conn.execute('SELECT * FROM "$tableName"');
+
+      return result.map((row) => row.toColumnMap()).toList();
     });
   }
 
@@ -361,59 +398,64 @@ class PostgresHandler extends DatabaseHandler {
         query += ' ORDER BY ${orderByColumns.join(', ')}';
       }
 
-      final results = await conn.query(query, substitutionValues: substitutionValues.isEmpty ? null : substitutionValues);
+      final results = substitutionValues.isEmpty
+          ? await conn.execute(query)
+          : await conn.execute(Sql.named(query), parameters: substitutionValues);
       return results.map((row) => row.toColumnMap()).toList();
     });
   }
 
   @override
   Future<void> addRow(String tableName, Map<String, dynamic> data) {
-    return _withConnection(databaseName!, (conn) {
-      final query = data.isEmpty
-          ? 'INSERT INTO "$tableName" DEFAULT VALUES'
-          : 'INSERT INTO "$tableName" (${data.keys.map((k) => '"$k"').join(',')}) VALUES (${data.keys.map((k) => '@$k').join(',')})';
-      return conn.query(query, substitutionValues: data.isEmpty ? null : data);
+    return _withConnection(databaseName!, (conn) async {
+      if (data.isEmpty) {
+        await conn.execute('INSERT INTO "$tableName" DEFAULT VALUES');
+      } else {
+        final query = 'INSERT INTO "$tableName" (${data.keys.map((k) => '"$k"').join(',')}) '
+            'VALUES (${data.keys.map((k) => '@$k').join(',')})';
+        await conn.execute(Sql.named(query), parameters: data);
+      }
     });
   }
 
   @override
   Future<void> updateRow(String tableName, Map<String, dynamic> data, String pkColumn, dynamic pkValue) {
-    return _withConnection(databaseName!, (conn) {
+    return _withConnection(databaseName!, (conn) async {
       final setClauses = data.keys.map((k) => '"$k" = @$k').join(',');
-      final substitutionValues = {...data, 'primaryKeyValue': pkValue};
+      final parameters = {...data, 'primaryKeyValue': pkValue};
       final query = 'UPDATE "$tableName" SET $setClauses WHERE "$pkColumn" = @primaryKeyValue';
-      return conn.query(query, substitutionValues: substitutionValues);
+      await conn.execute(Sql.named(query), parameters: parameters);
     });
   }
 
   @override
   Future<void> updateCell(String tableName, String columnName, dynamic newValue, String pkColumn, dynamic pkValue) {
-    return _withConnection(databaseName!, (conn) {
+    return _withConnection(databaseName!, (conn) async {
       final query = 'UPDATE "$tableName" SET "$columnName" = @newValue WHERE "$pkColumn" = @pkValue';
-      return conn.query(query, substitutionValues: {
-        'newValue': newValue,
-        'pkValue': pkValue,
-      });
+      await conn.execute(
+          Sql.named(query),
+          parameters: {'newValue': newValue, 'pkValue': pkValue}
+      );
     });
   }
 
   @override
   Future<void> deleteRow(String tableName, String pkColumn, dynamic pkValue) {
-    return _withConnection(databaseName!, (conn) {
+    return _withConnection(databaseName!, (conn) async {
       final query = 'DELETE FROM "$tableName" WHERE "$pkColumn" = @pkValue';
-      return conn.query(query, substitutionValues: {'pkValue': pkValue});
+      await conn.execute(Sql.named(query), parameters: {'pkValue': pkValue});
     });
   }
 
-  // ========== 트랜잭션 메서드 ==========
-
+// ========== 트랜잭션 메서드 ==========
   @override
   Future<void> runInTransaction(Future<void> Function() operation) async {
     if (databaseName == null) {
       throw Exception('Database is not initialized');
     }
+
     await _withConnection(databaseName!, (conn) async {
-      await conn.transaction((txn) async {
+      await conn.runTx((ctx) async {
         await operation();
       });
     });

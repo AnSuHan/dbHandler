@@ -27,111 +27,144 @@ class TableSelectionController extends GetxController {
     loadTables();
   }
 
-  Future<PostgreSQLConnection> getConnection() async {
+  Future<Connection> getConnection() async {
     final host = server.address.split(':')[0];
     final port = int.parse(server.address.split(':')[1]);
-    final connection = PostgreSQLConnection(
-      host,
-      port,
-      database,
-      username: 'postgres',
-      password: '0000',
-    );
-    await connection.open();
-    return connection;
+
+    // Postgres URL 구성 (SSL 비활성화)
+    final url = 'postgres://postgres:0000@$host:$port/$database?sslmode=disable';
+
+    // Connection.openFromUrl() 사용
+    final conn = await Connection.openFromUrl(url);
+
+    return conn;
   }
 
   Future<void> loadRowCount(int index) async {
-    final tableName = tables[index]['name'] as String;
-    PostgreSQLConnection? connection;
+    Connection? conn;
+
     try {
-      connection = await getConnection();
-      final rowCountResult = await connection.query('SELECT COUNT(*) FROM "$tableName"');
-      tables[index]['rows'] = rowCountResult.first[0] as int;
-      tables.refresh();
-    } catch (e) {
-      tables[index]['rows'] = '오류';
-      tables.refresh();
+      conn = await getConnection();
+
+      final tableName = tables[index]['name'];
+
+      final result = await conn.execute(
+          'SELECT COUNT(*) AS row_count FROM "$tableName";'
+      );
+
+      final map = result.first.toColumnMap();
+
+      tables[index]['rows'] = (map['row_count'] is BigInt)
+          ? (map['row_count'] as BigInt).toInt()
+          : (map['row_count'] as int);
+
+    } catch (_) {
+      tables[index]['rows'] = 'ERR';
     } finally {
-      await connection?.close();
+      await conn?.close();
     }
   }
 
   Future<void> loadAllRowCounts() async {
-    List<Future> futures = [];
+    final futures = <Future>[];
+
     for (int i = 0; i < tables.length; i++) {
-      futures.add(loadRowCount(i));
+      futures.add(loadRowCount(i));   // loadRowCount 내부에서 getConnection() 호출됨
     }
+
     await Future.wait(futures);
   }
 
   Future<void> loadTables() async {
     isLoading.value = true;
 
+    Connection? connection;
+
     try {
-      final connection = await getConnection();
-      final results = await connection.query('''
-        SELECT
-            t.table_name,
-            COUNT(c.column_name) AS column_count
-        FROM
-            information_schema.tables AS t
-        LEFT JOIN
-            information_schema.columns AS c ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-        WHERE
-            t.table_schema NOT IN ('pg_catalog', 'information_schema') AND t.table_type = 'BASE TABLE'
-        GROUP BY
-            t.table_name
-        ORDER BY
-            t.table_name;
-      ''');
+      connection = await getConnection();
+
+      final results = await connection.execute('''
+      SELECT
+          t.table_name AS name,
+          COUNT(c.column_name) AS column_count
+      FROM
+          information_schema.tables AS t
+      LEFT JOIN
+          information_schema.columns AS c
+          ON t.table_schema = c.table_schema
+          AND t.table_name = c.table_name
+      WHERE
+          t.table_schema NOT IN ('pg_catalog', 'information_schema')
+          AND t.table_type = 'BASE TABLE'
+      GROUP BY
+          t.table_name
+      ORDER BY
+          t.table_name;
+    ''');
 
       tables.value = results.map((row) {
+        final map = row.toColumnMap();
+
         return {
-          'name': row[0] as String,
-          'columns': row[1] as int,
+          'name': map['name'] as String,
+          'columns': (map['column_count'] is BigInt)
+              ? (map['column_count'] as BigInt).toInt()
+              : (map['column_count'] as int),
           'rows': '조회 중...',
         };
       }).toList();
 
       isLoading.value = false;
-      loadAllRowCounts();
 
-      await connection.close();
+      // Connection 닫기 전에 실행해야 함!!
+      await loadAllRowCounts();
+
     } catch (e) {
       isLoading.value = false;
-      Get.snackbar(
-        intl.getString((l) => l.failedToLoadTable),
-        e.toString(),
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      debugPrint("[loadTables] error: $e");
+      // Overlay가 준비된 후 스낵바 실행
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (Get.isSnackbarOpen) Get.closeAllSnackbars();
+
+        Get.snackbar(
+          intl.getString((l) => l.failedToLoadTable),
+          e.toString(),
+          backgroundColor: Colors.red,
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 4),
+        );
+      });
+    } finally {
+      await connection?.close();
     }
   }
 
   Future<void> performTableOperation(
-    Future<void> Function(PostgreSQLConnection) operation,
+    Future<void> Function(Connection) operation,  // 타입 변경
     String successMsg,
     String failureMsg,
   ) async {
     isLoading.value = true;
 
     try {
-      final connection = await getConnection();
-      await operation(connection);
+      final connection = await getConnection();  // Connection 반환 (이미 수정됨)
+      await operation(connection);               // query() → execute()는 호출자에서 처리
       await connection.close();
 
       successMessage.value = successMsg;
     } catch (e) {
       errorMessage.value = '$failureMsg: $e';
+    } finally {
+      isLoading.value = false;  // 추가: 로딩 상태 정리
     }
 
     await loadTables();
   }
 
+
   Future<void> createTable(String tableName) async {
     await performTableOperation(
-          (conn) => conn.query('CREATE TABLE "$tableName" (id SERIAL PRIMARY KEY);'),
+          (conn) => conn.execute('CREATE TABLE "$tableName" (id SERIAL PRIMARY KEY);'),
       intl.getStringWithParams(((l, params) => l.tableCreationSuccess(params)), tableName),
       intl.getString((l) => l.tableCreationFailure),
     );
@@ -139,7 +172,7 @@ class TableSelectionController extends GetxController {
 
   Future<void> renameTable(String oldName, String newName) async {
     await performTableOperation(
-          (conn) => conn.query('ALTER TABLE "$oldName" RENAME TO "$newName"'),
+          (conn) => conn.execute('ALTER TABLE "$oldName" RENAME TO "$newName"'),
       intl.getStringWithMultiParams(
             (l, params) => l.renameTableSuccess(params[0], params[1]),
         [oldName, newName],
@@ -150,7 +183,7 @@ class TableSelectionController extends GetxController {
 
   Future<void> deleteTable(String tableName) async {
     await performTableOperation(
-          (conn) => conn.query('DROP TABLE "$tableName"'),
+          (conn) => conn.execute('DROP TABLE "$tableName"'),
       intl.getStringWithParams((l, param) => l.deleteTableSuccess(param), tableName),
       intl.getString((l) => l.deleteTableFailure),
     );

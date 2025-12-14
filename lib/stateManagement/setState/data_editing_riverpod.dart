@@ -337,6 +337,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         cellVersions: {},
       );
     } catch (e) {
+      debugPrint("[loadTableData] Error: filter state: $e");
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to load table data: $e',
