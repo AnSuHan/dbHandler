@@ -129,19 +129,20 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text("${intl.getString((l) => l.connectedServer)} - ${widget.server.name}"),
-        backgroundColor: const Color(0xFF8B5CF6),
-        foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: () {
+              _dbHandler.clearCache();
+              _loadDatabases();
+            },
+          ),
+        ],
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF8B5CF6), Color(0xFFF8F9FA)],
-            stops: [0.0, 0.1],
-          ),
-        ),
+        color: Theme.of(context).colorScheme.background,
         child: _error != null
             ? Center(
                 child: Padding(
@@ -173,7 +174,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                         padding: const EdgeInsets.all(16.0),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline, size: 24, color: Color(0xFF8B5CF6)),
+                            Icon(Icons.info_outline, size: 24, color: Theme.of(context).colorScheme.primary),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -202,10 +203,6 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                               },
                               icon: const Icon(Icons.add),
                               label: Text(intl.getString((l) => l.newDatabase)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF8B5CF6),
-                                foregroundColor: Colors.white,
-                              ),
                             ),
                           ],
                         ),
@@ -244,16 +241,16 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                         );
                                       },
                                       child: ListTile(
-                                        leading: const CircleAvatar(
-                                          backgroundColor: Color(0xFF8B5CF6),
+                                        leading: CircleAvatar(
+                                          backgroundColor: Theme.of(context).colorScheme.primary,
                                           radius: 24,
-                                          child: Icon(
+                                          child: const Icon(
                                             Icons.storage,
                                             color: Colors.white,
                                           ),
                                         ),
                                         title: Text(dbName),
-                                        subtitle: const Text(' '),
+                                        subtitle: Text('${intl.getString((l) => l.table)}: ${db['table_count'] ?? 0}'),
                                         trailing: PopupMenuButton<String>(
                                           icon: const Icon(Icons.more_vert),
                                           onSelected: (value) {

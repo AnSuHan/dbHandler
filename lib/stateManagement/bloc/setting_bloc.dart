@@ -180,29 +180,38 @@ class SettingsBloc {
     };
   }
 
-  Future<String> exportSettingsToFile() async {
-    final settingsMap = _serializeSettings();
-    final jsonString = jsonEncode(settingsMap);
+  Future<String?> exportSettingsToFile(void Function(String, {Color? color}) showSnackBar) async {
+    try {
+      final settingsMap = _serializeSettings();
+      final jsonString = jsonEncode(settingsMap);
 
-    // 파일명 포맷: setting_export_yyyymmdd-hhmmss.json
-    final now = DateTime.now();
-    // DateFormat은 'package:intl/intl.dart' 필요
-    final formatter = DateFormat('yyyyMMdd-HHmmss');
-    final timestamp = formatter.format(now);
-    final filename = 'setting_export_$timestamp.json';
+      // 파일명 포맷: setting_export_yyyymmdd-hhmmss.json
+      final now = DateTime.now();
+      // DateFormat은 'package:intl/intl.dart' 필요
+      final formatter = DateFormat('yyyyMMdd-HHmmss');
+      final timestamp = formatter.format(now);
+      final filename = 'setting_export_$timestamp.json';
 
-    // 저장 경로 결정
-    final directory = await getApplicationDocumentsDirectory();
-    final exportPath = '${directory.path}/$filename';
+      // 저장 경로 결정
+      final directory = await getApplicationDocumentsDirectory();
+      final exportPath = '${directory.path}/$filename';
 
-    // 파일에 저장
-    final file = File(exportPath);
-    await file.writeAsString(jsonString);
+      // 파일에 저장
+      final file = File(exportPath);
+      await file.writeAsString(jsonString);
 
-    return exportPath; // 파일 경로 반환
+      return exportPath; // 파일 경로 반환
+    } catch (e) {
+      debugPrint('설정 내보내기 실패: $e');
+      return null;
+    }
   }
 
-  Future<void> importSettingsFromFile() async {
+  Future<void> importSettingsFromFile(
+      void Function(String, {Color? color}) showSnackBar,
+      {required String processingMsg,
+      required String successMsg,
+      required String failMsg}) async {
     try {
       // 1. 파일 선택 UI 띄우기 (file_picker 사용)
       final result = await FilePicker.platform.pickFiles(
@@ -214,6 +223,8 @@ class SettingsBloc {
         return; // 사용자가 취소함
       }
 
+      showSnackBar(processingMsg);
+
       final filePath = result.files.single.path!;
       final file = File(filePath);
 
@@ -224,9 +235,10 @@ class SettingsBloc {
       // 3. 설정 값 디코딩 및 적용
       await _applyImportedSettings(settingsMap);
 
+      showSnackBar(successMsg, color: Colors.green);
     } catch (e) {
       debugPrint('설정 불러오기 실패: $e');
-      // 오류 처리
+      showSnackBar(failMsg, color: Colors.red);
     }
   }
 

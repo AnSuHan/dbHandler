@@ -67,9 +67,9 @@ class EditableDataCell extends ConsumerWidget {
     // 셀 배경색 결정
     Color? cellColor;
     if (isCellSelected) {
-      cellColor = Colors.green.withValues(alpha: 0.4);
+      cellColor = Theme.of(context).colorScheme.secondary.withValues(alpha: 0.3);
     } else if (isRowSelected || isColSelected) {
-      cellColor = Colors.blue.withValues(alpha: 0.2);
+      cellColor = Theme.of(context).colorScheme.primary.withValues(alpha: 0.15);
     }
 
     // 드래그 상태 추적을 위한 전역 변수 대신, 각 셀에서 마우스 이벤트 처리
@@ -111,7 +111,7 @@ class EditableDataCell extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: cellColor,
-              border: Border(right: BorderSide(color: Colors.grey.shade200)),
+              border: Border(right: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2))),
             ),
             child: Text(
               cellValue?.toString() ?? 'NULL',

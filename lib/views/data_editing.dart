@@ -400,8 +400,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           child: Scaffold(
             appBar: AppBar(
               title: Text('${widget.table} - ${intl.getString((l) => l.dataEditing)}'),
-              backgroundColor: const Color(0xFF3B82F6),
-              foregroundColor: Colors.white,
+              elevation: 0,
               actions: [
                 IconButton(
                   icon: const Icon(Icons.refresh),
@@ -1155,10 +1154,10 @@ class _RowWidget extends ConsumerWidget {
             child: Container(
               height: 2,
               decoration: BoxDecoration(
-                color: Colors.grey.shade800,
+                color: Theme.of(context).colorScheme.secondary,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.grey.shade400,
+                    color: Theme.of(context).shadowColor.withValues(alpha: 0.3),
                     blurRadius: 2,
                     offset: const Offset(0, 1),
                   ),
@@ -1169,8 +1168,8 @@ class _RowWidget extends ConsumerWidget {
         // 기존 행 컨테이너
         Container(
           decoration: BoxDecoration(
-            color: rowIndex.isOdd && !isRowSelected ? Colors.grey.withValues(alpha: 0.1) : null,
-            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+            color: rowIndex.isOdd && !isRowSelected ? Theme.of(context).dividerColor.withValues(alpha: 0.05) : null,
+            border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2))),
           ),
           child: Row(
             children: [
@@ -1291,8 +1290,8 @@ class _TableHeader extends ConsumerWidget {
               alignment: Alignment.centerLeft,
               decoration: BoxDecoration(
                 border: Border(
-                  right: BorderSide(color: Colors.grey.shade300),
-                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+                  right: BorderSide(color: Theme.of(context).dividerColor),
+                  bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
                 ),
               ),
               child: const Text('#', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1325,7 +1324,7 @@ class _TableHeader extends ConsumerWidget {
               alignment: Alignment.centerLeft,
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+                  bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
                 ),
               ),
               child: Text(intl.getString((i) => i.actions), style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -1378,10 +1377,10 @@ class _HeaderColumnCell extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
-            color: isSelected ? Colors.blue.withValues(alpha: 0.2) : null,
+            color: isSelected ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15) : null,
             border: Border(
-              right: BorderSide(color: Colors.grey.shade300),
-              bottom: BorderSide(color: Colors.grey.shade300, width: 2),
+              right: BorderSide(color: Theme.of(context).dividerColor),
+              bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
             ),
           ),
           child: GestureDetector(
@@ -1522,8 +1521,8 @@ class _RowNumberCellWidget extends ConsumerWidget {
         width: columnWidth,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isRowSelected ? Colors.blue.withValues(alpha: 0.2) : null,
-          border: Border(right: BorderSide(color: Colors.grey.shade200)),
+          color: isRowSelected ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15) : null,
+          border: Border(right: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2))),
         ),
         child: Text('${rowIndex + 1}'),
       ),
@@ -1564,7 +1563,7 @@ class _RowActionsCellWidget extends ConsumerWidget {
     return Container(
       width: columnWidth,
       decoration: BoxDecoration(
-        color: isRowSelected ? Colors.blue.withValues(alpha: 0.2) : null,
+        color: isRowSelected ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15) : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

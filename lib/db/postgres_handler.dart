@@ -7,7 +7,13 @@ class PostgresHandler extends DatabaseHandler {
   final ServerModel server;
   final String? databaseName;
 
+  // 캐싱을 위한 정적/인스턴스 변수
+  static final Map<String, List<Map<String, dynamic>>> _databasesCache = {};
+  static final Map<String, Map<String, List<Map<String, dynamic>>>> _tablesCache = {};
+
   PostgresHandler(this.server, {this.databaseName});
+
+  String get _serverKey => '${server.address}_${server.username}';
 
   Future<Connection> _getConnection(String db) async {
     final host = server.address.split(':')[0];
@@ -69,72 +75,147 @@ class PostgresHandler extends DatabaseHandler {
     throw UnimplementedError('서버 관리는 로컬 SQLite에서 처리됩니다.');
   }
 
+  @override
+  void clearCache() {
+    _databasesCache.remove(_serverKey);
+    _tablesCache.remove(_serverKey);
+  }
+
+  @override
+  Future<int> getTableCount(String databaseName) async {
+    try {
+      return await _withConnection(databaseName, (conn) async {
+        final result = await conn.execute('''
+          SELECT count(*) 
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relkind = 'r' 
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        ''');
+        final map = result.first.toColumnMap();
+        return (map['count'] is BigInt) 
+            ? (map['count'] as BigInt).toInt() 
+            : map['count'] as int;
+      });
+    } catch (e) {
+      debugPrint("[getTableCount] error for $databaseName: $e");
+      return 0;
+    }
+  }
+
   // ========== 데이터베이스 관리 메서드 ==========
 
   @override
-  Future<List<Map<String, dynamic>>> getDatabases() {
-    return _withConnection('postgres', (conn) async {
+  Future<List<Map<String, dynamic>>> getDatabases() async {
+    if (_databasesCache.containsKey(_serverKey)) {
+      return _databasesCache[_serverKey]!;
+    }
+
+    final dbNames = await _withConnection('postgres', (conn) async {
+      // pg_database를 직접 조회하되, 템플릿이 아니고 연결 가능한 데이터베이스만 빠르게 필터링
       final results = await conn.execute(
-          'SELECT d.datname FROM pg_database d WHERE d.datistemplate = false AND d.datallowconn = true;'
+          "SELECT datname FROM pg_database WHERE datistemplate = false AND datallowconn = true AND datname <> 'postgres' ORDER BY datname;"
       );
-      return results.map((row) => {'name': row[0] as String}).toList();
+      return results.map((row) => row[0] as String).toList();
     });
+
+    // 병렬로 테이블 개수 조회 (성능 최적화)
+    final databases = await Future.wait(dbNames.map((name) async {
+      final count = await getTableCount(name);
+      return {
+        'name': name,
+        'table_count': count,
+      };
+    }));
+
+    _databasesCache[_serverKey] = databases;
+    return databases;
   }
 
   @override
-  Future<void> createDatabase(String dbName) {
-    return _withConnection('postgres', (conn) => conn.execute('CREATE DATABASE "$dbName"'));
+  Future<void> createDatabase(String dbName) async {
+    await _withConnection('postgres', (conn) => conn.execute('CREATE DATABASE "$dbName"'));
+    _databasesCache.remove(_serverKey);
   }
 
   @override
-  Future<void> renameDatabase(String oldName, String newName) {
-    return _withConnection('postgres', (conn) => conn.execute('ALTER DATABASE "$oldName" RENAME TO "$newName"'));
+  Future<void> renameDatabase(String oldName, String newName) async {
+    await _withConnection('postgres', (conn) => conn.execute('ALTER DATABASE "$oldName" RENAME TO "$newName"'));
+    _databasesCache.remove(_serverKey);
   }
 
   @override
-  Future<void> deleteDatabase(String dbName) {
-    return _withConnection('postgres', (conn) => conn.execute('DROP DATABASE "$dbName"'));
+  Future<void> deleteDatabase(String dbName) async {
+    await _withConnection('postgres', (conn) => conn.execute('DROP DATABASE "$dbName"'));
+    _databasesCache.remove(_serverKey);
   }
 
   // ========== 테이블 관리 메서드 ==========
 
   @override
-  Future<List<Map<String, dynamic>>> getTables(String databaseName) {
-    return _withConnection(databaseName, (conn) async {
+  Future<List<Map<String, dynamic>>> getTables(String databaseName) async {
+    if (_tablesCache[_serverKey]?.containsKey(databaseName) ?? false) {
+      return _tablesCache[_serverKey]![databaseName]!;
+    }
+
+    final tables = await _withConnection(databaseName, (conn) async {
+      // information_schema.tables 대신 pg_catalog를 직접 조회하여 성능 향상
+      // 컬럼 수도 서브쿼리로 빠르게 가져옴
       final result = await conn.execute('''
-      SELECT table_schema, table_name
-      FROM information_schema.tables
-      WHERE table_type = 'BASE TABLE'
-      ORDER BY table_schema, table_name;
+      SELECT 
+          n.nspname as table_schema, 
+          c.relname as table_name,
+          (SELECT count(*) FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) as column_count
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r' 
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY n.nspname, c.relname;
     ''');
 
       debugPrint("[getTables] result: ${result.toString()}");
-      return result.map((row) => row.toColumnMap()).toList();
+      return result.map((row) {
+        final map = row.toColumnMap();
+        return {
+          'table_schema': map['table_schema'],
+          'name': map['table_name'],
+          'column_count': (map['column_count'] is BigInt) 
+              ? (map['column_count'] as BigInt).toInt() 
+              : map['column_count'],
+        };
+      }).toList();
     });
+
+    _tablesCache[_serverKey] ??= {};
+    _tablesCache[_serverKey]![databaseName] = tables;
+    return tables;
   }
 
   @override
-  Future<void> createTable(String tableName, Map<String, String> columns) {
-    return _withConnection(databaseName!, (conn) {
+  Future<void> createTable(String tableName, Map<String, String> columns) async {
+    await _withConnection(databaseName!, (conn) {
       final columnDefs = columns.entries
           .map((e) => '"${e.key}" ${e.value}')
           .join(', ');
       return conn.execute('CREATE TABLE "$tableName" ($columnDefs)');
     });
+    _tablesCache[_serverKey]?.remove(databaseName);
   }
 
   @override
-  Future<void> renameTable(String oldName, String newName) {
-    return _withConnection(databaseName!, (conn) {
+  Future<void> renameTable(String oldName, String newName) async {
+    await _withConnection(databaseName!, (conn) {
       return conn.execute('ALTER TABLE "$oldName" RENAME TO "$newName"');
     });
+    _tablesCache[_serverKey]?.remove(databaseName);
   }
 
   @override
-  Future<void> deleteTable(String tableName) {
-    return _withConnection(databaseName!, (conn) {
+  Future<void> deleteTable(String tableName) async {
+    await _withConnection(databaseName!, (conn) {
       return conn.execute('DROP TABLE "$tableName"');
     });
+    _tablesCache[_serverKey]?.remove(databaseName);
   }
 
   // ========== 컬럼 관리 메서드 ==========
@@ -142,22 +223,28 @@ class PostgresHandler extends DatabaseHandler {
   @override
   Future<List<Map<String, dynamic>>> getColumns(String tableName) {
     return _withConnection(databaseName!, (conn) async {
-      // Sql.named() 사용
+      // pg_catalog.pg_attribute를 직접 조회하여 성능 향상
       final result = await conn.execute(
         Sql.named('''
-          SELECT column_name, data_type
-          FROM information_schema.columns
-          WHERE table_schema = 'public' AND table_name = @table
+          SELECT a.attname AS name,
+                 pg_catalog.format_type(a.atttypid, a.atttypmod) AS type
+          FROM pg_catalog.pg_attribute a
+          JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = @table
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname = 'public'
+          ORDER BY a.attnum;
         '''),
         parameters: {'table': tableName},
       );
 
-      // 'name'과 'type' 키로 변환
       return result.map((row) {
         final map = row.toColumnMap();
         return {
-          'name': map['column_name'] as String,
-          'type': map['data_type'] as String,
+          'name': map['name'] as String,
+          'type': map['type'] as String,
         };
       }).toList();
     });

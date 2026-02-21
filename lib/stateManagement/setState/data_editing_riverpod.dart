@@ -428,30 +428,38 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   bool isValidSyntax() {
     final filters = state.filters;
 
-    // 빈 필터와 필터 하나는 유효함
-    if (filters.isEmpty || filters.length == 1) {
+    // 빈 필터는 유효함
+    if (filters.isEmpty) {
       return true;
     }
 
-    // 1. 첫 번째 필터는 logicalOperator가 null이 아니어야 함
-    if (filters.first.logicalOperator == null) {
-      return false;
-    }
+    // 1. 논리 연산자 검증 (필터가 2개 이상인 경우)
+    if (filters.length > 1) {
+      // 첫 번째 필터는 logicalOperator가 있어야 함
+      if (filters.first.logicalOperator == null) {
+        return false;
+      }
 
-    // 2. 마지막 필터를 제외한 모든 필터는 logicalOperator가 있어야 함
-    for (int i = 0; i < filters.length - 1; i++) {
-      final logicalOp = filters[i].logicalOperator;
-      if (logicalOp == null || (logicalOp != 'AND' && logicalOp != 'OR')) {
+      // 마지막 필터를 제외한 모든 필터는 logicalOperator가 있어야 함
+      for (int i = 0; i < filters.length - 1; i++) {
+        final logicalOp = filters[i].logicalOperator;
+        if (logicalOp == null || (logicalOp != 'AND' && logicalOp != 'OR')) {
+          return false;
+        }
+      }
+
+      // 마지막 필터의 logicalOperator는 null이어야 함
+      if (filters.last.logicalOperator != null) {
+        return false;
+      }
+    } else {
+      // 필터가 1개인 경우 logicalOperator는 null이어야 함
+      if (filters.first.logicalOperator != null) {
         return false;
       }
     }
 
-    // 3. 마지막 필터의 logicalOperator는 null이어야 함
-    if (filters.last.logicalOperator != null) {
-      return false;
-    }
-
-    // 4. 괄호 균형 검증
+    // 2. 괄호 균형 검증 (필터 수와 상관없이 항상 수행)
     int openCount = 0;
     for (final filter in filters) {
       openCount += filter.openGroupCount ?? 0;
@@ -468,10 +476,15 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       return false;
     }
 
-    // 5. 각 필터의 연산자와 값 검증
+    // 3. 각 필터의 연산자와 값 검증
     for (final filter in filters) {
       final operator = filter.operator;
       final value = filter.value;
+
+      // columnName이 비어있으면 안됨
+      if (filter.columnName.trim().isEmpty) {
+        return false;
+      }
 
       // IS NULL, IS NOT NULL은 value가 null이어야 함
       if (operator == 'IS NULL' || operator == 'IS NOT NULL') {
@@ -505,13 +518,6 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       }
       // 알 수 없는 연산자
       else {
-        // 향후 추가될 연산자를 위해 경고만 하고 통과시킬 수도 있음
-        // 여기서는 엄격하게 검증
-        return false;
-      }
-
-      // 6. columnName이 비어있으면 안됨
-      if (filter.columnName.trim().isEmpty) {
         return false;
       }
     }
@@ -523,32 +529,36 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   String? getValidationError() {
     final filters = state.filters;
 
-    if (filters.isEmpty || filters.length == 1) {
+    if (filters.isEmpty) {
       return null;
     }
 
-    // 1. 첫 번째 필터 검증
-    if (filters.first.logicalOperator == null) {
-      return '두 개 이상의 조건이 존재하는 경우, 첫 번째 필터는 논리 연산자가 있어야 합니다.';
-    }
-
-    // 2. 중간 필터들의 논리 연산자 검증
-    for (int i = 0; i < filters.length - 1; i++) {
-      final logicalOp = filters[i].logicalOperator;
-      if (logicalOp == null) {
-        return '필터 ${i + 1}번은 논리 연산자(AND/OR)가 필요합니다.';
+    // 1. 논리 연산자 검증
+    if (filters.length > 1) {
+      if (filters.first.logicalOperator == null) {
+        return '두 개 이상의 조건이 존재하는 경우, 첫 번째 필터는 논리 연산자가 있어야 합니다.';
       }
-      if (logicalOp != 'AND' && logicalOp != 'OR') {
-        return '필터 ${i + 1}번의 논리 연산자가 유효하지 않습니다: $logicalOp';
+
+      for (int i = 0; i < filters.length - 1; i++) {
+        final logicalOp = filters[i].logicalOperator;
+        if (logicalOp == null) {
+          return '필터 ${i + 1}번은 논리 연산자(AND/OR)가 필요합니다.';
+        }
+        if (logicalOp != 'AND' && logicalOp != 'OR') {
+          return '필터 ${i + 1}번의 논리 연산자가 유효하지 않습니다: $logicalOp';
+        }
+      }
+
+      if (filters.last.logicalOperator != null) {
+        return '마지막 필터는 논리 연산자가 없어야 합니다.';
+      }
+    } else {
+      if (filters.first.logicalOperator != null) {
+        return '조건이 하나인 경우 논리 연산자가 없어야 합니다.';
       }
     }
 
-    // 3. 마지막 필터 검증
-    if (filters.last.logicalOperator != null) {
-      return '마지막 필터는 논리 연산자가 없어야 합니다.';
-    }
-
-    // 4. 괄호 균형 검증
+    // 2. 괄호 균형 검증
     int openCount = 0;
     for (int i = 0; i < filters.length; i++) {
       final filter = filters[i];
@@ -562,11 +572,9 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
     if (openCount > 0) {
       return '닫히지 않은 괄호가 $openCount개 있습니다.';
-    } else if (openCount < 0) {
-      return '여는 괄호보다 닫는 괄호가 ${-openCount}개 더 많습니다.';
     }
 
-    // 5. 각 필터의 연산자와 값 검증
+    // 3. 각 필터의 연산자와 값 검증
     for (int i = 0; i < filters.length; i++) {
       final filter = filters[i];
       final operator = filter.operator;
@@ -705,10 +713,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final newSorts = List<SortCondition>.from(state.sorts);
     final item = newSorts.removeAt(oldIndex);
     
-    // oldIndex가 newIndex보다 작으면 (아래로 이동) removeAt으로 인해 인덱스가 하나씩 앞당겨짐
-    // oldIndex가 newIndex보다 크면 (위로 이동) 인덱스 조정 불필요
-    final adjustedNewIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
-    newSorts.insert(adjustedNewIndex, item);
+    newSorts.insert(newIndex, item);
     
     state = state.copyWith(sorts: newSorts);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
@@ -747,10 +752,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final newGroupByColumns = List<String>.from(state.groupByColumns);
     final item = newGroupByColumns.removeAt(oldIndex);
     
-    // oldIndex가 newIndex보다 작으면 (아래로 이동) removeAt으로 인해 인덱스가 하나씩 앞당겨짐
-    // oldIndex가 newIndex보다 크면 (위로 이동) 인덱스 조정 불필요
-    final adjustedNewIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
-    newGroupByColumns.insert(adjustedNewIndex, item);
+    newGroupByColumns.insert(newIndex, item);
     
     state = state.copyWith(groupByColumns: newGroupByColumns);
     // 상태 변경 후 다음 프레임에서 데이터 로드 (빌드 중 상태 변경 방지)
@@ -1284,18 +1286,8 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     for (int i = 0; i < filters.length; i++) {
       final filter = filters[i];
 
-      // 빈 괄호 쌍 제거 체크
       int openCount = filter.openGroupCount ?? 0;
       int closeCount = filter.closeGroupCount ?? 0;
-
-      // 여는 괄호와 닫는 괄호가 같은 필터에 있고,
-      // 이것이 유일한 필터이거나 괄호 사이에 다른 필터가 없는 경우 괄호 제거
-      if (openCount > 0 && closeCount > 0) {
-        // 같은 필터에 여는 괄호와 닫는 괄호가 있으면 하나씩 제거
-        final pairsToRemove = openCount < closeCount ? openCount : closeCount;
-        openCount -= pairsToRemove;
-        closeCount -= pairsToRemove;
-      }
 
       // 연산자 재배치: 마지막 필터가 아니면 연산자 유지, 마지막이면 제거
       String? logicalOperator;
@@ -1427,25 +1419,13 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       }
     }
 
-    // 2단계: 빈 괄호 쌍 제거
+    // 2단계: 결과 생성
     final result = <FilterCondition>[];
 
     for (int i = 0; i < balancedFilters.length; i++) {
       final filter = balancedFilters[i];
       int openCount = filter.openGroupCount ?? 0;
       int closeCount = filter.closeGroupCount ?? 0;
-
-      // 같은 필터에 여는/닫는 괄호가 있는 경우 (빈 괄호)
-      if (openCount > 0 && closeCount > 0) {
-        // 괄호 안에 다른 필터가 있는지 확인
-        // 단, 연속된 여는/닫는 괄호는 빈 괄호로 간주하여 제거
-        if (openCount == closeCount) {
-          // 모든 괄호 쌍 제거 (빈 괄호)
-          debugPrint("[_balanceParentheses] 필터 $i의 빈 괄호 쌍 $openCount개 제거");
-          openCount = 0;
-          closeCount = 0;
-        }
-      }
 
       result.add(filter.copyWith(
         openGroupCount: openCount > 0 ? openCount : 0,

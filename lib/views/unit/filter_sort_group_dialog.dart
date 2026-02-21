@@ -197,14 +197,14 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid),
+          color: Theme.of(context).colorScheme.surfaceVariant.withValues(alpha: 0.3),
+          border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2), style: BorderStyle.solid),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Center(
           child: Text(
             intl.getStringWithParams((l, addFilter) => l.noteAddFilter(addFilter), intl.getString((l) => l.addFilter)),
-            style: TextStyle(color: Colors.grey.shade600),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
       );
@@ -213,8 +213,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border.all(color: Colors.grey.shade300),
+        color: Theme.of(context).colorScheme.surfaceVariant.withValues(alpha: 0.2),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: ReorderableListView(
@@ -289,8 +289,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       onDoubleTap: () => _onBlockDoubleTap(index),
       child: Container(
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blue.shade100 : Colors.transparent,
-          border: isSelected ? Border.all(color: Colors.blue, width: 2) : null,
+          color: isSelected ? Theme.of(context).colorScheme.secondaryContainer : Colors.transparent,
+          border: isSelected ? Border.all(color: Theme.of(context).colorScheme.secondary, width: 2) : null,
           borderRadius: BorderRadius.circular(4),
         ),
         child: child,
@@ -337,6 +337,11 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       return Container();
     }
     final isAnd = operator == 'AND';
+    final colorScheme = Theme.of(context).colorScheme;
+    final bgColor = isAnd ? colorScheme.primaryContainer : colorScheme.tertiaryContainer;
+    final borderColor = isAnd ? colorScheme.primary : colorScheme.tertiary;
+    final textColor = isAnd ? colorScheme.onPrimaryContainer : colorScheme.onTertiaryContainer;
+
     return IntrinsicWidth(
       child: InkWell(
         onTap: () => notifier.toggleFilterOperatorAtBlock(blockIndex),
@@ -345,9 +350,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           constraints: const BoxConstraints(minWidth: 80),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: isAnd ? Colors.blue.shade50 : Colors.orange.shade50,
+            color: bgColor,
             border: Border.all(
-              color: isAnd ? Colors.blue.shade300 : Colors.orange.shade300,
+              color: borderColor.withValues(alpha: 0.5),
               width: 2,
             ),
             borderRadius: BorderRadius.circular(20),
@@ -356,18 +361,18 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.drag_indicator, size: 16, color: Colors.grey),
+              Icon(Icons.drag_indicator, size: 16, color: textColor.withValues(alpha: 0.6)),
               const SizedBox(width: 8),
               Text(
                 operator,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
-                  color: isAnd ? Colors.blue.shade700 : Colors.orange.shade700,
+                  color: textColor,
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(Icons.swap_horiz, size: 16, color: isAnd ? Colors.blue.shade700 : Colors.orange.shade700),
+              Icon(Icons.swap_horiz, size: 16, color: textColor),
             ],
           ),
         ),
@@ -376,19 +381,20 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
   }
 
   Widget _buildParenthesisBlockContent(String paren, int blockIndex, DataEditingNotifier notifier) {
+    final colorScheme = Theme.of(context).colorScheme;
     return IntrinsicWidth(
       child: Container(
         constraints: const BoxConstraints(minWidth: 60),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.purple.shade50,
-          border: Border.all(color: Colors.purple.shade300, width: 2),
+          color: colorScheme.secondaryContainer,
+          border: Border.all(color: colorScheme.secondary.withValues(alpha: 0.5), width: 2),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.drag_indicator, size: 16, color: Colors.grey),
+            Icon(Icons.drag_indicator, size: 16, color: colorScheme.onSecondaryContainer.withValues(alpha: 0.6)),
             const SizedBox(width: 8),
             Flexible(
               child: Text(
@@ -396,14 +402,14 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: Colors.purple.shade700,
+                  color: colorScheme.onSecondaryContainer,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 8),
             IconButton(
-              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+              icon: Icon(Icons.close, size: 16, color: colorScheme.error),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               onPressed: () => _removeParenthesisPair(blockIndex),
@@ -488,23 +494,25 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     // 새로운 필터 리스트 생성하여 괄호 카운트 감소
     final newFilters = <FilterCondition>[];
     for (int i = 0; i < state.filters.length; i++) {
-      final filter = state.filters[i];
+      var filter = state.filters[i];
 
       if (i == openParenFilterIndex) {
         // 여는 괄호 개수 감소
         final newOpenCount = (filter.openGroupCount ?? 0) - 1;
-        newFilters.add(filter.copyWith(
+        filter = filter.copyWith(
           openGroupCount: newOpenCount > 0 ? newOpenCount : 0,
-        ));
-      } else if (i == closeParenFilterIndex) {
+        );
+      }
+      
+      if (i == closeParenFilterIndex) {
         // 닫는 괄호 개수 감소
         final newCloseCount = (filter.closeGroupCount ?? 0) - 1;
-        newFilters.add(filter.copyWith(
+        filter = filter.copyWith(
           closeGroupCount: newCloseCount > 0 ? newCloseCount : 0,
-        ));
-      } else {
-        newFilters.add(filter);
+        );
       }
+      
+      newFilters.add(filter);
     }
 
     ref.read(dataEditingProvider(widget.dataEditingParams).notifier)
@@ -526,15 +534,18 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
 
     final hasParenthesis = state.filterParenthesis?[filterIndex] ?? false;
 
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return IntrinsicWidth(
       child: Container(
         constraints: const BoxConstraints(minWidth: 400, maxWidth: 600),
         decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.blue.shade300, width: 2),
+          color: colorScheme.surface,
+          border: Border.all(color: colorScheme.primary.withValues(alpha: 0.5), width: 2),
           borderRadius: BorderRadius.circular(8),
           boxShadow: [
-            BoxShadow(color: Colors.blue.shade100, blurRadius: 4, offset: const Offset(0, 2))
+            BoxShadow(color: theme.shadowColor.withValues(alpha: 0.1), blurRadius: 4, offset: const Offset(0, 2))
           ],
         ),
         child: Column(
@@ -543,16 +554,16 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
+                color: colorScheme.primaryContainer.withValues(alpha: 0.3),
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.drag_indicator, size: 20, color: Colors.grey),
+                  Icon(Icons.drag_indicator, size: 20, color: colorScheme.onPrimaryContainer.withValues(alpha: 0.5)),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+                    icon: Icon(Icons.close, size: 18, color: colorScheme.error),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     onPressed: () {
@@ -573,9 +584,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                     // not 토글
                     child: Container(
                       decoration: BoxDecoration(
-                        color: filter.isNegated ? Colors.red.shade50 : Colors.transparent,
+                        color: filter.isNegated ? colorScheme.errorContainer : Colors.transparent,
                         border: Border.all(
-                          color: filter.isNegated ? Colors.red.shade300 : Colors.grey.shade300,
+                          color: filter.isNegated ? colorScheme.error : theme.dividerColor.withValues(alpha: 0.3),
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -593,13 +604,13 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                               Icon(
                                 filter.isNegated ? Icons.block : Icons.check_circle_outline,
                                 size: 20,
-                                color: filter.isNegated ? Colors.red.shade700 : Colors.grey.shade400,
+                                color: filter.isNegated ? colorScheme.onErrorContainer : colorScheme.onSurface.withValues(alpha: 0.4),
                               ),
                               const SizedBox(width: 8),
                               Text(
                                 'NOT',
                                 style: TextStyle(
-                                  color: filter.isNegated ? Colors.red.shade700 : Colors.grey.shade400,
+                                  color: filter.isNegated ? colorScheme.onErrorContainer : colorScheme.onSurface.withValues(alpha: 0.4),
                                   fontWeight: filter.isNegated ? FontWeight.bold : FontWeight.w300,
                                   fontSize: 16,
                                 ),
@@ -740,11 +751,11 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.grey.shade300),
+              color: Theme.of(context).colorScheme.surface,
+              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
               borderRadius: BorderRadius.circular(8),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
+                BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
               ],
             ),
             child: _buildSortItemContent(sort, index, state, notifier),
@@ -757,8 +768,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: Colors.grey.shade300),
+            color: Theme.of(context).colorScheme.surface,
+            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
             borderRadius: BorderRadius.circular(8),
           ),
           child: _buildSortItemContent(sort, index, state, notifier),
@@ -781,15 +792,15 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             margin: const EdgeInsets.only(bottom: 8),
             decoration: BoxDecoration(
               border: isTarget
-                  ? Border.all(color: Colors.blue, width: 2)
+                  ? Border.all(color: Theme.of(context).colorScheme.primary, width: 2)
                   : null,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: Colors.grey.shade300),
+                color: Theme.of(context).colorScheme.surface,
+                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: _buildSortItemContent(sort, index, state, notifier),
@@ -890,11 +901,11 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.grey.shade300),
+              color: Theme.of(context).colorScheme.surface,
+              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
               borderRadius: BorderRadius.circular(8),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
+                BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
               ],
             ),
             child: _buildGroupItemContent(columnName, notifier),
@@ -907,8 +918,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: Colors.grey.shade300),
+            color: Theme.of(context).colorScheme.surface,
+            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
             borderRadius: BorderRadius.circular(8),
           ),
           child: _buildGroupItemContent(columnName, notifier),
@@ -931,15 +942,15 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             margin: const EdgeInsets.only(bottom: 8),
             decoration: BoxDecoration(
               border: isTarget
-                  ? Border.all(color: Colors.blue, width: 2)
+                  ? Border.all(color: Theme.of(context).colorScheme.primary, width: 2)
                   : null,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: Colors.grey.shade300),
+                color: Theme.of(context).colorScheme.surface,
+                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: _buildGroupItemContent(columnName, notifier),
@@ -954,9 +965,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+        Icon(Icons.drag_handle, size: 16, color: Theme.of(context).hintColor),
         const SizedBox(width: 8),
-        const Icon(Icons.group, size: 20, color: Colors.blue),
+        Icon(Icons.group, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
         Text(columnName, style: const TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(width: 8),
@@ -969,11 +980,14 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
   }
 
   Widget _buildCurrentStateDisplay(DataEditingState state) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        border: Border.all(color: Colors.blue.shade200),
+        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -985,7 +999,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           ),
           const SizedBox(height: 8),
           if (state.filters.isEmpty && state.sorts.isEmpty && state.groupByColumns.isEmpty)
-            Text(intl.getString((l) => l.noConditionApplied), style: const TextStyle(color: Colors.grey))
+            Text(intl.getString((l) => l.noConditionApplied), style: TextStyle(color: theme.hintColor))
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,

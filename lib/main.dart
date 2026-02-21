@@ -12,6 +12,7 @@ import 'package:db_handler/views/data_editing.dart';
 
 import 'l10n/LocalizationManager.dart';
 import 'gen/app_localizations.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   // SettingsBloc 싱글턴 초기화 (앱 시작 시 미리 생성)
@@ -98,16 +99,8 @@ class MyApp extends StatelessWidget {
                   title: intl.getString((l) => l.appTitle),
 
                   // ===== 테마 설정 =====
-                  theme: ThemeData(
-                    primarySwatch: Colors.blue,
-                    useMaterial3: true,
-                    brightness: Brightness.light,
-                  ),
-                  darkTheme: ThemeData(
-                    primarySwatch: Colors.blue,
-                    useMaterial3: true,
-                    brightness: Brightness.dark,
-                  ),
+                  theme: AppTheme.lightTheme,
+                  darkTheme: AppTheme.darkTheme,
                   themeMode: themeMode,  // BLoC에서 관리하는 themeMode 사용
 
                   initialRoute: '/',

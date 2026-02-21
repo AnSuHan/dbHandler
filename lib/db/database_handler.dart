@@ -42,4 +42,10 @@ abstract class DatabaseHandler {
 
   // 트랜잭션 메서드
   Future<void> runInTransaction(Future<void> Function() operation);
+
+  // 캐시 관리 메서드
+  void clearCache();
+
+  // 특정 데이터베이스의 테이블 개수 조회
+  Future<int> getTableCount(String databaseName);
 }

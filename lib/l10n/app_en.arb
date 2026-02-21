@@ -205,6 +205,7 @@
   "deleteTableConfirm": "Are you sure you want to delete {tableName} table? This action is irreversible.",
   "createNewTable": "Create New Table",
   "tableName": "Table Name",
+  "table": "Table",
   "modifyTableName": "Modify Table Name",
   "newTableName": "New Table Name",
   "database": "Database",

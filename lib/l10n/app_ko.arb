@@ -92,6 +92,7 @@
   "deleteTableConfirm": "{tableName} 테이블을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
   "createNewTable": "새 테이블 생성",
   "tableName": "테이블 이름",
+  "table": "테이블",
   "modifyTableName": "테이블 이름 수정",
   "newTableName": "새 테이블 이름",
   "database": "데이터베이스",

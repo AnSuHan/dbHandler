@@ -19,108 +19,112 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 헤더
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-              ),
-              child: Row(
+      clipBehavior: Clip.antiAlias,
+      child: ScaffoldMessenger(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.settings, color: Colors.white, size: 28),
-                  const SizedBox(width: 12),
-                  Text(
-                    intl.getString((l) => l.settings),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  // 헤더
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.settings, color: Colors.white, size: 28),
+                        const SizedBox(width: 12),
+                        Text(
+                          intl.getString((l) => l.settings),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
+                  // 내용
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 언어 설정
+                          _SectionTitle(title: intl.getString((l) => l.language)),
+                          const SizedBox(height: 8),
+                          StreamBuilder<Locale>(
+                            stream: settingsBloc.localeStream,
+                            initialData: settingsBloc.currentLocale,
+                            builder: (context, snapshot) {
+                              final currentLocale = snapshot.data ?? const Locale('en');
+                              return _LanguageSelector(
+                                currentLocale: currentLocale,
+                                onChanged: (locale) async {
+                                  await settingsBloc.setLocale(locale);
+                                },
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 24),
+
+                          // 테마 설정
+                          _SectionTitle(title: intl.getString((l) => l.theme)),
+                          const SizedBox(height: 8),
+                          StreamBuilder<ThemeMode>(
+                            stream: settingsBloc.themeModeStream,
+                            initialData: settingsBloc.currentThemeMode,
+                            builder: (context, snapshot) {
+                              final currentThemeMode = snapshot.data ?? ThemeMode.system;
+                              return _ThemeSelector(
+                                currentThemeMode: currentThemeMode,
+                                onChanged: (themeMode) async {
+                                  await settingsBloc.setThemeMode(themeMode);
+                                },
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 24),
+
+                          // 즐겨찾기 관리
+                          _SectionTitle(title: intl.getString((l) => l.favorites)),
+                          const SizedBox(height: 8),
+                          _FavoritesSection(settingsBloc: settingsBloc),
+                          const SizedBox(height: 24),
+
+                          // 백업 및 복구
+                          _SectionTitle(title: intl.getString((l) => l.backupAndRestore)),
+                          const SizedBox(height: 8),
+                          _BackupRestoreSection(settingsBloc: settingsBloc),
+                          const SizedBox(height: 24),
+
+                          // 위험 영역
+                          _SectionTitle(
+                            title: intl.getString((l) => l.dangerZone),
+                            color: Colors.red,
+                          ),
+                          const SizedBox(height: 8),
+                          _DangerZoneSection(settingsBloc: settingsBloc),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-            // 내용
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 언어 설정
-                    _SectionTitle(title: intl.getString((l) => l.language)),
-                    const SizedBox(height: 8),
-                    StreamBuilder<Locale>(
-                      stream: settingsBloc.localeStream,
-                      initialData: settingsBloc.currentLocale,
-                      builder: (context, snapshot) {
-                        final currentLocale = snapshot.data ?? const Locale('en');
-                        return _LanguageSelector(
-                          currentLocale: currentLocale,
-                          onChanged: (locale) async {
-                            await settingsBloc.setLocale(locale);
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 테마 설정
-                    _SectionTitle(title: intl.getString((l) => l.theme)),
-                    const SizedBox(height: 8),
-                    StreamBuilder<ThemeMode>(
-                      stream: settingsBloc.themeModeStream,
-                      initialData: settingsBloc.currentThemeMode,
-                      builder: (context, snapshot) {
-                        final currentThemeMode = snapshot.data ?? ThemeMode.system;
-                        return _ThemeSelector(
-                          currentThemeMode: currentThemeMode,
-                          onChanged: (themeMode) async {
-                            await settingsBloc.setThemeMode(themeMode);
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 즐겨찾기 관리
-                    _SectionTitle(title: intl.getString((l) => l.favorites)),
-                    const SizedBox(height: 8),
-                    _FavoritesSection(settingsBloc: settingsBloc),
-                    const SizedBox(height: 24),
-
-                    // 백업 및 복구
-                    _SectionTitle(title: intl.getString((l) => l.backupAndRestore)),
-                    const SizedBox(height: 8),
-                    _BackupRestoreSection(settingsBloc: settingsBloc),
-                    const SizedBox(height: 24),
-
-                    // 위험 영역
-                    _SectionTitle(
-                      title: intl.getString((l) => l.dangerZone),
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 8),
-                    _DangerZoneSection(settingsBloc: settingsBloc),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -293,31 +297,27 @@ class _BackupRestoreSection extends StatelessWidget {
     // 메시지 표시를 위한 ScaffoldMessenger 참조
     final messenger = ScaffoldMessenger.of(context);
 
+    // 공통 스낵바 표시 함수
+    void _showSnackBar(String message, {Color? color}) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
     // BLoC의 비동기 호출을 처리하고 사용자에게 결과를 알려주는 래퍼 함수
     // import 로직을 위한 헬퍼 함수 (이전 답변과 동일)
     Future<void> _handleImportAction() async {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(intl.getString((l) => l.processing)),
-          duration: const Duration(seconds: 1),
-        ),
+      await settingsBloc.importSettingsFromFile(
+        _showSnackBar,
+        processingMsg: intl.getString((l) => l.processing),
+        successMsg: intl.getString((l) => l.settingsImportedSuccess),
+        failMsg: intl.getString((l) => l.settingsImportedFail),
       );
-      try {
-        await settingsBloc.importSettingsFromFile();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(intl.getString((l) => l.settingsImportedSuccess)),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (e) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(intl.getString((l) => l.settingsImportedFail)),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
 
     return Card(
@@ -329,28 +329,20 @@ class _BackupRestoreSection extends StatelessWidget {
             title: Text(intl.getString((l) => l.exportSettings)),
             subtitle: Text(intl.getString((l) => l.exportSettingsDescription)),
             onTap: () async {
-              messenger.showSnackBar(
-                SnackBar(
-                  content: Text(intl.getString((l) => l.processing)),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
+              _showSnackBar(intl.getString((l) => l.processing));
               try {
                 // BLoC에서 파일 경로를 받아옵니다.
-                final filePath = await settingsBloc.exportSettingsToFile();
+                final filePath = await settingsBloc.exportSettingsToFile(_showSnackBar);
                 messenger.hideCurrentSnackBar(); // "처리 중" 스낵바 숨김
 
-                if (context.mounted) {
+                if (context.mounted && filePath != null) {
                   // 성공 다이얼로그에 파일 경로를 전달
                   _showExportSuccessDialog(context, filePath);
+                } else if (filePath == null) {
+                  _showSnackBar(intl.getString((l) => l.settingsExportedFail), color: Colors.red);
                 }
               } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(intl.getString((l) => l.settingsExportedFail)),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+                _showSnackBar(intl.getString((l) => l.settingsExportedFail), color: Colors.red);
               }
             },
           ),
@@ -371,66 +363,75 @@ class _BackupRestoreSection extends StatelessWidget {
   void _showExportSuccessDialog(BuildContext context, String filePath) {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(intl.getString((l) => l.exportSuccessTitle)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(intl.getString((l) => l.settingsExportedSuccess)),
-            const SizedBox(height: 10),
+      builder: (dialogContext) => ScaffoldMessenger(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Center(
+            child: AlertDialog(
+              title: Text(intl.getString((l) => l.exportSuccessTitle)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(intl.getString((l) => l.settingsExportedSuccess)),
+                  const SizedBox(height: 10),
 
-            // 저장된 파일 경로 헤더 및 복사 버튼
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  intl.getString((l) => l.exportedFilePath),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                // --- 복사 버튼 추가 ---
-                IconButton(
-                  icon: const Icon(Icons.copy, size: 20),
-                  tooltip: intl.getString((l) => l.copyPath), // '경로 복사' 툴팁 필요
-                  onPressed: () {
-                    // 클립보드에 경로 복사
-                    Clipboard.setData(ClipboardData(text: filePath));
-
-                    // 복사 성공 스낵바 표시 (다이얼로그 위에 표시)
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(intl.getString((l) => l.copySuccess)), // '복사 완료' 메시지 필요
-                        duration: const Duration(seconds: 2),
+                  // 저장된 파일 경로 헤더 및 복사 버튼
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        intl.getString((l) => l.exportedFilePath),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    );
-                  },
+                      // --- 복사 버튼 추가 ---
+                      Builder(
+                        builder: (builderContext) => IconButton(
+                          icon: const Icon(Icons.copy, size: 20),
+                          tooltip: intl.getString((l) => l.copyPath), // '경로 복사' 툴팁 필요
+                          onPressed: () {
+                            // 클립보드에 경로 복사
+                            Clipboard.setData(ClipboardData(text: filePath));
+
+                            // 복사 성공 스낵바 표시 (다이얼로그 위에 표시)
+                            ScaffoldMessenger.of(builderContext).showSnackBar(
+                              SnackBar(
+                                content: Text(intl.getString((l) => l.copySuccess)), // '복사 완료' 메시지 필요
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      // ---------------------
+                    ],
+                  ),
+
+                  const SizedBox(height: 5),
+                  // 경로를 표시하는 부분
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    width: double.infinity, // 가로 전체 너비 사용
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: SelectableText( // 사용자가 경로를 복사할 수 있도록 SelectableText 사용
+                      filePath,
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(intl.getString((l) => l.ok)),
                 ),
-                // ---------------------
               ],
             ),
-
-            const SizedBox(height: 5),
-            // 경로를 표시하는 부분
-            Container(
-              padding: const EdgeInsets.all(8),
-              width: double.infinity, // 가로 전체 너비 사용
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: SelectableText( // 사용자가 경로를 복사할 수 있도록 SelectableText 사용
-                filePath,
-                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(intl.getString((l) => l.ok)),
           ),
-        ],
+        ),
       ),
     );
   }

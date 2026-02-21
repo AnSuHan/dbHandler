@@ -77,19 +77,19 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('${intl.getString((l) => l.database)} - ${widget.database}'),
-        backgroundColor: const Color(0xFF10B981),
-        foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: () {
+              controller.refreshTables();
+            },
+          ),
+        ],
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF10B981), Color(0xFFF8F9FA)],
-            stops: [0.0, 0.1],
-          ),
-        ),
+        color: Theme.of(context).colorScheme.background,
         child: Column(
           children: [
             Padding(
@@ -100,7 +100,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
                     children: [
-                      const Icon(Icons.storage, color: Color(0xFF10B981), size: 24),
+                      Icon(Icons.storage, color: Theme.of(context).colorScheme.primary, size: 24),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -127,10 +127,6 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                         onPressed: () => showCreateTableDialog(context, controller),
                         icon: const Icon(Icons.add),
                         label: Text(intl.getString((l) => l.newTable)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
-                          foregroundColor: Colors.white,
-                        ),
                       ),
                     ],
                   ),
@@ -183,12 +179,12 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                color: const Color(0x1A10B981),
+                                color: Theme.of(context).colorScheme.primaryContainer,
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.table_chart,
-                                color: Color(0xFF10B981),
+                                color: Theme.of(context).colorScheme.onPrimaryContainer,
                               ),
                             ),
                             title: Text(

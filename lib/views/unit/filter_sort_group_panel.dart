@@ -36,12 +36,13 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(dataEditingProvider(widget.dataEditingParams));
+    final theme = Theme.of(context);
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.5),
         border: Border(
-          bottom: BorderSide(color: Colors.grey.shade300),
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.2)),
         ),
       ),
       child: InkWell(
@@ -62,12 +63,12 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
+                    color: theme.colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${state.filters.length} ${intl.getString((l) => l.filters)}, ${state.sorts.length} ${intl.getString((l) => l.sorts)}, ${state.groupByColumns.length} ${intl.getString((l) => l.group)}',
-                    style: const TextStyle(fontSize: 12, color: Colors.blue),
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onPrimaryContainer),
                   ),
                 ),
             ],

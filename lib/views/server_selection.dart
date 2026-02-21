@@ -312,18 +312,13 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     final store = Provider.of<ServerStore>(context, listen: false);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       appBar: buildAppBarWithSettings(context, intl.getString((l) => l.serverList)),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF6366F1), Color(0xFFF8F9FA)],
-            stops: [0.0, 0.1],
-          ),
-        ),
+        color: colorScheme.background,
         child: Observer(
           builder: (_) {
             if (store.isLoading) {
@@ -524,8 +519,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                       icon: const Icon(Icons.add),
                                       label: Text(intl.getString((l) => l.addServer)),
                                       style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF6366F1),
-                                          foregroundColor: Colors.white,
                                           padding: const EdgeInsets.all(16)),
                                     ),
                                   ),
@@ -558,8 +551,6 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   AppBar buildAppBarWithSettings(BuildContext context, String title) {
     return AppBar(
       title: Text(title),
-      backgroundColor: const Color(0xFF6366F1),
-      foregroundColor: Colors.white,
       elevation: 0,
       actions: [
         IconButton(
@@ -592,6 +583,7 @@ class _ServerListWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = Provider.of<ServerStore>(context, listen: false);
+    final theme = Theme.of(context);
 
     return Observer(
       builder: (_) {
@@ -640,10 +632,10 @@ class _ServerListWidget extends StatelessWidget {
                 child: ListTile(
                   leading: CircleAvatar(
                     backgroundColor: isTestServer
-                        ? Colors.grey
+                        ? theme.hintColor
                         : (server.isConnected
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFFEF4444)),
+                        ? theme.colorScheme.secondary
+                        : theme.colorScheme.error),
                     child: const Icon(Icons.dns, color: Colors.white),
                   ),
                   title: Text(server.name,
@@ -655,10 +647,9 @@ class _ServerListWidget extends StatelessWidget {
                     children: [
                       Chip(
                           label: Text(server.type),
-                          backgroundColor:
-                          const Color(0xFFEDE9FE),
-                          labelStyle: const TextStyle(
-                              color: Color(0xFF6366F1))),
+                          backgroundColor: theme.colorScheme.primaryContainer,
+                          labelStyle: TextStyle(
+                              color: theme.colorScheme.onPrimaryContainer)),
                       const SizedBox(width: 8),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert),
