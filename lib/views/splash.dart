@@ -42,10 +42,19 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   void _startAnimation() async {
-    // 데이터베이스 FFI 초기화 (Windows, macOS, Linux용)
-    await AppDatabase.initializeFfi();
-    await AppDatabase().database;
-    
+    try {
+      // 통합된 초기화 메서드 호출
+      await AppDatabase().initialize();
+    } catch (e, s) {
+      // 웹에서는 개발자 콘솔에 오류가 출력됩니다.
+      debugPrint('!!!!!!!!!! DATABASE INITIALIZATION FAILED !!!!!!!!!!');
+      debugPrint('ERROR: $e');
+      debugPrint('STACK TRACE: $s');
+      // 여기에 사용자에게 오류를 알리는 UI 로직을 추가할 수 있습니다.
+      // 예를 들어, 에러 메시지를 보여주는 다이얼로그를 띄우거나
+      // 에러 화면으로 이동할 수 있습니다.
+    }
+
     await _animationController.forward();
     
     // 2초 후 서버 선택 화면으로 이동

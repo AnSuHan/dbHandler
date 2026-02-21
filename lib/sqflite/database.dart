@@ -21,7 +21,7 @@ class AppDatabase {
 
   // 초기화 (한 번만 실행)
   static Future<void> initializeFfi() async {
-    if (!_initialized && PlatformCheck.supportsSqflite) {
+    if (!_initialized && (PlatformCheck.isDesktop || PlatformCheck.isWeb)) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
       _initialized = true;
@@ -29,10 +29,7 @@ class AppDatabase {
   }
 
   // 데이터베이스 인스턴스 가져오기
-  Future<Database?> get database async {
-    // 웹 플랫폼에서는 null 반환
-    if (PlatformCheck.isWeb) return null;
-    
+  Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
     return _database!;
@@ -40,8 +37,13 @@ class AppDatabase {
 
   // 데이터베이스 초기화
   Future<Database> _initDatabase() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, 'db_handler.db');
+    String path;
+    if (PlatformCheck.isWeb) {
+      path = 'db_handler.db';
+    } else {
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      path = join(documentsDirectory.path, 'db_handler.db');
+    }
 
     return await openDatabase(
       path,
@@ -95,14 +97,19 @@ class AppDatabase {
   // 데이터베이스 닫기
   Future<void> closeDatabase() async {
     final db = await database;
-    await db?.close();
+    await db.close();
     _database = null;
   }
 
   // 데이터베이스 삭제 (디버깅용)
   Future<void> deleteDatabase() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, 'db_handler.db');
+    String path;
+    if (PlatformCheck.isWeb) {
+      path = 'db_handler.db';
+    } else {
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      path = join(documentsDirectory.path, 'db_handler.db');
+    }
     await databaseFactory.deleteDatabase(path);
     _database = null;
   }
@@ -120,10 +127,8 @@ class AppDatabase {
       // 1. 플랫폼이 sqflite_ffi를 지원하는 경우에만 FFI 초기화
       await initializeFfi();
 
-      // 2. 웹이 아닌 경우에만 데이터베이스 미리 열어두기 (선택적 프리로딩)
-      if (!PlatformCheck.isWeb) {
-        await _instance.database; // database getter 호출 → _initDatabase 실행
-      }
+      // 2. 데이터베이스 미리 열어두기 (선택적 프리로딩)
+      await _instance.database; // database getter 호출 → _initDatabase 실행
 
       // 초기화 완료 알림
       if (!_initCompleter.isCompleted) {

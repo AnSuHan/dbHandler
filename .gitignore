@@ -126,3 +126,6 @@ lib/gen/*
 
 .devtools/
 devtools_options.yaml
+
+# custom
+prompt.md

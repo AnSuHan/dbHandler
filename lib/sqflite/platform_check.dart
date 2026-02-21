@@ -19,7 +19,7 @@ class PlatformCheck {
   }
 
   static bool get isDesktop {
-    if (kIsWeb) return true;
+    if (kIsWeb) return false;
     return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
   }
 }
