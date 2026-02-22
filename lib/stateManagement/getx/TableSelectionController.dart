@@ -36,39 +36,6 @@ class TableSelectionController extends GetxController {
     loadTables();
   }
 
-  Future<Connection> getConnection() async {
-    // 내부적으로 사용하거나, _dbHandler 내부 기능을 활용할 수 있습니다.
-    final host = server.address.split(':')[0];
-    final port = int.parse(server.address.split(':')[1]);
-    final url = 'postgres://postgres:0000@$host:$port/$database?sslmode=disable';
-    return await Connection.openFromUrl(url);
-  }
-
-  Future<void> loadRowCount(int index) async {
-    Connection? conn;
-    try {
-      conn = await getConnection();
-      final tableName = tables[index]['name'];
-      final result = await conn.execute('SELECT COUNT(*) AS row_count FROM "$tableName";');
-      final map = result.first.toColumnMap();
-      tables[index]['rows'] = (map['row_count'] is BigInt)
-          ? (map['row_count'] as BigInt).toInt()
-          : (map['row_count'] as int);
-    } catch (_) {
-      tables[index]['rows'] = 'ERR';
-    } finally {
-      await conn?.close();
-    }
-  }
-
-  Future<void> loadAllRowCounts() async {
-    final futures = <Future>[];
-    for (int i = 0; i < tables.length; i++) {
-      futures.add(loadRowCount(i));
-    }
-    await Future.wait(futures);
-  }
-
   Future<void> loadTables() async {
     isLoading.value = true;
     try {
@@ -78,12 +45,11 @@ class TableSelectionController extends GetxController {
         return {
           'name': table['name'] as String,
           'columns': table['column_count'] as int,
-          'rows': '조회 중...',
+          'rows': table['row_count'], // 이미 핸들러에서 가져온 값을 즉시 사용
         };
       }).toList();
 
       isLoading.value = false;
-      await loadAllRowCounts();
     } catch (e) {
       isLoading.value = false;
       debugPrint("[loadTables] error: $e");

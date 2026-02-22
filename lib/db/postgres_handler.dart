@@ -160,11 +160,13 @@ class PostgresHandler extends DatabaseHandler {
 
     final tables = await _withConnection(databaseName, (conn) async {
       // information_schema.tables 대신 pg_catalog를 직접 조회하여 성능 향상
+      // reltuples를 사용하여 행 개수 근사값을 매우 빠르게 가져옴
       // 컬럼 수도 서브쿼리로 빠르게 가져옴
       final result = await conn.execute('''
       SELECT 
           n.nspname as table_schema, 
           c.relname as table_name,
+          c.reltuples as row_count,
           (SELECT count(*) FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) as column_count
       FROM pg_catalog.pg_class c
       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -179,6 +181,9 @@ class PostgresHandler extends DatabaseHandler {
         return {
           'table_schema': map['table_schema'],
           'name': map['table_name'],
+          'row_count': (map['row_count'] is double) 
+              ? (map['row_count'] as double).toInt() 
+              : map['row_count'],
           'column_count': (map['column_count'] is BigInt) 
               ? (map['column_count'] as BigInt).toInt() 
               : map['column_count'],
