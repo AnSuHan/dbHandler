@@ -256,6 +256,7 @@
   "addFilter": "Add Filter",
   "addParenthesis": "Add ( )",
   "clearAll": "Clear All",
+  "deleteSelected": "Delete Selected",
   "noteAddFilter": "Click \"{addFilter}\" button for Adding Filter",
   "operator": "Op",
   "value": "Value",

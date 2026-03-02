@@ -143,6 +143,7 @@
   "addFilter": "필터 추가",
   "addParenthesis": "추가 ( )",
   "clearAll": "전체 삭제",
+  "deleteSelected": "선택 삭제",
   "noteAddFilter": "조건을 추가하려면 \"{addFilter}\" 버튼을 클릭하세요",
   "operator": "연산자",
   "value": "값",

@@ -162,10 +162,22 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
             TextButton.icon(
               icon: const Icon(Icons.group, size: 18),
               label: Text(intl.getString((l) => l.addParenthesis)),
-              onPressed: selectedBlockIndices.isEmpty
+              onPressed: selectedBlockIndices.length < 2
                   ? null
                   : () => _wrapSelectedBlocksWithParenthesis(),
             ),
+            if (selectedBlockIndices.isNotEmpty)
+              TextButton.icon(
+                icon: const Icon(Icons.delete_sweep, size: 18),
+                label: Text(intl.getString((l) => l.deleteSelected)),
+                style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+                onPressed: () {
+                  notifier.removeMultipleBlocks(selectedBlockIndices.toList());
+                  setState(() {
+                    selectedBlockIndices.clear();
+                  });
+                },
+              ),
             if (state.filters.isNotEmpty)
               TextButton.icon(
                 icon: const Icon(Icons.clear, size: 18),
@@ -221,7 +233,8 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         onReorder: (oldIndex, newIndex) {
-          notifier.reorderFilterBlock(oldIndex, newIndex);
+          notifier.reorderFilterBlock(oldIndex, newIndex, widget.filterControllers);
+          setState(() {}); // 컨트롤러 재매핑 반영을 위해 리빌드
         },
         children: blocks.asMap().entries.map((entry) {
           final index = entry.key;
@@ -465,58 +478,9 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
 
     if (matchingBlockIndex == null) return;
 
-    // 괄호가 속한 필터 인덱스 찾기
-    int? openParenFilterIndex;
-    int? closeParenFilterIndex;
-
-    // blockIndex와 matchingBlockIndex 중 작은 것이 여는 괄호
-    final openBlockIndex = isOpenParen ? blockIndex : matchingBlockIndex;
-    final closeBlockIndex = isOpenParen ? matchingBlockIndex : blockIndex;
-
-    // 여는 괄호가 속한 필터 찾기 (바로 다음 filter 블록)
-    for (int i = openBlockIndex; i < blocks.length; i++) {
-      if (blocks[i]['type'] == 'filter') {
-        openParenFilterIndex = blocks[i]['index'] as int;
-        break;
-      }
-    }
-
-    // 닫는 괄호가 속한 필터 찾기 (바로 이전 filter 블록)
-    for (int i = closeBlockIndex; i >= 0; i--) {
-      if (blocks[i]['type'] == 'filter') {
-        closeParenFilterIndex = blocks[i]['index'] as int;
-        break;
-      }
-    }
-
-    if (openParenFilterIndex == null || closeParenFilterIndex == null) return;
-
-    // 새로운 필터 리스트 생성하여 괄호 카운트 감소
-    final newFilters = <FilterCondition>[];
-    for (int i = 0; i < state.filters.length; i++) {
-      var filter = state.filters[i];
-
-      if (i == openParenFilterIndex) {
-        // 여는 괄호 개수 감소
-        final newOpenCount = (filter.openGroupCount ?? 0) - 1;
-        filter = filter.copyWith(
-          openGroupCount: newOpenCount > 0 ? newOpenCount : 0,
-        );
-      }
-      
-      if (i == closeParenFilterIndex) {
-        // 닫는 괄호 개수 감소
-        final newCloseCount = (filter.closeGroupCount ?? 0) - 1;
-        filter = filter.copyWith(
-          closeGroupCount: newCloseCount > 0 ? newCloseCount : 0,
-        );
-      }
-      
-      newFilters.add(filter);
-    }
-
+    // 두 괄호 블록을 한 번에 삭제
     ref.read(dataEditingProvider(widget.dataEditingParams).notifier)
-        .updateFilters(newFilters);
+        .removeMultipleBlocks([blockIndex, matchingBlockIndex]);
   }
 
   Widget _buildFilterBlockContent({
@@ -531,6 +495,17 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       widget.filterControllers[filterIndex] = TextEditingController(text: initialValue);
     }
     final controller = widget.filterControllers[filterIndex]!;
+    
+    // 데이터와 컨트롤러 값이 다를 경우 동기화 (재정렬 시 필요)
+    final filterValueStr = filter.value?.toString() ?? '';
+    if (controller.text != filterValueStr) {
+      // 커서 위치 유지를 위해 필요한 경우에만 갱신
+      Future.microtask(() {
+        if (controller.text != filterValueStr) {
+          controller.text = filterValueStr;
+        }
+      });
+    }
 
     final hasParenthesis = state.filterParenthesis?[filterIndex] ?? false;
 

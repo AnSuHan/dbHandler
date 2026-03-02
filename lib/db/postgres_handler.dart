@@ -333,125 +333,66 @@ class PostgresHandler extends DatabaseHandler {
         final whereClauses = <String>[];
         int paramIndex = 0;
 
-        final Map<int?, List<Map<String, dynamic>>> groupedFilters = {};
-        for (final filter in filters) {
-          final groupIndex = filter['groupIndex'] as int?;
-          groupedFilters.putIfAbsent(groupIndex, () => []).add(filter);
-        }
+        for (int i = 0; i < filters.length; i++) {
+          final filter = filters[i];
+          final column = filter['column'] as String;
+          final operator = filter['operator'] as String;
+          final value = filter['value'];
+          final logicalOperator = filter['logicalOperator'] as String?;
 
-        final sortedGroups = groupedFilters.keys.toList()
-          ..sort((a, b) {
-            if (a == null && b == null) return 0;
-            if (a == null) return -1;
-            if (b == null) return 1;
-            return a.compareTo(b);
-          });
+          final isNegated = filter['isNegated'] as bool? ?? false;
+          final openGroupCount = filter['openGroupCount'] as int? ?? 0;
+          final closeGroupCount = filter['closeGroupCount'] as int? ?? 0;
 
-        for (int groupIdx = 0; groupIdx < sortedGroups.length; groupIdx++) {
-          final groupIndex = sortedGroups[groupIdx];
-          final groupFilters = groupedFilters[groupIndex]!;
-          final bool hasGroup = groupIndex != null;
+          // 1. 여는 괄호
+          for (int p = 0; p < openGroupCount; p++) whereClauses.add('(');
 
-          if (hasGroup) {
+          // 2. NOT
+          if (isNegated) {
+            whereClauses.add('NOT');
             whereClauses.add('(');
           }
 
-          for (int i = 0; i < groupFilters.length; i++) {
-            final filter = groupFilters[i];
-            final column = filter['column'] as String;
-            final operator = filter['operator'] as String;
-            final value = filter['value'];
-            final logicalOperator = filter['logicalOperator'] as String?;
-
-            final isNegated = filter['isNegated'] as bool? ?? false;
-            final openGroupCount = filter['openGroupCount'] as int? ?? 0;
-            final closeGroupCount = filter['closeGroupCount'] as int? ?? 0;
-
-            // 여는 괄호 추가
-            for (int p = 0; p < openGroupCount; p++) {
-              whereClauses.add('(');
-            }
-
-            // NOT 접두사 추가
-            if (isNegated) {
-              whereClauses.add('NOT');
-              whereClauses.add('(');
-            }
-
-            String condition;
-            switch (operator.toUpperCase()) {
-              case 'IS NULL':
-                condition = '"$column" IS NULL';
-                break;
-              case 'IS NOT NULL':
-                condition = '"$column" IS NOT NULL';
-                break;
-              case 'IN':
-                if (value is List) {
-                  final paramNames = <String>[];
-                  for (int j = 0; j < value.length; j++) {
-                    final paramName = 'param$paramIndex';
-                    paramNames.add('@$paramName');
-                    substitutionValues[paramName] = value[j];
-                    paramIndex++;
-                  }
-                  condition = '"$column" IN (${paramNames.join(', ')})';
-                } else {
-                  condition = '"$column" = @param$paramIndex';
-                  substitutionValues['param$paramIndex'] = value;
-                  paramIndex++;
-                }
-                break;
-              case 'NOT IN':
-                if (value is List) {
-                  final paramNames = <String>[];
-                  for (int j = 0; j < value.length; j++) {
-                    final paramName = 'param$paramIndex';
-                    paramNames.add('@$paramName');
-                    substitutionValues[paramName] = value[j];
-                    paramIndex++;
-                  }
-                  condition = '"$column" NOT IN (${paramNames.join(', ')})';
-                } else {
-                  condition = '"$column" != @param$paramIndex';
-                  substitutionValues['param$paramIndex'] = value;
-                  paramIndex++;
-                }
-                break;
-              case 'LIKE':
-                condition = '"$column" LIKE @param$paramIndex';
-                substitutionValues['param$paramIndex'] = value;
+          // 3. 조건 본체
+          String condition;
+          final opUpper = operator.toUpperCase();
+          if (opUpper == 'IS NULL' || opUpper == 'IS NOT NULL') {
+            condition = '"$column" $opUpper';
+          } else if (opUpper == 'IN' || opUpper == 'NOT IN') {
+            if (value is List && value.isNotEmpty) {
+              final pNames = [];
+              for (var v in value) {
+                final pName = 'param$paramIndex';
+                pNames.add('@$pName');
+                substitutionValues[pName] = v;
                 paramIndex++;
-                break;
-              default:
-                condition = '"$column" $operator @param$paramIndex';
-                substitutionValues['param$paramIndex'] = value;
-                paramIndex++;
+              }
+              condition = '"$column" $opUpper (${pNames.join(', ')})';
+            } else {
+              condition = '"$column" ${opUpper == 'IN' ? '=' : '!='} @param$paramIndex';
+              substitutionValues['param$paramIndex'] = value;
+              paramIndex++;
             }
-
-            whereClauses.add(condition);
-
-            if (isNegated) {
-              whereClauses.add(')');
-            }
-
-            for (int p = 0; p < closeGroupCount; p++) {
-              whereClauses.add(')');
-            }
-
-            if (i < groupFilters.length - 1 && logicalOperator != null) {
-              whereClauses.add(logicalOperator.toUpperCase());
-            }
+          } else if (opUpper == 'LIKE') {
+            condition = '"$column" LIKE @param$paramIndex';
+            substitutionValues['param$paramIndex'] = value;
+            paramIndex++;
+          } else {
+            condition = '"$column" $operator @param$paramIndex';
+            substitutionValues['param$paramIndex'] = value;
+            paramIndex++;
           }
+          whereClauses.add(condition);
 
-          if (hasGroup) {
-            whereClauses.add(')');
-          }
+          // 4. NOT 닫기
+          if (isNegated) whereClauses.add(')');
 
-          if (groupIdx < sortedGroups.length - 1) {
-            final lastFilterInGroup = groupFilters.last;
-            final logicalOp = lastFilterInGroup['logicalOperator'] as String? ?? 'AND';
-            whereClauses.add(logicalOp.toUpperCase());
+          // 5. 닫는 괄호
+          for (int p = 0; p < closeGroupCount; p++) whereClauses.add(')');
+
+          // 6. 논리 연산자 (다음 필터가 있을 때만 추가)
+          if (i < filters.length - 1) {
+            whereClauses.add((logicalOperator ?? 'AND').toUpperCase());
           }
         }
 

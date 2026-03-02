@@ -90,6 +90,7 @@ class _FilterSortGroupPanelState extends ConsumerState<FilterSortGroupPanel> {
         onApply: () {
           // 적용 버튼 클릭 시 검증
           final notifier = ref.read(dataEditingProvider(widget.dataEditingParams).notifier);
+          notifier.finalizeFilters(); // 저장 전 필터 구조 최종 재계산
 
           if (notifier.isValidSyntax()) {
             Navigator.of(dialogContext).pop(true); // 검증 성공 시 다이얼로그 닫기
