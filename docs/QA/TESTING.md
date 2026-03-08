@@ -21,7 +21,7 @@ dart pub global activate patrol_cli
 
 ```bash
 # 특정 테스트 실행
-patrol test --target integration_test/example_test.dart
+patrol test --target integration_test/app_test.dart
 
 # 전체 테스트 실행
 patrol test
@@ -32,20 +32,20 @@ patrol test
 
 ```bash
 # Windows
-flutter test integration_test/example_test.dart -d windows
+flutter test integration_test/app_test.dart -d windows
 
 # macOS
-flutter test integration_test/example_test.dart -d macos
+flutter test integration_test/app_test.dart -d macos
 
 # Linux
-flutter test integration_test/example_test.dart -d linux
+flutter test integration_test/app_test.dart -d linux
 ```
 
 ### 🌐 웹 (Web)
 Chrome 브라우저를 통해 테스트를 진행합니다.
 
 ```bash
-flutter test integration_test/example_test.dart -d chrome
+flutter test integration_test/app_test.dart -d chrome
 ```
 
 ## 4. 새로운 테스트 작성 템플릿

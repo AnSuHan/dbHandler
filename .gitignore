@@ -129,3 +129,5 @@ devtools_options.yaml
 
 # custom
 prompt.md
+# Test results
+test_results/
