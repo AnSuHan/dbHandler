@@ -30,24 +30,38 @@ class PostgresHandler extends DatabaseHandler {
       password: password,
     );
 
-    // postgres 3.5.9 방식
-    final connection = await Connection.open(
-      endpoint,
-      settings: const ConnectionSettings(
-        sslMode: SslMode.disable,
-      ),
-    );
-
-    return connection;
+    try {
+      // postgres 3.5.9 방식
+      final connection = await Connection.open(
+        endpoint,
+        settings: const ConnectionSettings(
+          sslMode: SslMode.disable,
+          connectTimeout: Duration(seconds: 10),
+        ),
+      );
+      return connection;
+    } catch (e) {
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('password authentication failed') || 
+          errorStr.contains('invalid password') ||
+          errorStr.contains('severity error') && errorStr.contains('password')) {
+        throw Exception('로그인 실패 (아이디 또는 비밀번호를 확인해주세요)');
+      }
+      rethrow;
+    }
   }
 
   Future<T> _withConnection<T>(
-      String dbName, Future<T> Function(Connection) action) async {  // 타입 변경
-    final connection = await _getConnection(dbName);
+      String dbName, Future<T> Function(Connection) action) async {
     try {
-      return await action(connection);
-    } finally {
-      await connection.close();
+      final connection = await _getConnection(dbName);
+      try {
+        return await action(connection);
+      } finally {
+        await connection.close();
+      }
+    } catch (e) {
+      rethrow;
     }
   }
 
