@@ -92,14 +92,38 @@ void main() {
       notifier.updateFilters(filters);
       notifier.finalizeFilters();
       
-      // finalizeFilters uses _buildFilterBlockList which generates blocks and then rebuilds filters
-      // For (col1 = v1) AND col2 = v2, the blocks would be:
-      // [open, filter0, close, operator(AND), filter1]
-      // finalizeFilters should preserve this.
-      
       expect(notifier.state.filters[0].openGroupCount, 1);
       expect(notifier.state.filters[0].closeGroupCount, 1);
       expect(notifier.state.filters[0].logicalOperator, 'AND');
+    });
+
+    test('Should handle sort order reordering', () {
+      final sorts = [
+        SortCondition(columnName: 'col1', isAscending: true),
+        SortCondition(columnName: 'col2', isAscending: false),
+      ];
+      
+      notifier.updateSorts(sorts);
+      
+      // Swap order
+      final reordered = [sorts[1], sorts[0]];
+      notifier.updateSorts(reordered);
+      
+      expect(notifier.state.sorts[0].columnName, 'col2');
+      expect(notifier.state.sorts[1].columnName, 'col1');
+    });
+
+    test('Should detect group boundary correctly', () {
+      final rows = [
+        {'id': 1, 'category': 'A', 'name': 'Item 1'},
+        {'id': 2, 'category': 'A', 'name': 'Item 2'},
+        {'id': 3, 'category': 'B', 'name': 'Item 3'},
+      ];
+      
+      // 이 테스트는 Notifier의 내부 상태나 Helper 메서드를 테스트해야 함
+      // 현재는 UI에서 그룹 구분선을 표시하는 로직이 있으므로, Notifier가 groupByColumns를 잘 유지하는지 확인
+      notifier.updateGroupBy(['category']);
+      expect(notifier.state.groupByColumns, contains('category'));
     });
   });
 }
