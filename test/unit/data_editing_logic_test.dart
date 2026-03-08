@@ -1,7 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:db_handler/stateManagement/setState/data_editing_riverpod.dart';
 import 'package:db_handler/db/database_handler.dart';
-import 'package:db_handler/sqflite/models/server_model.dart';
 
 // 간단한 Mock DatabaseHandler
 class MockDatabaseHandler implements DatabaseHandler {
@@ -97,32 +97,47 @@ void main() {
       expect(notifier.state.filters[0].logicalOperator, 'AND');
     });
 
-    test('Should handle sort order reordering', () {
-      final sorts = [
-        SortCondition(columnName: 'col1', isAscending: true),
-        SortCondition(columnName: 'col2', isAscending: false),
+    test('Complex Nested Filter Logic: (A AND B) OR NOT C', () {
+      // (col1 = 'v1' AND col2 = 'v2') OR NOT (col3 = 'v3')
+      final filters = [
+        FilterCondition(columnName: 'col1', operator: '=', value: 'v1', openGroupCount: 1, logicalOperator: 'AND'),
+        FilterCondition(columnName: 'col2', operator: '=', value: 'v2', closeGroupCount: 1, logicalOperator: 'OR'),
+        FilterCondition(columnName: 'col3', operator: '=', value: 'v3', isNegated: true),
       ];
       
-      notifier.updateSorts(sorts);
+      notifier.updateFilters(filters);
+      expect(notifier.getValidationError(), isNull);
+      
+      final stateFilters = notifier.state.filters;
+      expect(stateFilters[0].logicalOperator, 'AND');
+      expect(stateFilters[1].logicalOperator, 'OR');
+      expect(stateFilters[2].isNegated, isTrue);
+    });
+
+    test('Should handle sort order reordering', () {
+      notifier.addSort(const SortCondition(columnName: 'col1', ascending: true));
+      notifier.addSort(const SortCondition(columnName: 'col2', ascending: false));
+      
+      expect(notifier.state.sorts.length, 2);
       
       // Swap order
-      final reordered = [sorts[1], sorts[0]];
-      notifier.updateSorts(reordered);
+      notifier.reorderSorts(0, 1);
       
       expect(notifier.state.sorts[0].columnName, 'col2');
       expect(notifier.state.sorts[1].columnName, 'col1');
     });
 
-    test('Should detect group boundary correctly', () {
-      final rows = [
-        {'id': 1, 'category': 'A', 'name': 'Item 1'},
-        {'id': 2, 'category': 'A', 'name': 'Item 2'},
-        {'id': 3, 'category': 'B', 'name': 'Item 3'},
-      ];
+    test('Complex Sort and GroupBy: Group by Category, then Sort by Price DESC', () {
+      notifier.addGroupByColumn('category');
+      notifier.addSort(const SortCondition(columnName: 'price', ascending: false));
       
-      // 이 테스트는 Notifier의 내부 상태나 Helper 메서드를 테스트해야 함
-      // 현재는 UI에서 그룹 구분선을 표시하는 로직이 있으므로, Notifier가 groupByColumns를 잘 유지하는지 확인
-      notifier.updateGroupBy(['category']);
+      expect(notifier.state.groupByColumns, contains('category'));
+      expect(notifier.state.sorts[0].columnName, 'price');
+      expect(notifier.state.sorts[0].ascending, isFalse);
+    });
+
+    test('Should detect group boundary correctly', () {
+      notifier.addGroupByColumn('category');
       expect(notifier.state.groupByColumns, contains('category'));
     });
   });
