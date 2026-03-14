@@ -27,11 +27,14 @@ class FilterCondition {
     this.isNegated = false,
   });
   
+  // logicalOperator를 명시적으로 null로 설정할 수 있도록 sentinel 패턴 사용
+  static const Object _unset = Object();
+
   FilterCondition copyWith({
     String? columnName,
     String? operator,
     dynamic value,
-    String? logicalOperator,
+    Object? logicalOperator = _unset,
     int? openGroupCount,
     int? closeGroupCount,
     bool? isNegated,
@@ -40,7 +43,9 @@ class FilterCondition {
       columnName: columnName ?? this.columnName,
       operator: operator ?? this.operator,
       value: value ?? this.value,
-      logicalOperator: logicalOperator ?? this.logicalOperator,
+      logicalOperator: identical(logicalOperator, _unset)
+          ? this.logicalOperator
+          : logicalOperator as String?,
       openGroupCount: openGroupCount ?? this.openGroupCount,
       closeGroupCount: closeGroupCount ?? this.closeGroupCount,
       isNegated: isNegated ?? this.isNegated,
@@ -343,13 +348,36 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final moving = blocks.removeAt(oldIdx);
     blocks.insert(oldIdx < newIdx ? newIdx - 1 : newIdx, moving);
 
+    // 재배열 후 블록에서 연산자를 순서대로 수집 → 순차 할당으로 OR/AND 보존
+    final operatorsInOrder = blocks
+        .where((b) => b['type'] == 'operator')
+        .map((b) => b['value'] as String)
+        .toList();
+
     final List<FilterCondition> nextFilters = [];
     final Map<int, TextEditingController> nextControllers = {};
     int count = 0;
+    int opIdx = 0;
     for (int i = 0; i < blocks.length; i++) {
       if (blocks[i]['type'] == 'filter') {
-        int open = 0; for (int j = i - 1; j >= 0; j--) { if (blocks[j]['type'] == 'openparen') open++; else if (blocks[j]['type'] == 'filter') break; }
-        int close = 0; String? op; for (int j = i + 1; j < blocks.length; j++) { if (blocks[j]['type'] == 'closeparen') close++; else if (blocks[j]['type'] == 'operator') op = blocks[j]['value']; else if (blocks[j]['type'] == 'filter') break; }
+        // 바로 앞의 연속된 openparen만 카운트 (다른 블록 만나면 즉시 중단)
+        int open = 0;
+        for (int j = i - 1; j >= 0; j--) {
+          if (blocks[j]['type'] == 'openparen') open++;
+          else break;
+        }
+        // 바로 뒤의 연속된 closeparen만 카운트 (다른 블록 만나면 즉시 중단)
+        int close = 0;
+        for (int j = i + 1; j < blocks.length; j++) {
+          if (blocks[j]['type'] == 'closeparen') close++;
+          else break;
+        }
+        // 다음 필터 존재 여부 확인 후 연산자 순차 할당 (블록 내 위치 무관하게 순서 보존)
+        final hasNextFilter = blocks.skip(i + 1).any((b) => b['type'] == 'filter');
+        String? op;
+        if (hasNextFilter) {
+          op = opIdx < operatorsInOrder.length ? operatorsInOrder[opIdx++] : 'AND';
+        }
         final oldFIdx = blocks[i]['index'] as int;
         if (controllers != null && controllers.containsKey(oldFIdx)) nextControllers[count] = controllers[oldFIdx]!;
         nextFilters.add(state.filters[oldFIdx].copyWith(openGroupCount: open, closeGroupCount: close, logicalOperator: op));

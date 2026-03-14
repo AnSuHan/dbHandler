@@ -29,9 +29,22 @@ class FilterSortGroupDialog extends ConsumerStatefulWidget {
 class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
   // 필터 조건 선택 관리
   Set<int> selectedBlockIndices = {};
-  bool multiSelectMode = false;
+  // 제스처(길게 클릭/더블클릭)로 활성화된 모드 - 키보드 없는 환경 대응
+  bool gestureMultiMode = false;
+  bool gestureRangeMode = false;
   int? lastSelectedIndex;
-  bool rangeSelectMode = false;
+
+  // 키보드 Ctrl/Shift 상태를 실시간으로 반영하는 computed getter
+  // 제스처 모드와 키보드 모드가 독립적으로 동작하도록 분리
+  bool get multiSelectMode =>
+      gestureMultiMode ||
+      HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlLeft) ||
+      HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlRight);
+
+  bool get rangeSelectMode =>
+      gestureRangeMode ||
+      HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
+      HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftRight);
 
   // 키보드 감지용 FocusNode
   final FocusNode focusNode = FocusNode();
@@ -51,23 +64,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       return KeyEventResult.handled;
     }
 
-    final isCtrlPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlLeft) ||
-        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlRight);
-    final isShiftPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
-        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftRight);
-
-    setState(() {
-      if (isCtrlPressed && !isShiftPressed) {
-        multiSelectMode = true;
-        rangeSelectMode = false;
-      } else if (!isCtrlPressed && isShiftPressed) {
-        multiSelectMode = false;
-        rangeSelectMode = true;
-      } else {
-        multiSelectMode = false;
-        rangeSelectMode = false;
-      }
-    });
+    // Ctrl/Shift 상태는 multiSelectMode/rangeSelectMode getter에서 실시간으로 읽으므로
+    // 키 이벤트 시 rebuild만 트리거하여 UI 갱신
+    // (제스처로 설정된 gestureMultiMode/gestureRangeMode는 건드리지 않음)
+    setState(() {});
 
     return KeyEventResult.handled;
   }
@@ -708,81 +708,31 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           ],
         ),
         const SizedBox(height: 8),
-        ...state.sorts.asMap().entries.map((entry) {
-          final index = entry.key;
-          final sort = entry.value;
-          return _buildDraggableSortItem(sort, index, state, notifier);
-        }),
+        if (state.sorts.isNotEmpty)
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            onReorder: (oldIndex, newIndex) {
+              notifier.reorderSorts(oldIndex, newIndex > oldIndex ? newIndex - 1 : newIndex);
+            },
+            children: state.sorts.asMap().entries.map((entry) {
+              final index = entry.key;
+              final sort = entry.value;
+              return Container(
+                key: ValueKey('sort_$index'),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _buildSortItemContent(sort, index, state, notifier),
+              );
+            }).toList(),
+          ),
       ],
-    );
-  }
-
-  Widget _buildDraggableSortItem(SortCondition sort, int index, DataEditingState state, DataEditingNotifier notifier) {
-    return Draggable<int>(
-      data: index,
-      feedback: Material(
-        elevation: 8,
-        child: IntrinsicWidth(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
-              ],
-            ),
-            child: _buildSortItemContent(sort, index, state, notifier),
-          ),
-        ),
-      ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: _buildSortItemContent(sort, index, state, notifier),
-        ),
-      ),
-      child: DragTarget<int>(
-        onAcceptWithDetails: (DragTargetDetails<int> details) {
-          final draggedIndex = details.data;
-          if (draggedIndex != index) {
-            notifier.reorderSorts(draggedIndex, index);
-          }
-        },
-        onWillAcceptWithDetails: (DragTargetDetails<int> details) {
-          return details.data != index;
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isTarget = candidateData.isNotEmpty;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              border: isTarget
-                  ? Border.all(color: Theme.of(context).colorScheme.primary, width: 2)
-                  : null,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: _buildSortItemContent(sort, index, state, notifier),
-            ),
-          );
-        },
-      ),
     );
   }
 
@@ -790,7 +740,10 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+        ReorderableDragStartListener(
+          index: index,
+          child: Icon(Icons.drag_handle, size: 16, color: Colors.grey.shade600),
+        ),
         const SizedBox(width: 8),
         SizedBox(
           width: 150,
@@ -858,89 +811,42 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
           ],
         ),
         const SizedBox(height: 8),
-        ...state.groupByColumns.asMap().entries.map((entry) {
-          final index = entry.key;
-          final columnName = entry.value;
-          return _buildDraggableGroupItem(columnName, index, notifier);
-        }),
+        if (state.groupByColumns.isNotEmpty)
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            onReorder: (oldIndex, newIndex) {
+              notifier.reorderGroupBy(oldIndex, newIndex > oldIndex ? newIndex - 1 : newIndex);
+            },
+            children: state.groupByColumns.asMap().entries.map((entry) {
+              final index = entry.key;
+              final columnName = entry.value;
+              return Container(
+                key: ValueKey('group_$index'),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _buildGroupItemContent(columnName, index, notifier),
+              );
+            }).toList(),
+          ),
       ],
     );
   }
 
-  Widget _buildDraggableGroupItem(String columnName, int index, DataEditingNotifier notifier) {
-    return Draggable<int>(
-      data: index,
-      feedback: Material(
-        elevation: 8,
-        child: IntrinsicWidth(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)
-              ],
-            ),
-            child: _buildGroupItemContent(columnName, notifier),
-          ),
-        ),
-      ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: _buildGroupItemContent(columnName, notifier),
-        ),
-      ),
-      child: DragTarget<int>(
-        onAcceptWithDetails: (DragTargetDetails<int> details) {
-          final draggedIndex = details.data;
-          if (draggedIndex != index) {
-            notifier.reorderGroupBy(draggedIndex, index);
-          }
-        },
-        onWillAcceptWithDetails: (DragTargetDetails<int> details) {
-          return details.data != index;
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isTarget = candidateData.isNotEmpty;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              border: isTarget
-                  ? Border.all(color: Theme.of(context).colorScheme.primary, width: 2)
-                  : null,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: _buildGroupItemContent(columnName, notifier),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildGroupItemContent(String columnName, DataEditingNotifier notifier) {
+  Widget _buildGroupItemContent(String columnName, int index, DataEditingNotifier notifier) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.drag_handle, size: 16, color: Theme.of(context).hintColor),
+        ReorderableDragStartListener(
+          index: index,
+          child: Icon(Icons.drag_handle, size: 16, color: Theme.of(context).hintColor),
+        ),
         const SizedBox(width: 8),
         Icon(Icons.group, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
@@ -1382,7 +1288,7 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
       // 비연속 다중 선택 모드 : 클릭한 블럭만 추가 또는 제거
       setState(() {
         _toggleSelection(index);
-        if (selectedBlockIndices.isEmpty) multiSelectMode = false;
+        if (selectedBlockIndices.isEmpty) gestureMultiMode = false;
         lastSelectedIndex = index;
       });
     } else if (rangeSelectMode && lastSelectedIndex != null) {
@@ -1403,48 +1309,50 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         if (selectedBlockIndices.length == 1 && selectedBlockIndices.contains(index)) {
           selectedBlockIndices.clear();
           lastSelectedIndex = null;
-          rangeSelectMode = false;
+          gestureRangeMode = false;
         } else {
           selectedBlockIndices = {index};
           lastSelectedIndex = index;
-          rangeSelectMode = false;
+          gestureRangeMode = false;
         }
       });
     }
   }
 
+  // 길게 클릭 → Ctrl+클릭 대체 (키보드 없는 환경)
   void _onBlockLongPress(int index) {
     setState(() {
-      if (multiSelectMode) {
-        // 이미 multiSelectMode면 해제하고 초기 상태로
-        multiSelectMode = false;
+      if (gestureMultiMode) {
+        // 이미 gestureMultiMode면 해제하고 초기 상태로
+        gestureMultiMode = false;
         selectedBlockIndices.clear();
         lastSelectedIndex = null;
-        rangeSelectMode = false;
+        gestureRangeMode = false;
       } else {
-        // 일반 또는 double click 상태에서 multiSelectMode로 전환
-        multiSelectMode = true;
+        // gestureRangeMode 또는 일반 상태에서 gestureMultiMode로 전환
+        gestureMultiMode = true;
         selectedBlockIndices = {index};
         lastSelectedIndex = index;
-        rangeSelectMode = false;
+        gestureRangeMode = false;
       }
     });
   }
 
+  // 더블클릭 → Shift+클릭 대체 (키보드 없는 환경)
   void _onBlockDoubleTap(int index) {
     setState(() {
-      if (rangeSelectMode) {
-        // 이미 rangeSelectMode면 해제, 초기 상태로
-        rangeSelectMode = false;
+      if (gestureRangeMode) {
+        // 이미 gestureRangeMode면 해제, 초기 상태로
+        gestureRangeMode = false;
         selectedBlockIndices.clear();
         lastSelectedIndex = null;
-        multiSelectMode = false;
+        gestureMultiMode = false;
       } else {
-        // 일반 또는 multiSelectMode 상태에서 rangeSelectMode로 전환
-        rangeSelectMode = true;
+        // gestureMultiMode 또는 일반 상태에서 gestureRangeMode로 전환
+        gestureRangeMode = true;
         selectedBlockIndices = {index};
         lastSelectedIndex = index;
-        multiSelectMode = false;
+        gestureMultiMode = false;
       }
     });
   }

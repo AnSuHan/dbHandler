@@ -7,60 +7,50 @@ class PostgresHandler extends DatabaseHandler {
   final ServerModel server;
   final String? databaseName;
 
-  // 캐싱을 위한 정적/인스턴스 변수
+  // 데이터 캐싱
   static final Map<String, List<Map<String, dynamic>>> _databasesCache = {};
   static final Map<String, Map<String, List<Map<String, dynamic>>>> _tablesCache = {};
+
+  // 커넥션 풀: 연결을 재사용하여 매 요청마다 TCP 연결/인증 오버헤드 제거
+  static final Map<String, Pool<Object?>> _pools = {};
 
   PostgresHandler(this.server, {this.databaseName});
 
   String get _serverKey => '${server.address}_${server.username}';
 
-  Future<Connection> _getConnection(String db) async {
-    final host = server.address.split(':')[0];
-    final port = int.parse(server.address.split(':')[1]);
-    final username = server.username;
-    final password = server.password;
-
-    // Endpoint 생성 (새 API)
-    final endpoint = Endpoint(
-      host: host,
-      port: port,
-      database: db,
-      username: username,
-      password: password,
-    );
-
-    try {
-      // postgres 3.5.9 방식
-      final connection = await Connection.open(
-        endpoint,
-        settings: const ConnectionSettings(
+  Pool<Object?> _getPool(String dbName) {
+    final key = '${_serverKey}_$dbName';
+    return _pools.putIfAbsent(key, () {
+      final host = server.address.split(':')[0];
+      final port = int.parse(server.address.split(':')[1]);
+      return Pool.withEndpoints(
+        [Endpoint(
+          host: host,
+          port: port,
+          database: dbName,
+          username: server.username,
+          password: server.password,
+        )],
+        settings: const PoolSettings(
+          maxConnectionCount: 4,
           sslMode: SslMode.disable,
           connectTimeout: Duration(seconds: 10),
         ),
       );
-      return connection;
+    });
+  }
+
+  Future<T> _withConnection<T>(
+      String dbName, Future<T> Function(Session) action) async {
+    try {
+      return await _getPool(dbName).run(action);
     } catch (e) {
       final errorStr = e.toString().toLowerCase();
-      if (errorStr.contains('password authentication failed') || 
+      if (errorStr.contains('password authentication failed') ||
           errorStr.contains('invalid password') ||
           errorStr.contains('severity error') && errorStr.contains('password')) {
         throw Exception('로그인 실패 (아이디 또는 비밀번호를 확인해주세요)');
       }
-      rethrow;
-    }
-  }
-
-  Future<T> _withConnection<T>(
-      String dbName, Future<T> Function(Connection) action) async {
-    try {
-      final connection = await _getConnection(dbName);
-      try {
-        return await action(connection);
-      } finally {
-        await connection.close();
-      }
-    } catch (e) {
       rethrow;
     }
   }
@@ -501,10 +491,19 @@ class PostgresHandler extends DatabaseHandler {
       throw Exception('Database is not initialized');
     }
 
-    await _withConnection(databaseName!, (conn) async {
-      await conn.runTx((ctx) async {
+    // Pool은 SessionExecutor를 구현하므로 runTx를 직접 호출
+    try {
+      await _getPool(databaseName!).runTx((ctx) async {
         await operation();
       });
-    });
+    } catch (e) {
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('password authentication failed') ||
+          errorStr.contains('invalid password') ||
+          errorStr.contains('severity error') && errorStr.contains('password')) {
+        throw Exception('로그인 실패 (아이디 또는 비밀번호를 확인해주세요)');
+      }
+      rethrow;
+    }
   }
 }
