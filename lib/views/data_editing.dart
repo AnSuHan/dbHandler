@@ -7,8 +7,11 @@ import '../l10n/LocalizationManager.dart';
 import '../sqflite/models/server_model.dart';
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
+import 'unit/cell_structure_config_dialog.dart';
+import 'unit/cell_structure_management_dialog.dart';
 import 'unit/data_cell.dart';
 import 'unit/filter_sort_group_panel.dart';
+import 'unit/structured_cell.dart';
 
 class CopyIntent extends Intent {}
 
@@ -402,6 +405,26 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               title: Text('${widget.table} - ${intl.getString((l) => l.dataEditing)}'),
               elevation: 0,
               actions: [
+                Consumer(
+                  builder: (context, ref, _) {
+                    final isDisplayMode = ref.watch(
+                      dataEditingProvider(dataEditingParams)
+                          .select((s) => s.isDisplayMode),
+                    );
+                    final hasStructures = ref.watch(
+                      dataEditingProvider(dataEditingParams)
+                          .select((s) => s.cellStructures.isNotEmpty),
+                    );
+                    if (!hasStructures) return const SizedBox.shrink();
+                    return IconButton(
+                      icon: Icon(isDisplayMode
+                          ? Icons.table_rows_outlined
+                          : Icons.view_agenda_outlined),
+                      tooltip: isDisplayMode ? '일반 보기' : '구조 보기',
+                      onPressed: () => notifier.toggleDisplayMode(),
+                    );
+                  },
+                ),
                 IconButton(
                   icon: const Icon(Icons.refresh),
                   tooltip: intl.getString((l) => l.refresh),
@@ -1014,6 +1037,32 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     );
   }
 
+  void _showStructureConfigDialog(
+      Map<String, String> column, DataEditingParams dataEditingParams) async {
+    final notifier =
+        ref.read(dataEditingProvider(dataEditingParams).notifier);
+    final state = ref.read(dataEditingProvider(dataEditingParams));
+    final columnName = column['name']!;
+    final availableColumns =
+        state.columns.map((c) => c['name']!).toList();
+    final existing = state.cellStructures[columnName];
+
+    final result = await showCellStructureConfigDialog(
+      context: context,
+      mainColumnName: columnName,
+      availableColumns: availableColumns,
+      existing: existing,
+    );
+
+    if (result != null) {
+      notifier.setCellStructure(columnName, result);
+      // 구조가 설정되면 자동으로 표시 모드로 전환
+      if (!state.isDisplayMode) {
+        notifier.toggleDisplayMode();
+      }
+    }
+  }
+
   void _showDeleteConfirmDialog(Map<String, dynamic> row, DataEditingParams dataEditingParams) {
     final state = ref.read(dataEditingProvider(dataEditingParams));
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
@@ -1127,6 +1176,14 @@ class _RowWidget extends ConsumerWidget {
     final state = ref.watch(dataEditingProvider(dataEditingParams));
     final groupByColumns = state.groupByColumns;
     final rows = state.rows;
+    final cellStructures = state.cellStructures;
+    final isDisplayMode = state.isDisplayMode;
+
+    // 흡수된 컬럼 목록
+    final absorbedColumns = isDisplayMode
+        ? cellStructures.values.fold<Set<String>>(
+            {}, (s, cs) => s..addAll(cs.absorbedColumns))
+        : <String>{};
 
     // 이전 행과 현재 행의 groupBy 컬럼 값이 다른지 확인
     bool shouldShowGroupDivider = false;
@@ -1134,7 +1191,6 @@ class _RowWidget extends ConsumerWidget {
       final currentRow = rows[rowIndex];
       final previousRow = rows[rowIndex - 1];
 
-      // groupByColumns 중 하나라도 값이 다르면 구분선 표시
       for (final groupCol in groupByColumns) {
         if (currentRow[groupCol] != previousRow[groupCol]) {
           shouldShowGroupDivider = true;
@@ -1165,11 +1221,16 @@ class _RowWidget extends ConsumerWidget {
               ),
             ),
           ),
-        // 기존 행 컨테이너
+        // 행 컨테이너
         Container(
           decoration: BoxDecoration(
-            color: rowIndex.isOdd && !isRowSelected ? Theme.of(context).dividerColor.withValues(alpha: 0.05) : null,
-            border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2))),
+            color: rowIndex.isOdd && !isRowSelected
+                ? Theme.of(context).dividerColor.withValues(alpha: 0.05)
+                : null,
+            border: Border(
+                bottom: BorderSide(
+                    color:
+                        Theme.of(context).dividerColor.withValues(alpha: 0.2))),
           ),
           child: Row(
             children: [
@@ -1179,17 +1240,38 @@ class _RowWidget extends ConsumerWidget {
                 dataEditingParams: dataEditingParams,
                 columnWidth: columnWidths.first,
               ),
-              // Data cells - 독립적인 EditableDataCell 위젯 사용
+              // Data cells
               ...columns.asMap().entries.map((entry) {
                 final colIndex = entry.key;
                 final col = entry.value;
+                final colName = col['name']!;
+                final width = columnWidths[colIndex + 1];
+
+                // 흡수된 컬럼은 0 너비 SizedBox로 숨김
+                if (isDisplayMode && absorbedColumns.contains(colName)) {
+                  return SizedBox(key: ValueKey('cell_${rowIndex}_$colIndex'), width: 0);
+                }
+
+                // 구조화 셀 (메인 컬럼이고 구조가 정의된 경우)
+                if (isDisplayMode && cellStructures.containsKey(colName)) {
+                  return StructuredDataCell(
+                    key: ValueKey('cell_${rowIndex}_$colIndex'),
+                    rowIndex: rowIndex,
+                    colIndex: colIndex,
+                    columnName: colName,
+                    structure: cellStructures[colName]!,
+                    dataEditingParams: dataEditingParams,
+                    columnWidth: width,
+                  );
+                }
+
                 return EditableDataCell(
                   key: ValueKey('cell_${rowIndex}_$colIndex'),
                   rowIndex: rowIndex,
                   colIndex: colIndex,
-                  columnName: col['name']!,
+                  columnName: colName,
                   dataEditingParams: dataEditingParams,
-                  columnWidth: columnWidths[colIndex + 1],
+                  columnWidth: width,
                 );
               }).toList(),
               // Actions cell
@@ -1236,6 +1318,11 @@ class _AppBarMenu extends ConsumerWidget {
           screen._copyCell();
         } else if (value == 'paste') {
           screen._pasteCell();
+        } else if (value == 'manageStructures') {
+          showCellStructureManagementDialog(
+            context: context,
+            dataEditingParams: dataEditingParams,
+          );
         }
       },
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -1248,6 +1335,17 @@ class _AppBarMenu extends ConsumerWidget {
           value: 'paste',
           enabled: hasSelection,
           child: Text(intl.getString((i) => i.pasteCell)),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: 'manageStructures',
+          child: Row(
+            children: [
+              Icon(Icons.view_agenda_outlined, size: 20),
+              SizedBox(width: 8),
+              Text('셀 구조 관리'),
+            ],
+          ),
         ),
       ],
       icon: const Icon(Icons.more_vert),
@@ -1316,6 +1414,12 @@ class _TableHeader extends ConsumerWidget {
                     screen._showDeleteColumnDialog(column, dataEditingParams);
                   }
                 },
+                onConfigStructure: (column) {
+                  final screen = context.findAncestorStateOfType<_DataEditingScreenState>();
+                  if (screen != null) {
+                    screen._showStructureConfigDialog(column, dataEditingParams);
+                  }
+                },
               );
             }).toList(),
             Container(
@@ -1344,6 +1448,7 @@ class _HeaderColumnCell extends ConsumerWidget {
   final DataEditingParams dataEditingParams;
   final void Function(Map<String, String>) onModifyColumn;
   final void Function(Map<String, String>) onDeleteColumn;
+  final void Function(Map<String, String>) onConfigStructure;
 
   const _HeaderColumnCell({
     required this.columnIndex,
@@ -1352,6 +1457,7 @@ class _HeaderColumnCell extends ConsumerWidget {
     required this.dataEditingParams,
     required this.onModifyColumn,
     required this.onDeleteColumn,
+    required this.onConfigStructure,
   });
 
   @override
@@ -1406,6 +1512,16 @@ class _HeaderColumnCell extends ConsumerWidget {
                 ),
                 items: [
                   PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
+                  const PopupMenuItem(
+                    value: 'configStructure',
+                    child: Row(
+                      children: [
+                        Icon(Icons.view_agenda_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Text('셀 구조 설정'),
+                      ],
+                    ),
+                  ),
                   PopupMenuItem(
                     value: 'delete',
                     child: Row(
@@ -1421,6 +1537,8 @@ class _HeaderColumnCell extends ConsumerWidget {
 
               if (selected == 'edit') {
                 onModifyColumn(column);
+              } else if (selected == 'configStructure') {
+                onConfigStructure(column);
               } else if (selected == 'delete') {
                 onDeleteColumn(column);
               }
@@ -1443,6 +1561,16 @@ class _HeaderColumnCell extends ConsumerWidget {
                 ),
                 items: [
                   PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
+                  const PopupMenuItem(
+                    value: 'configStructure',
+                    child: Row(
+                      children: [
+                        Icon(Icons.view_agenda_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Text('셀 구조 설정'),
+                      ],
+                    ),
+                  ),
                   PopupMenuItem(
                     value: 'delete',
                     child: Row(
@@ -1458,6 +1586,8 @@ class _HeaderColumnCell extends ConsumerWidget {
 
               if (selected == 'edit') {
                 onModifyColumn(column);
+              } else if (selected == 'configStructure') {
+                onConfigStructure(column);
               } else if (selected == 'delete') {
                 onDeleteColumn(column);
               }

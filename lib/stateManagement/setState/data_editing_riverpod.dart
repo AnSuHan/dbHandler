@@ -1,11 +1,14 @@
 // lib/stateManagement/setState/data_editing_riverpod.dart
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../db/database_handler.dart';
 import '../../db/postgres_handler.dart';
 import '../../sqflite/models/server_model.dart';
+import 'cell_structure.dart';
 
 /// 필터 조건 클래스
 class FilterCondition {
@@ -110,7 +113,9 @@ class DataEditingState {
   final List<FilterCondition> filters;
   final List<SortCondition> sorts;
   final List<String> groupByColumns;
-  
+  final Map<String, CellStructure> cellStructures;
+  final bool isDisplayMode;
+
   // UI 호환성을 위한 게터들 (기존 코드에서 참조됨)
   final List<Map<String, dynamic>>? filterBlocks;
   final List<bool>? filterParenthesis;
@@ -132,6 +137,8 @@ class DataEditingState {
     this.filters = const [],
     this.sorts = const [],
     this.groupByColumns = const [],
+    this.cellStructures = const {},
+    this.isDisplayMode = false,
     this.filterBlocks,
     this.filterParenthesis,
     this.filterOperators,
@@ -153,6 +160,8 @@ class DataEditingState {
     List<FilterCondition>? filters,
     List<SortCondition>? sorts,
     List<String>? groupByColumns,
+    Map<String, CellStructure>? cellStructures,
+    bool? isDisplayMode,
     List<Map<String, dynamic>>? filterBlocks,
     List<bool>? filterParenthesis,
     List<String>? filterOperators,
@@ -173,6 +182,8 @@ class DataEditingState {
       filters: filters ?? this.filters,
       sorts: sorts ?? this.sorts,
       groupByColumns: groupByColumns ?? this.groupByColumns,
+      cellStructures: cellStructures ?? this.cellStructures,
+      isDisplayMode: isDisplayMode ?? this.isDisplayMode,
       filterBlocks: filterBlocks ?? this.filterBlocks,
       filterParenthesis: filterParenthesis ?? this.filterParenthesis,
       filterOperators: filterOperators ?? this.filterOperators,
@@ -219,9 +230,86 @@ class DataEditingState {
 class DataEditingNotifier extends StateNotifier<DataEditingState> {
   final DatabaseHandler _dbHandler;
   final String _table;
+  final String _serverAddress;
+  final String _database;
 
-  DataEditingNotifier(this._dbHandler, this._table) : super(const DataEditingState()) {
-    loadTableData();
+  DataEditingNotifier(this._dbHandler, this._table, this._serverAddress, this._database)
+      : super(const DataEditingState()) {
+    _loadCellStructures().then((_) => loadTableData());
+  }
+
+  String get _prefsKey => 'cell_structures|$_serverAddress|$_database|$_table';
+
+  Future<void> _loadCellStructures() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw == null) return;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final structures = decoded.map((k, v) =>
+          MapEntry(k, CellStructure.fromJson(v as Map<String, dynamic>)));
+      state = state.copyWith(cellStructures: structures);
+    } catch (_) {}
+  }
+
+  Future<void> _persistCellStructures() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(
+          state.cellStructures.map((k, v) => MapEntry(k, v.toJson())));
+      await prefs.setString(_prefsKey, encoded);
+    } catch (_) {}
+  }
+
+  void setCellStructure(String columnName, CellStructure structure) {
+    final next = Map<String, CellStructure>.from(state.cellStructures);
+    next[columnName] = structure;
+    state = state.copyWith(cellStructures: next);
+    _persistCellStructures();
+    // 흡수 컬럼 너비를 0으로 처리
+    _applyAbsorbedColumnWidths(next);
+  }
+
+  void removeCellStructure(String columnName) {
+    final next = Map<String, CellStructure>.from(state.cellStructures);
+    next.remove(columnName);
+    state = state.copyWith(cellStructures: next);
+    _persistCellStructures();
+    _applyAbsorbedColumnWidths(next);
+  }
+
+  void toggleDisplayMode() {
+    state = state.copyWith(isDisplayMode: !state.isDisplayMode);
+  }
+
+  void importCellStructures(Map<String, CellStructure> structures) {
+    final next = Map<String, CellStructure>.from(state.cellStructures)
+      ..addAll(structures);
+    state = state.copyWith(cellStructures: next);
+    _persistCellStructures();
+    _applyAbsorbedColumnWidths(next);
+  }
+
+  void _applyAbsorbedColumnWidths(Map<String, CellStructure> structures) {
+    if (state.columnWidths.isEmpty) return;
+    final absorbed = <String>{};
+    for (final s in structures.values) {
+      absorbed.addAll(s.absorbedColumns);
+    }
+    final next = List<double>.from(state.columnWidths);
+    for (int i = 0; i < state.columns.length; i++) {
+      final colName = state.columns[i]['name']!;
+      // columnWidths[0] = row number, [i+1] = column i, last = actions
+      if (absorbed.contains(colName)) {
+        next[i + 1] = 0.0;
+      } else {
+        // 흡수 해제 시 minWidth 복원
+        if (next[i + 1] == 0.0) {
+          next[i + 1] = state.minColumnWidths[i + 1];
+        }
+      }
+    }
+    state = state.copyWith(columnWidths: next);
   }
 
   void setLoading(bool loading) => state = state.copyWith(isLoading: loading);
@@ -270,6 +358,8 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         columns: columns.map((c) => {'name': c['name'] as String, 'type': c['type'] as String}).toList(),
         primaryKeyColumn: primaryKey, rows: dataRows, minColumnWidths: mWidths, columnWidths: initialWidths, isLoading: false, cellVersions: {},
       );
+      // 로드 후 흡수된 컬럼 너비 적용
+      _applyAbsorbedColumnWidths(state.cellStructures);
     } catch (e) { state = state.copyWith(isLoading: false, error: e.toString()); }
   }
 
@@ -507,7 +597,7 @@ class DatabaseHandlerParams { final ServerModel server; final String database; D
 
 final dataEditingProvider = StateNotifierProvider.family<DataEditingNotifier, DataEditingState, DataEditingParams>((ref, p) {
   final db = ref.watch(databaseHandlerProvider(DatabaseHandlerParams(server: p.server, database: p.database)));
-  return DataEditingNotifier(db, p.table);
+  return DataEditingNotifier(db, p.table, p.server.address, p.database);
 });
 
 class DataEditingParams {

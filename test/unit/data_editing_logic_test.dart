@@ -25,7 +25,7 @@ void main() {
 
   setUp(() {
     mockDb = MockDatabaseHandler();
-    notifier = DataEditingNotifier(mockDb, 'test_table');
+    notifier = DataEditingNotifier(mockDb, 'test_table', 'localhost:5432', 'test_db');
   });
 
   group('DataEditingNotifier Filter Logic Tests', () {

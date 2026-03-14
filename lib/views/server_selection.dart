@@ -1,9 +1,6 @@
 // lib/views/server_selection.dart
-import 'dart:convert';
-
 import 'package:db_handler/views/util/SettingDialog.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
@@ -23,60 +20,38 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
-  final TextEditingController _typeController = TextEditingController();
+  String _selectedDbType = 'PostgreSQL';
 
-  // DB 포트 매핑 데이터
-  Map<String, String> _portToDbMap = {};
+  static const List<String> _dbTypes = [
+    'PostgreSQL',
+    'MySQL',
+    'MariaDB',
+    'SQLite',
+    'MSSQL',
+  ];
+  static const Set<String> _enabledDbTypes = {'PostgreSQL'};
+  static const Map<String, String> _defaultPorts = {
+    'PostgreSQL': '5432',
+    'MySQL': '3306',
+    'MariaDB': '3306',
+    'SQLite': '',
+    'MSSQL': '1433',
+  };
 
   @override
   void initState() {
     super.initState();
-
-    // JSON 파일 로드
-    _loadPortMapping();
-    // 포트 컨트롤러에 리스너 추가
-    _portController.addListener(_onPortChanged);
-
-    // 1. 앱 시작 시 저장된 서버 목록 로드
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final store = Provider.of<ServerStore>(context, listen: false);
       store.loadServers();
     });
   }
 
-  Future<void> _loadPortMapping() async {
-    try {
-      final jsonString = await rootBundle.loadString('assets/file/defaultDBPort.json');
-      final Map<String, dynamic> jsonData = json.decode(jsonString);
-      setState(() {
-        _portToDbMap = jsonData.map((key, value) => MapEntry(key, value.toString()));
-      });
-    } catch (e) {
-      _portToDbMap = {};
-    }
-  }
-
-  void _onPortChanged() {
-    final port = _portController.text.trim();
-
-    // DB 타입이 비어있거나 자동으로 설정된 값인 경우에만 업데이트
-    debugPrint("[_onPortChanged] _portToDbMap: $_portToDbMap, port: $port");
-    if (_portToDbMap.containsKey(port)) {
-      final dbType = _portToDbMap[port]!;
-      // 현재 타입이 비어있거나 매핑된 다른 값인 경우에만 변경
-      if (_typeController.text.isEmpty || _portToDbMap.values.contains(_typeController.text)) {
-        _typeController.text = dbType;
-      }
-    }
-  }
-
   @override
   void dispose() {
-    _portController.removeListener(_onPortChanged);
     _nameController.dispose();
     _hostController.dispose();
     _portController.dispose();
-    _typeController.dispose();
     super.dispose();
   }
 
@@ -190,94 +165,117 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     final nameController = TextEditingController(text: server.name);
     final hostController = TextEditingController(text: server.address.split(':')[0]);
     final portController = TextEditingController(text: server.address.split(':')[1]);
-    final typeController = TextEditingController(text: server.type);
+    String editSelectedType = _dbTypes.contains(server.type) ? server.type : 'PostgreSQL';
     final store = Provider.of<ServerStore>(context, listen: false);
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(intl.getString((l) => l.editServerInfo)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: nameController,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(intl.getString((l) => l.editServerInfo)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                        labelText: intl.getString((l) => l.serverName),
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.dns))),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: hostController,
                   decoration: InputDecoration(
-                      labelText: intl.getString((l) => l.serverName),
+                      labelText: intl.getString((l) => l.hostAddress),
                       border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.dns))),
-              const SizedBox(height: 16),
-              TextField(
-                controller: hostController,
-                decoration: InputDecoration(
-                    labelText: intl.getString((l) => l.hostAddress),
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.link),
-                    hintText: 'localhost'),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: portController,
-                decoration: InputDecoration(
-                    labelText: intl.getString((l) => l.port),
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.numbers),
-                    hintText: '5432'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: typeController,
-                decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.link),
+                      hintText: 'localhost'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: portController,
+                  decoration: InputDecoration(
+                      labelText: intl.getString((l) => l.port),
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.numbers),
+                      hintText: _defaultPorts[editSelectedType] ?? ''),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: editSelectedType,
+                  decoration: InputDecoration(
                     labelText: intl.getString((l) => l.dbType),
                     border: const OutlineInputBorder(),
                     prefixIcon: const Icon(Icons.storage),
-                    hintText: 'PostgreSQL'),
-              ),
-            ],
+                  ),
+                  items: _dbTypes.map((type) {
+                    final enabled = _enabledDbTypes.contains(type);
+                    return DropdownMenuItem<String>(
+                      value: type,
+                      enabled: enabled,
+                      child: Row(
+                        children: [
+                          Text(type, style: TextStyle(color: enabled ? null : Colors.grey)),
+                          if (!enabled) ...[
+                            const SizedBox(width: 6),
+                            const Text('(미지원)', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          ],
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null && _enabledDbTypes.contains(value)) {
+                      setDialogState(() {
+                        editSelectedType = value;
+                        if (portController.text.isEmpty ||
+                            _defaultPorts.values.contains(portController.text)) {
+                          portController.text = _defaultPorts[value] ?? '';
+                        }
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(intl.getString((l) => l.cancel))),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                final host = hostController.text.trim();
+                final port = portController.text.trim();
+
+                if (name.isEmpty || host.isEmpty || port.isEmpty) {
+                  _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
+                  return;
+                }
+
+                final address = '$host:$port';
+                final isDuplicate = store.servers.any((s) =>
+                    s.address == address && s.id != server.id);
+
+                if (isDuplicate) {
+                  _showSnackbar(intl.getString((l) => l.duplicateServer), color: Colors.red);
+                  return;
+                }
+
+                final updatedServer = server.copyWith(
+                  name: name,
+                  address: address,
+                  type: editSelectedType,
+                );
+
+                await store.updateServer(updatedServer, _showSnackbar);
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+              },
+              child: Text(intl.getString((l) => l.save)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(intl.getString((l) => l.cancel))),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final host = hostController.text.trim();
-              final port = portController.text.trim();
-              final type = typeController.text.trim().isEmpty
-                  ? 'PostgreSQL'
-                  : typeController.text.trim();
-
-              if (name.isEmpty || host.isEmpty || port.isEmpty) {
-                _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
-                return;
-              }
-
-              final address = '$host:$port';
-
-              // 2. 수정 시에도 중복 체크 (자기 자신 제외)
-              final isDuplicate = store.servers.any((s) =>
-              s.address == address && s.id != server.id
-              );
-
-              if (isDuplicate) {
-                _showSnackbar(intl.getString((l) => l.duplicateServer), color: Colors.red);
-                return;
-              }
-
-              final updatedServer = server.copyWith(
-                name: name,
-                address: address,
-                type: type,
-              );
-
-              await store.updateServer(updatedServer, _showSnackbar);
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: Text(intl.getString((l) => l.save)),
-          ),
-        ],
       ),
     );
   }
@@ -394,12 +392,12 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                               _nameController.text = 'Test Server';
                                               _hostController.text = '127.0.0.1';
                                               _portController.text = '5432';
-                                              _typeController.text = 'PostgreSQL';
+                                              setState(() => _selectedDbType = 'PostgreSQL');
                                             } else {
                                               _nameController.clear();
                                               _hostController.clear();
                                               _portController.clear();
-                                              _typeController.clear();
+                                              setState(() => _selectedDbType = 'PostgreSQL');
                                             }
                                           },
                                         ),
@@ -430,17 +428,52 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         labelText: intl.getString((l) => l.port),
                                         border: const OutlineInputBorder(),
                                         prefixIcon: const Icon(Icons.numbers),
-                                        hintText: '5432'),
+                                        hintText: _defaultPorts[_selectedDbType] ?? ''),
                                     keyboardType: TextInputType.number,
                                   ),
                                   const SizedBox(height: 16),
-                                  TextField(
-                                    controller: _typeController,
+                                  DropdownButtonFormField<String>(
+                                    value: _selectedDbType,
                                     decoration: InputDecoration(
-                                        labelText: intl.getString((l) => l.dbType),
-                                        border: const OutlineInputBorder(),
-                                        prefixIcon: const Icon(Icons.storage),
-                                        hintText: 'PostgreSQL'),
+                                      labelText: intl.getString((l) => l.dbType),
+                                      border: const OutlineInputBorder(),
+                                      prefixIcon: const Icon(Icons.storage),
+                                    ),
+                                    items: _dbTypes.map((type) {
+                                      final enabled = _enabledDbTypes.contains(type);
+                                      return DropdownMenuItem<String>(
+                                        value: type,
+                                        enabled: enabled,
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              type,
+                                              style: TextStyle(
+                                                color: enabled ? null : Colors.grey,
+                                              ),
+                                            ),
+                                            if (!enabled) ...[
+                                              const SizedBox(width: 6),
+                                              const Text(
+                                                '(미지원)',
+                                                style: TextStyle(fontSize: 11, color: Colors.grey),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (value) {
+                                      if (value != null && _enabledDbTypes.contains(value)) {
+                                        setState(() {
+                                          _selectedDbType = value;
+                                          if (_portController.text.isEmpty ||
+                                              _defaultPorts.values.contains(_portController.text)) {
+                                            _portController.text = _defaultPorts[value] ?? '';
+                                          }
+                                        });
+                                      }
+                                    },
                                   ),
                                   const SizedBox(height: 16),
                                   SizedBox(
@@ -451,9 +484,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         final name = _nameController.text.trim();
                                         final host = _hostController.text.trim();
                                         final port = _portController.text.trim();
-                                        final type = _typeController.text.trim().isNotEmpty
-                                            ? _typeController.text.trim()
-                                            : 'PostgreSQL';
+                                        final type = _selectedDbType;
 
                                         if (name.isEmpty || host.isEmpty || port.isEmpty) {
                                           _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
@@ -494,8 +525,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                             _nameController.clear();
                                             _hostController.clear();
                                             _portController.clear();
-                                            _typeController.clear();
-
+                                            setState(() => _selectedDbType = 'PostgreSQL');
                                             store.closeAddForm();
                                             store.setIsTestServer(false);
 
