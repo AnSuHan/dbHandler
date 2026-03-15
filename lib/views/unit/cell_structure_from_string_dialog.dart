@@ -39,6 +39,7 @@ class _CellStructureFromStringDialogState
     extends State<_CellStructureFromStringDialog> {
   final _inputCtrl = TextEditingController();
   final _outputCtrl = TextEditingController();
+  final _displayNameCtrl = TextEditingController();
 
   // 추론된 줄 목록 — 각 줄의 접두사/컬럼을 유지
   List<_LineState> _lines = [];
@@ -57,6 +58,7 @@ class _CellStructureFromStringDialogState
   void dispose() {
     _inputCtrl.dispose();
     _outputCtrl.dispose();
+    _displayNameCtrl.dispose();
     for (final l in _lines) {
       l.prefixCtrl.dispose();
     }
@@ -463,6 +465,32 @@ class _CellStructureFromStringDialogState
             '메인 컬럼 위치에 구조화된 셀이 표시되고, 나머지 컬럼은 숨겨집니다.',
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
           ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('표시 이름:',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _displayNameCtrl,
+                  decoration: InputDecoration(
+                    hintText: '비워두면 메인 컬럼명 그대로 표시 (한글·영어 모두 가능)',
+                    hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                    border: const OutlineInputBorder(),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '헤더에 표시될 이름입니다. 여러 컬럼 병합 시 가상 이름(A, 전체이름 등)을 입력하세요.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
         ],
       ],
     );
@@ -475,9 +503,14 @@ class _CellStructureFromStringDialogState
               columnName: l.column,
             ))
         .toList();
+    final dn = _displayNameCtrl.text.trim();
     Navigator.pop(
       context,
-      CellStructure(mainColumnName: _mainColumn!, lines: lines),
+      CellStructure(
+        mainColumnName: _mainColumn!,
+        lines: lines,
+        displayName: dn.isEmpty ? null : dn,
+      ),
     );
   }
 }

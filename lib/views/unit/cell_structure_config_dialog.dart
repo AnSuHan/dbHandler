@@ -39,10 +39,14 @@ class _CellStructureConfigDialog extends StatefulWidget {
 class _CellStructureConfigDialogState
     extends State<_CellStructureConfigDialog> {
   late List<_LineEntry> _lines;
+  late TextEditingController _displayNameController;
 
   @override
   void initState() {
     super.initState();
+    _displayNameController = TextEditingController(
+      text: widget.existing?.displayName ?? '',
+    );
     if (widget.existing != null) {
       _lines = widget.existing!.lines
           .map((l) => _LineEntry(
@@ -63,6 +67,7 @@ class _CellStructureConfigDialogState
 
   @override
   void dispose() {
+    _displayNameController.dispose();
     for (final e in _lines) {
       e.prefixController.dispose();
     }
@@ -87,6 +92,7 @@ class _CellStructureConfigDialogState
   }
 
   CellStructure _build() {
+    final dn = _displayNameController.text.trim();
     return CellStructure(
       mainColumnName: widget.mainColumnName,
       lines: _lines
@@ -95,6 +101,7 @@ class _CellStructureConfigDialogState
                 columnName: e.columnName,
               ))
           .toList(),
+      displayName: dn.isEmpty ? null : dn,
     );
   }
 
@@ -111,6 +118,17 @@ class _CellStructureConfigDialogState
               '각 줄마다 접두사와 컬럼을 지정합니다.\n'
               '흡수된 컬럼(메인 컬럼 외)은 테이블에서 숨겨집니다.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _displayNameController,
+              decoration: const InputDecoration(
+                labelText: '표시 이름 (선택)',
+                hintText: '비워두면 컬럼명 그대로 표시',
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
             ),
             const SizedBox(height: 12),
             ReorderableListView(

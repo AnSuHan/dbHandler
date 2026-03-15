@@ -7,7 +7,6 @@ import '../l10n/LocalizationManager.dart';
 import '../sqflite/models/server_model.dart';
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
-import 'unit/cell_structure_config_dialog.dart';
 import 'unit/cell_structure_management_dialog.dart';
 import 'unit/data_cell.dart';
 import 'unit/filter_sort_group_panel.dart';
@@ -1038,29 +1037,12 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
   }
 
   void _showStructureConfigDialog(
-      Map<String, String> column, DataEditingParams dataEditingParams) async {
-    final notifier =
-        ref.read(dataEditingProvider(dataEditingParams).notifier);
-    final state = ref.read(dataEditingProvider(dataEditingParams));
-    final columnName = column['name']!;
-    final availableColumns =
-        state.columns.map((c) => c['name']!).toList();
-    final existing = state.cellStructures[columnName];
-
-    final result = await showCellStructureConfigDialog(
+      Map<String, String> column, DataEditingParams dataEditingParams) {
+    showCellStructureManagementDialog(
       context: context,
-      mainColumnName: columnName,
-      availableColumns: availableColumns,
-      existing: existing,
+      dataEditingParams: dataEditingParams,
+      initialColumn: column['name']!,
     );
-
-    if (result != null) {
-      notifier.setCellStructure(columnName, result);
-      // 구조가 설정되면 자동으로 표시 모드로 전환
-      if (!state.isDisplayMode) {
-        notifier.toggleDisplayMode();
-      }
-    }
   }
 
   void _showDeleteConfirmDialog(Map<String, dynamic> row, DataEditingParams dataEditingParams) {
@@ -1233,6 +1215,7 @@ class _RowWidget extends ConsumerWidget {
                         Theme.of(context).dividerColor.withValues(alpha: 0.2))),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Row number cell
               _RowNumberCellWidget(
@@ -1468,10 +1451,19 @@ class _HeaderColumnCell extends ConsumerWidget {
         (state) => state.selectedColumnIndex == columnIndex,
       ),
     );
-    
+
     // columnWidths만 watch (리사이즈 시 리빌드)
     final columnWidths = ref.watch(
       dataEditingProvider(dataEditingParams).select((state) => state.columnWidths),
+    );
+
+    // 표시 모드일 때 displayName으로 헤더 표시
+    final headerLabel = ref.watch(
+      dataEditingProvider(dataEditingParams).select((state) {
+        if (!state.isDisplayMode) return column['name']!;
+        final structure = state.cellStructures[column['name']!];
+        return structure?.effectiveDisplayName ?? column['name']!;
+      }),
     );
 
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
@@ -1593,7 +1585,7 @@ class _HeaderColumnCell extends ConsumerWidget {
               }
             },
             child: Text(
-              column['name']!,
+              headerLabel,
               style: const TextStyle(fontWeight: FontWeight.bold),
               textAlign: TextAlign.left,
             ),

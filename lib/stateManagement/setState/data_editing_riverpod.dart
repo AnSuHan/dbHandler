@@ -280,6 +280,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
   void toggleDisplayMode() {
     state = state.copyWith(isDisplayMode: !state.isDisplayMode);
+    _applyAbsorbedColumnWidths(state.cellStructures);
   }
 
   void importCellStructures(Map<String, CellStructure> structures) {
@@ -293,8 +294,13 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   void _applyAbsorbedColumnWidths(Map<String, CellStructure> structures) {
     if (state.columnWidths.isEmpty) return;
     final absorbed = <String>{};
-    for (final s in structures.values) {
-      absorbed.addAll(s.absorbedColumns);
+    // mainColumnName -> CellStructure (구조 표시명 조회용)
+    final structureByMain = <String, CellStructure>{};
+    if (state.isDisplayMode) {
+      for (final s in structures.values) {
+        absorbed.addAll(s.absorbedColumns);
+        structureByMain[s.mainColumnName] = s;
+      }
     }
     final next = List<double>.from(state.columnWidths);
     for (int i = 0; i < state.columns.length; i++) {
@@ -303,10 +309,17 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       if (absorbed.contains(colName)) {
         next[i + 1] = 0.0;
       } else {
-        // 흡수 해제 시 minWidth 복원
-        if (next[i + 1] == 0.0) {
-          next[i + 1] = state.minColumnWidths[i + 1];
-        }
+        // 구조 모드: effectiveDisplayName, 일반 모드: 실제 컬럼명 기준 최소 너비
+        final headerName = state.isDisplayMode && structureByMain.containsKey(colName)
+            ? structureByMain[colName]!.effectiveDisplayName
+            : colName;
+        final nameWidth = _getTextWidth(
+              headerName, const TextStyle(fontWeight: FontWeight.bold)) + 34.0;
+        // 너비가 0이었으면 복원, 아니어도 컬럼명보다 좁으면 확장
+        next[i + 1] = math.max(
+          next[i + 1] == 0.0 ? state.minColumnWidths[i + 1] : next[i + 1],
+          nameWidth,
+        );
       }
     }
     state = state.copyWith(columnWidths: next);
