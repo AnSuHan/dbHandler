@@ -1,6 +1,7 @@
 import 'package:db_handler/sqflite/models/server_model.dart';
 import 'package:db_handler/stateManagement/bloc/setting_bloc.dart';
 import 'package:db_handler/stateManagement/mobx/mobx_store.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as provider_pkg;  // provider 패키지 alias
@@ -43,6 +44,8 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     // SettingsBloc에서 언어 설정 가져오기
@@ -61,6 +64,7 @@ class MyApp extends StatelessWidget {
                 final themeMode = themeModeSnapshot.data ?? ThemeMode.system;
 
                 return MaterialApp(
+                  navigatorKey: navigatorKey,
                   // 앱 제목을 국제화
                   onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
 
@@ -92,7 +96,14 @@ class MyApp extends StatelessWidget {
                   builder: (context, child) {
                     // 여기서 context를 LocalizationManager에 설정
                     intl.setContext(context);
-                    return child!;
+                    return Listener(
+                      onPointerDown: (event) {
+                        if (event.buttons & kBackMouseButton != 0) {
+                          navigatorKey.currentState?.maybePop();
+                        }
+                      },
+                      child: child!,
+                    );
                   },
 
                   // ===== 국제화 설정 끝 =====

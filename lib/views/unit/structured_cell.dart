@@ -1,5 +1,7 @@
 // lib/views/unit/structured_cell.dart
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../stateManagement/setState/cell_structure.dart';
 import '../../stateManagement/setState/data_editing_riverpod.dart';
@@ -54,33 +56,64 @@ class StructuredDataCell extends ConsumerWidget {
           Theme.of(context).colorScheme.primary.withValues(alpha: 0.15);
     }
 
-    return GestureDetector(
-      onTap: () => notifier.selectCell(rowIndex, colIndex),
-      onDoubleTap: () {
-        notifier.selectCell(rowIndex, colIndex);
-        Future.microtask(() {
-          final state = ref.read(dataEditingProvider(dataEditingParams));
-          if (rowIndex < state.rows.length) {
-            _showEditStructuredCellDialog(context, ref, state, notifier);
+    return Listener(
+      onPointerDown: (event) {
+        if (event.kind == PointerDeviceKind.mouse) {
+          final keys = HardwareKeyboard.instance.logicalKeysPressed;
+          final isShift = keys.contains(LogicalKeyboardKey.shiftLeft) ||
+              keys.contains(LogicalKeyboardKey.shiftRight);
+          if (isShift) {
+            notifier.updateCellSelection(rowIndex, colIndex);
+          } else {
+            notifier.startCellSelection(rowIndex, colIndex);
           }
-        });
+        }
       },
-      child: Container(
-        width: columnWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        alignment: Alignment.topLeft,
-        decoration: BoxDecoration(
-          color: cellColor,
-          border: Border(
-            right: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          final keys = HardwareKeyboard.instance.logicalKeysPressed;
+          final isShift = keys.contains(LogicalKeyboardKey.shiftLeft) ||
+              keys.contains(LogicalKeyboardKey.shiftRight);
+          if (isShift) {
+            notifier.updateCellSelection(rowIndex, colIndex);
+          } else {
+            notifier.selectCell(rowIndex, colIndex);
+          }
+        },
+        onDoubleTap: () {
+          notifier.selectCell(rowIndex, colIndex);
+          Future.microtask(() {
+            final state = ref.read(dataEditingProvider(dataEditingParams));
+            if (rowIndex < state.rows.length) {
+              _showEditStructuredCellDialog(context, ref, state, notifier);
+            }
+          });
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (event) {
+            if (event.buttons == kPrimaryButton) {
+              notifier.updateCellSelection(rowIndex, colIndex);
+            }
+          },
+          child: Container(
+            width: columnWidth,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            decoration: BoxDecoration(
+              color: cellColor,
+              border: Border(
+                right: BorderSide(
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
+              ),
+            ),
+            child: Text(
+              displayText,
+              style: const TextStyle(fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+              maxLines: structure.lines.length,
+            ),
           ),
-        ),
-        child: Text(
-          displayText,
-          style: const TextStyle(fontSize: 13),
-          overflow: TextOverflow.ellipsis,
-          maxLines: structure.lines.length,
         ),
       ),
     );

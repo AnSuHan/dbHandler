@@ -75,14 +75,29 @@ class EditableDataCell extends ConsumerWidget {
     // 드래그 상태 추적을 위한 전역 변수 대신, 각 셀에서 마우스 이벤트 처리
     return Listener(
       onPointerDown: (event) {
-        // 마우스 왼쪽 버튼 클릭 시 선택 시작
         if (event.kind == PointerDeviceKind.mouse) {
-          notifier.startCellSelection(rowIndex, colIndex);
+          final keys = HardwareKeyboard.instance.logicalKeysPressed;
+          final isShift = keys.contains(LogicalKeyboardKey.shiftLeft) ||
+              keys.contains(LogicalKeyboardKey.shiftRight);
+          if (isShift) {
+            notifier.updateCellSelection(rowIndex, colIndex);
+          } else {
+            notifier.startCellSelection(rowIndex, colIndex);
+          }
         }
       },
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTap: () => notifier.selectCell(rowIndex, colIndex),
+        onTap: () {
+          final keys = HardwareKeyboard.instance.logicalKeysPressed;
+          final isShift = keys.contains(LogicalKeyboardKey.shiftLeft) ||
+              keys.contains(LogicalKeyboardKey.shiftRight);
+          if (isShift) {
+            notifier.updateCellSelection(rowIndex, colIndex);
+          } else {
+            notifier.selectCell(rowIndex, colIndex);
+          }
+        },
         onDoubleTap: () {
           notifier.selectCell(rowIndex, colIndex);
           // 다음 프레임에서 다이얼로그 표시 (상태 업데이트 후)
