@@ -150,7 +150,19 @@ class PostgresHandler extends DatabaseHandler {
 
   @override
   Future<void> deleteDatabase(String dbName) async {
-    await _withConnection('postgres', (conn) => conn.execute('DROP DATABASE "$dbName"'));
+    await _withConnection('postgres', (conn) async {
+      // 해당 DB에 접속 중인 모든 연결 강제 종료 (자신 제외)
+      await conn.execute(
+        Sql.named(
+          'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @dbName AND pid <> pg_backend_pid()',
+        ),
+        parameters: {'dbName': dbName},
+      );
+      await conn.execute('DROP DATABASE "$dbName"');
+    });
+    // 해당 DB의 커넥션 풀 제거
+    final poolKey = '${_serverKey}_$dbName';
+    _pools.remove(poolKey);
     _databasesCache.remove(_serverKey);
   }
 
@@ -212,17 +224,17 @@ class PostgresHandler extends DatabaseHandler {
   }
 
   @override
-  Future<void> renameTable(String oldName, String newName) async {
+  Future<void> renameTable(String oldName, String newName, {String schema = 'public'}) async {
     await _withConnection(databaseName!, (conn) {
-      return conn.execute('ALTER TABLE "$oldName" RENAME TO "$newName"');
+      return conn.execute('ALTER TABLE "$schema"."$oldName" RENAME TO "$newName"');
     });
     _tablesCache[_serverKey]?.remove(databaseName);
   }
 
   @override
-  Future<void> deleteTable(String tableName) async {
+  Future<void> deleteTable(String tableName, {String schema = 'public'}) async {
     await _withConnection(databaseName!, (conn) {
-      return conn.execute('DROP TABLE "$tableName"');
+      return conn.execute('DROP TABLE "$schema"."$tableName"');
     });
     _tablesCache[_serverKey]?.remove(databaseName);
   }

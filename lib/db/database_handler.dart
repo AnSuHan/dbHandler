@@ -17,8 +17,8 @@ abstract class DatabaseHandler {
   // 테이블 관리 메서드
   Future<List<Map<String, dynamic>>> getTables(String databaseName);
   Future<void> createTable(String tableName, Map<String, String> columns);
-  Future<void> renameTable(String oldName, String newName);
-  Future<void> deleteTable(String tableName);
+  Future<void> renameTable(String oldName, String newName, {String schema = 'public'});
+  Future<void> deleteTable(String tableName, {String schema = 'public'});
 
   // 컬럼 관리 메서드
   Future<List<Map<String, dynamic>>> getColumns(String tableName);

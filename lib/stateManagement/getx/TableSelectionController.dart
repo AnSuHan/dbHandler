@@ -44,6 +44,7 @@ class TableSelectionController extends GetxController {
       tables.value = results.map((table) {
         return {
           'name': table['name'] as String,
+          'schema': table['table_schema'] as String? ?? 'public',
           'columns': table['column_count'] as int,
           'rows': table['row_count'], // 이미 핸들러에서 가져온 값을 즉시 사용
         };
@@ -92,9 +93,9 @@ class TableSelectionController extends GetxController {
     );
   }
 
-  Future<void> renameTable(String oldName, String newName) async {
+  Future<void> renameTable(String oldName, String newName, {String schema = 'public'}) async {
     await performTableOperation(
-          () => _dbHandler.renameTable(oldName, newName),
+          () => _dbHandler.renameTable(oldName, newName, schema: schema),
       intl.getStringWithMultiParams(
             (l, params) => l.renameTableSuccess(params[0], params[1]),
         [oldName, newName],
@@ -103,9 +104,9 @@ class TableSelectionController extends GetxController {
     );
   }
 
-  Future<void> deleteTable(String tableName) async {
+  Future<void> deleteTable(String tableName, {String schema = 'public'}) async {
     await performTableOperation(
-          () => _dbHandler.deleteTable(tableName),
+          () => _dbHandler.deleteTable(tableName, schema: schema),
       intl.getStringWithParams((l, param) => l.deleteTableSuccess(param), tableName),
       intl.getString((l) => l.deleteTableFailure),
     );

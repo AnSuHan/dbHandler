@@ -156,6 +156,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                     return Obx(() {
                       final table = controller.tables[index];
                       final tableName = table['name'] as String;
+                      final tableSchema = table['schema'] as String? ?? 'public';
                       final columnCount = table['columns'] as int;
                       final rowCount = table['rows'];
 
@@ -199,9 +200,9 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                               icon: const Icon(Icons.more_vert),
                               onSelected: (value) {
                                 if (value == 'edit') {
-                                  showEditTableDialog(context, controller, tableName);
+                                  showEditTableDialog(context, controller, tableName, tableSchema);
                                 } else if (value == 'delete') {
-                                  showDeleteTableDialog(context, controller, tableName);
+                                  showDeleteTableDialog(context, controller, tableName, tableSchema);
                                 }
                               },
                               itemBuilder: (BuildContext context) => [
@@ -275,7 +276,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
     );
   }
 
-  void showEditTableDialog(BuildContext ctx, TableSelectionController controller, String oldName) {
+  void showEditTableDialog(BuildContext ctx, TableSelectionController controller, String oldName, String tableSchema) {
     final nameController = TextEditingController(text: oldName);
     showDialog(
       context: ctx,
@@ -299,7 +300,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
               final newName = nameController.text.trim();
               if (newName.isNotEmpty && newName != oldName) {
                 Navigator.pop(dialogContext);
-                controller.renameTable(oldName, newName);
+                controller.renameTable(oldName, newName, schema: tableSchema);
               }
             },
             child: Text(intl.getString((l) => l.save)),
@@ -309,7 +310,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
     );
   }
 
-  void showDeleteTableDialog(BuildContext ctx, TableSelectionController controller, String tableName) {
+  void showDeleteTableDialog(BuildContext ctx, TableSelectionController controller, String tableName, String tableSchema) {
     showDialog(
       context: ctx,
       builder: (dialogContext) => AlertDialog(
@@ -323,7 +324,7 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              controller.deleteTable(tableName);
+              controller.deleteTable(tableName, schema: tableSchema);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,

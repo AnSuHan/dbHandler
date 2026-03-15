@@ -38,7 +38,8 @@ Future<void> runCleanupScenario(WidgetTester tester, TestConfig config, Brightne
       await tester.pumpAndSettle();
     }
 
-    final server = find.widgetWithText(ListTile, config.updatedServerName);
+    final server = find.widgetWithText(ListTile, config.updatedServerName)
+        .or(find.widgetWithText(ListTile, config.serverName));
     if (server.evaluate().isNotEmpty) {
       await actAndWait(tester, () => tester.tap(server.first));
       await waitFor(tester, find.byType(DatabaseSelectionScreen));
@@ -71,7 +72,8 @@ Future<void> runCleanupScenario(WidgetTester tester, TestConfig config, Brightne
       await tester.pumpAndSettle();
     }
     
-    final server = find.widgetWithText(ListTile, config.updatedServerName);
+    final server = find.widgetWithText(ListTile, config.updatedServerName)
+        .or(find.widgetWithText(ListTile, config.serverName));
     if (server.evaluate().isNotEmpty) {
       final moreBtn = find.descendant(of: server.first, matching: find.byIcon(Icons.more_vert)).first;
       await tester.tap(moreBtn);
