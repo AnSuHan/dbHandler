@@ -195,5 +195,6 @@
   "exportedFilePath": "저장된 파일 경로:",
   "ok": "확인",
   "copyPath": "경로 복사",
-  "copySuccess": "경로가 클립보드에 복사되었습니다."
+  "copySuccess": "경로가 클립보드에 복사되었습니다.",
+  "openFileLocation": "파일 위치 열기"
 }

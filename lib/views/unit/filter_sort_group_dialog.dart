@@ -850,7 +850,12 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
         const SizedBox(width: 8),
         Icon(Icons.group, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
-        Text(columnName, style: const TextStyle(fontWeight: FontWeight.w500)),
+        Flexible(
+          child: Text(columnName,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1),
+        ),
         const SizedBox(width: 8),
         IconButton(
           icon: const Icon(Icons.delete, size: 20, color: Colors.red),
@@ -909,20 +914,30 @@ class _FilterSortGroupDialogState extends ConsumerState<FilterSortGroupDialog> {
                         ? ' ${filter.logicalOperator ?? 'AND'}'
                         : '';
 
-                    return Text('  $openParens$notPrefix${filter.columnName} ${filter.operator}$valueDisplay$closeParens$logicalOp');
+                    return Text(
+                      '  $openParens$notPrefix${filter.columnName} ${filter.operator}$valueDisplay$closeParens$logicalOp',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    );
                   }),
                 ],
                 if (state.sorts.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text('${intl.getString((l) => l.sorts)}:', style: const TextStyle(fontWeight: FontWeight.w500)),
                   ...state.sorts.map((sort) {
-                    return Text('  ${sort.columnName} ${sort.ascending ? intl.getString((l) => l.asc) : intl.getString((l) => l.desc)}');
+                    return Text(
+                      '  ${sort.columnName} ${sort.ascending ? intl.getString((l) => l.asc) : intl.getString((l) => l.desc)}',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    );
                   }),
                 ],
                 if (state.groupByColumns.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text('${intl.getString((l) => l.group)}:', style: const TextStyle(fontWeight: FontWeight.w500)),
-                  Text('  ${state.groupByColumns.join(', ')}'),
+                  Text('  ${state.groupByColumns.join(', ')}',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1),
                 ],
               ],
             ),

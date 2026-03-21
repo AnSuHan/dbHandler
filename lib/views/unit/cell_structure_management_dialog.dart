@@ -672,7 +672,9 @@ class _CellStructureManagementDialogState
                 subtitle: Text(
                     '${widget.dataEditingParams.table}  ·  '
                     '${structures.length}개 구조',
-                    style: const TextStyle(fontSize: 12)),
+                    style: const TextStyle(fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
               ),
               RadioListTile<bool>(
                 value: true,
@@ -1351,13 +1353,21 @@ class _CellStructureManagementDialogState
       await File(path).writeAsString(export.toJsonString(), encoding: utf8);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('저장됨: $path'), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text('저장됨: $path', maxLines: 2, overflow: TextOverflow.ellipsis),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: '파일 위치 열기',
+              textColor: Colors.white,
+              onPressed: () => _revealInFileManager(path),
+            ),
+          ),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('내보내기 실패: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('내보내기 실패: $e', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
         );
       }
     }
@@ -1613,15 +1623,20 @@ class _CellStructureManagementDialogState
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('저장됨: $path (${result.entries.length}개 항목)'),
+            content: Text('저장됨: $path (${result.entries.length}개 항목)', maxLines: 2, overflow: TextOverflow.ellipsis),
             backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: '파일 위치 열기',
+              textColor: Colors.white,
+              onPressed: () => _revealInFileManager(path),
+            ),
           ),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('내보내기 실패: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('내보내기 실패: $e', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
         );
       }
     }
@@ -1707,9 +1722,13 @@ class _CellStructureManagementDialogState
                           value: selected[i],
                           onChanged: (v) => setS(() => selected[i] = v ?? false),
                           title: Text('${e.database} / ${e.table}',
-                              style: const TextStyle(fontSize: 13)),
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1),
                           subtitle: Text(e.server,
-                              style: const TextStyle(fontSize: 11)),
+                              style: const TextStyle(fontSize: 11),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1),
                           secondary: Text('${e.structures.length}개',
                               style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                         );
@@ -1859,9 +1878,13 @@ class _CellStructureManagementDialogState
                           onChanged: (v) =>
                               setS(() => selected[i] = v ?? false),
                           title: Text('${e.database} / ${e.table}',
-                              style: const TextStyle(fontSize: 13)),
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1),
                           subtitle: Text(e.server,
-                              style: const TextStyle(fontSize: 11)),
+                              style: const TextStyle(fontSize: 11),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1),
                           secondary: Text('${e.structures.length}개',
                               style: TextStyle(
                                   fontSize: 11, color: Colors.grey.shade600)),
@@ -1938,6 +1961,22 @@ class _CellStructureManagementDialogState
         ],
       ),
     );
+  }
+
+  /// 파일 탐색기에서 해당 파일 위치를 연다
+  Future<void> _revealInFileManager(String filePath) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer', ['/select,', filePath]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', filePath]);
+      } else if (Platform.isLinux) {
+        final dir = File(filePath).parent.path;
+        await Process.run('xdg-open', [dir]);
+      }
+    } catch (_) {
+      // 파일 탐색기 열기 실패 시 무시
+    }
   }
 
   void _confirmClearAll(

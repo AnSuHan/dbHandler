@@ -99,7 +99,7 @@ class StructuredDataCell extends ConsumerWidget {
           },
           child: Container(
             width: columnWidth,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: cellColor,
               border: Border(

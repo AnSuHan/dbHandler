@@ -201,11 +201,7 @@ class _CellStructureFromStringDialogState
     });
   }
 
-  void _disposeLines() {
-    for (final l in _lines) {
-      l.prefixCtrl.dispose();
-    }
-  }
+
 
   // ─── UI ───────────────────────────────────────────────────────
 

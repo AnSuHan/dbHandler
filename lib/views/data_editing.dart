@@ -92,7 +92,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
         );
       }
     }
@@ -332,7 +332,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
             ? ((maxRow! - minRow! + 1) * (maxCol! - minCol! + 1))
             : (pasteData.length * (state.columns.length));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${intl.getStringWithParams((l, error) => l.transactionFailed(error), e)}: ${e.toString()}'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${intl.getStringWithParams((l, error) => l.transactionFailed(error), e)}: ${e.toString()}', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
         );
         return;
       }
@@ -401,7 +401,10 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           autofocus: true,
           child: Scaffold(
             appBar: AppBar(
-              title: Text('${widget.table} - ${intl.getString((l) => l.dataEditing)}'),
+              title: Text(
+                '${widget.table} - ${intl.getString((l) => l.dataEditing)}',
+                overflow: TextOverflow.ellipsis,
+              ),
               elevation: 0,
               actions: [
                 Consumer(
@@ -1022,7 +1025,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
+                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
                   );
                 }
               } finally {
@@ -1083,7 +1086,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e'), backgroundColor: Colors.red),
+                    SnackBar(content: Text('${intl.getString((l) => l.operationFailed)}: $e', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
                   );
                 }
               } finally {
@@ -1326,7 +1329,7 @@ class _AppBarMenu extends ConsumerWidget {
             children: [
               Icon(Icons.view_agenda_outlined, size: 20),
               SizedBox(width: 8),
-              Text('셀 구조 관리'),
+              Flexible(child: Text('셀 구조 관리', overflow: TextOverflow.ellipsis)),
             ],
           ),
         ),
@@ -1510,7 +1513,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                       children: [
                         Icon(Icons.view_agenda_outlined, size: 20),
                         SizedBox(width: 8),
-                        Text('셀 구조 설정'),
+                        Flexible(child: Text('셀 구조 설정', overflow: TextOverflow.ellipsis)),
                       ],
                     ),
                   ),
@@ -1520,7 +1523,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                       children: [
                         const Icon(Icons.delete, size: 20, color: Colors.red),
                         const SizedBox(width: 8),
-                        Text(intl.getString((i) => i.delete), style: const TextStyle(color: Colors.red)),
+                        Flexible(child: Text(intl.getString((i) => i.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
                       ],
                     ),
                   ),
@@ -1559,7 +1562,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                       children: [
                         Icon(Icons.view_agenda_outlined, size: 20),
                         SizedBox(width: 8),
-                        Text('셀 구조 설정'),
+                        Flexible(child: Text('셀 구조 설정', overflow: TextOverflow.ellipsis)),
                       ],
                     ),
                   ),
@@ -1569,7 +1572,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                       children: [
                         const Icon(Icons.delete, size: 20, color: Colors.red),
                         const SizedBox(width: 8),
-                        Text(intl.getString((i) => i.delete), style: const TextStyle(color: Colors.red)),
+                        Flexible(child: Text(intl.getString((i) => i.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
                       ],
                     ),
                   ),
@@ -1588,6 +1591,8 @@ class _HeaderColumnCell extends ConsumerWidget {
               headerLabel,
               style: const TextStyle(fontWeight: FontWeight.bold),
               textAlign: TextAlign.left,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
           ),
         ),

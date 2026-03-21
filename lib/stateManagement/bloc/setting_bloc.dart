@@ -26,7 +26,7 @@ class SettingsBloc {
   // ========== 스트림 컨트롤러 ==========
   // 설정 파일
   // 설정 구조의 현재 버전 정의 (필요에 따라 변경)
-  final String _SETTINGS_VERSION = '0.0.1';
+  final String _SETTINGS_VERSION = '0.0.2';
 
   // 언어 설정
   final _localeController = StreamController<Locale>.broadcast();
@@ -156,9 +156,32 @@ class SettingsBloc {
     }
   }
 
+  // ========== SharedPreferences 접두사 상수 ==========
+  static const String _prefixCellStructures = 'cell_structures|';
+  static const String _prefixColumnWidths = 'column_widths|';
+
   // ========== 백업 및 복구 ==========
+
+  /// SharedPreferences에서 특정 접두사로 시작하는 모든 항목을 Map으로 수집
+  Map<String, dynamic> _collectPrefixedEntries(String prefix) {
+    if (_prefs == null) return {};
+    final result = <String, dynamic>{};
+    for (final key in _prefs!.getKeys()) {
+      if (key.startsWith(prefix)) {
+        final raw = _prefs!.getString(key);
+        if (raw != null) {
+          try {
+            result[key] = jsonDecode(raw);
+          } catch (_) {
+            result[key] = raw;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
   Map<String, dynamic> _serializeSettings() {
-    // BLoC에 저장된 모든 상태 변수(_current...)
     final settingsData = {
       'themeMode': _currentThemeMode.index,
       'locale': _currentLocale.toString(),
@@ -167,10 +190,12 @@ class SettingsBloc {
       'favoriteTables': _favoriteTables,
       'tableFilters': _tableFilters,
       'columnOrders': _columnOrders,
-      // ... 모든 설정 변수를 여기에 추가 ...
+      // 셀 구조 (테이블별)
+      'cellStructures': _collectPrefixedEntries(_prefixCellStructures),
+      // 컬럼 폭 (테이블별)
+      'columnWidths': _collectPrefixedEntries(_prefixColumnWidths),
     };
 
-    // 메타데이터를 포함한 최종 구조 반환
     return {
       'metadata': {
         'version': _SETTINGS_VERSION,
@@ -183,24 +208,20 @@ class SettingsBloc {
   Future<String?> exportSettingsToFile(void Function(String, {Color? color}) showSnackBar) async {
     try {
       final settingsMap = _serializeSettings();
-      final jsonString = jsonEncode(settingsMap);
+      final jsonString = const JsonEncoder.withIndent('  ').convert(settingsMap);
 
-      // 파일명 포맷: setting_export_yyyymmdd-hhmmss.json
       final now = DateTime.now();
-      // DateFormat은 'package:intl/intl.dart' 필요
       final formatter = DateFormat('yyyyMMdd-HHmmss');
       final timestamp = formatter.format(now);
       final filename = 'setting_export_$timestamp.json';
 
-      // 저장 경로 결정
       final directory = await getApplicationDocumentsDirectory();
       final exportPath = '${directory.path}/$filename';
 
-      // 파일에 저장
       final file = File(exportPath);
       await file.writeAsString(jsonString);
 
-      return exportPath; // 파일 경로 반환
+      return exportPath;
     } catch (e) {
       debugPrint('설정 내보내기 실패: $e');
       return null;
@@ -213,14 +234,13 @@ class SettingsBloc {
       required String successMsg,
       required String failMsg}) async {
     try {
-      // 1. 파일 선택 UI 띄우기 (file_picker 사용)
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
 
       if (result == null || result.files.single.path == null) {
-        return; // 사용자가 취소함
+        return;
       }
 
       showSnackBar(processingMsg);
@@ -228,11 +248,9 @@ class SettingsBloc {
       final filePath = result.files.single.path!;
       final file = File(filePath);
 
-      // 2. 파일 내용 읽기
       final jsonString = await file.readAsString();
       final settingsMap = jsonDecode(jsonString) as Map<String, dynamic>;
 
-      // 3. 설정 값 디코딩 및 적용
       await _applyImportedSettings(settingsMap);
 
       showSnackBar(successMsg, color: Colors.green);
@@ -244,29 +262,84 @@ class SettingsBloc {
 
   /// 불러온 설정 맵을 실제 BLoC 상태에 적용하고 저장하는 도우미 메서드
   Future<void> _applyImportedSettings(Map<String, dynamic> settingsMap) async {
-    // 1. 테마 모드 적용 및 저장
-    final int? themeIndex = settingsMap['themeMode'];
+    // metadata 래핑 여부 처리 (data 키가 있으면 그 안의 데이터 사용)
+    final data = settingsMap.containsKey('data')
+        ? settingsMap['data'] as Map<String, dynamic>
+        : settingsMap;
+
+    // 1. 테마 모드
+    final int? themeIndex = data['themeMode'] as int?;
     if (themeIndex != null && themeIndex >= 0 && themeIndex < ThemeMode.values.length) {
-      final newThemeMode = ThemeMode.values[themeIndex];
-      // BLoC의 setThemeMode를 사용하여 상태 변경 및 디스크 저장 로직을 재사용합니다.
-      await setThemeMode(newThemeMode);
+      await setThemeMode(ThemeMode.values[themeIndex]);
     }
 
-    // 2. 언어 설정 적용 및 저장
-    final String? localeString = settingsMap['locale'];
+    // 2. 언어 설정
+    final String? localeString = data['locale'] as String?;
     if (localeString != null) {
       final parts = localeString.split('_');
-      final newLocale = Locale(parts[0], parts.length > 1 ? parts[1] : null);
-      // locale 설정 메서드를 재사용하여 상태 변경 및 디스크 저장을 수행합니다.
-      // await setLocale(newLocale);
+      await setLocale(Locale(parts[0], parts.length > 1 ? parts[1] : null));
     }
 
-    // 3. 즐겨찾기, 필터 등 나머지 모든 설정들을 여기에 추가하여 적용하고 저장합니다.
+    // 3. 즐겨찾기 서버
+    if (data['favoriteServers'] != null) {
+      _favoriteServers = List<String>.from(data['favoriteServers'] as List);
+      _favoriteServersController.add(_favoriteServers);
+      await _prefs?.setString(_keyFavoriteServers, jsonEncode(_favoriteServers));
+    }
 
-    // ... (나머지 설정 로직) ...
+    // 4. 즐겨찾기 데이터베이스
+    if (data['favoriteDatabases'] != null) {
+      final decoded = data['favoriteDatabases'] as Map<String, dynamic>;
+      _favoriteDatabases = decoded.map((key, value) =>
+          MapEntry(key, List<String>.from(value as List)));
+      _favoriteDatabasesController.add(_favoriteDatabases);
+      await _prefs?.setString(_keyFavoriteDatabases, jsonEncode(_favoriteDatabases));
+    }
 
-    // 모든 설정이 디스크에 반영된 후 BLoC의 모든 Stream에 최종 상태를 다시 한 번 전송하여
-    // UI가 완전히 갱신되도록 할 수 있습니다. (선택 사항)
+    // 5. 즐겨찾기 테이블
+    if (data['favoriteTables'] != null) {
+      final decoded = data['favoriteTables'] as Map<String, dynamic>;
+      _favoriteTables = decoded.map((key, value) =>
+          MapEntry(key, List<String>.from(value as List)));
+      _favoriteTablesController.add(_favoriteTables);
+      await _prefs?.setString(_keyFavoriteTables, jsonEncode(_favoriteTables));
+    }
+
+    // 6. 테이블 필터
+    if (data['tableFilters'] != null) {
+      final decoded = data['tableFilters'] as Map<String, dynamic>;
+      _tableFilters = decoded.map((key, value) =>
+          MapEntry(key, List<Map<String, dynamic>>.from(
+              (value as List).map((item) => Map<String, dynamic>.from(item as Map))
+          )));
+      _tableFiltersController.add(_tableFilters);
+      await _prefs?.setString(_keyTableFilters, jsonEncode(_tableFilters));
+    }
+
+    // 7. 컬럼 순서
+    if (data['columnOrders'] != null) {
+      final decoded = data['columnOrders'] as Map<String, dynamic>;
+      _columnOrders = decoded.map((key, value) =>
+          MapEntry(key, List<String>.from(value as List)));
+      _columnOrdersController.add(_columnOrders);
+      await _prefs?.setString(_keyColumnOrders, jsonEncode(_columnOrders));
+    }
+
+    // 8. 셀 구조 (테이블별 SharedPreferences 키 단위로 복원)
+    if (data['cellStructures'] != null) {
+      final entries = data['cellStructures'] as Map<String, dynamic>;
+      for (final entry in entries.entries) {
+        await _prefs?.setString(entry.key, jsonEncode(entry.value));
+      }
+    }
+
+    // 9. 컬럼 폭 (테이블별 SharedPreferences 키 단위로 복원)
+    if (data['columnWidths'] != null) {
+      final entries = data['columnWidths'] as Map<String, dynamic>;
+      for (final entry in entries.entries) {
+        await _prefs?.setString(entry.key, jsonEncode(entry.value));
+      }
+    }
   }
 
   // ========== 언어 설정 ==========
@@ -451,6 +524,7 @@ class SettingsBloc {
     _tableFiltersController.add(_tableFilters);
     _columnOrdersController.add(_columnOrders);
 
+    // SharedPreferences 전체 초기화 (셀 구조, 컬럼 폭 포함)
     await _prefs?.clear();
   }
 

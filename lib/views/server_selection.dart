@@ -700,7 +700,7 @@ class _ServerListWidget extends StatelessWidget {
                                 children: [
                                   const Icon(Icons.edit, size: 20),
                                   const SizedBox(width: 8),
-                                  Text(intl.getString((l) => l.editServerInfo))
+                                  Flexible(child: Text(intl.getString((l) => l.editServerInfo), overflow: TextOverflow.ellipsis))
                                 ],
                               )),
                           PopupMenuItem<String>(
@@ -709,7 +709,7 @@ class _ServerListWidget extends StatelessWidget {
                                 children: [
                                   const Icon(Icons.security, size: 20),
                                   const SizedBox(width: 8),
-                                  Text(intl.getString((l) => l.editAuthInfo))
+                                  Flexible(child: Text(intl.getString((l) => l.editAuthInfo), overflow: TextOverflow.ellipsis))
                                 ],
                               )),
                           PopupMenuItem<String>(
@@ -719,8 +719,8 @@ class _ServerListWidget extends StatelessWidget {
                                   const Icon(Icons.delete,
                                     size: 20, color: Colors.red),
                                   const SizedBox(width: 8),
-                                  Text(intl.getString((l) => l.delete),
-                                    style: const TextStyle(color: Colors.red))
+                                  Flexible(child: Text(intl.getString((l) => l.delete),
+                                    style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis))
                                 ],
                               )),
                         ],

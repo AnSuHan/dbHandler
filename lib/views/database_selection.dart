@@ -261,7 +261,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                                 children: [
                                                   const Icon(Icons.edit, size: 20),
                                                   const SizedBox(width: 8),
-                                                  Text(intl.getString((l) => l.edit)),
+                                                  Flexible(child: Text(intl.getString((l) => l.edit), overflow: TextOverflow.ellipsis)),
                                                 ],
                                               ),
                                             ),
@@ -271,7 +271,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
                                                 children: [
                                                   const Icon(Icons.delete, size: 20, color: Colors.red),
                                                   const SizedBox(width: 8),
-                                                  Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red)),
+                                                  Flexible(child: Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
                                                 ],
                                               ),
                                             ),

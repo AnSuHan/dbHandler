@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -424,6 +426,11 @@ class _BackupRestoreSection extends StatelessWidget {
                 ],
               ),
               actions: [
+                TextButton.icon(
+                  onPressed: () => _revealInFileManager(filePath),
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  label: Text(intl.getString((l) => l.openFileLocation)),
+                ),
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
                   child: Text(intl.getString((l) => l.ok)),
@@ -434,6 +441,19 @@ class _BackupRestoreSection extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _revealInFileManager(String filePath) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer', ['/select,', filePath]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', filePath]);
+      } else if (Platform.isLinux) {
+        final dir = File(filePath).parent.path;
+        await Process.run('xdg-open', [dir]);
+      }
+    } catch (_) {}
   }
 }
 

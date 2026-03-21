@@ -104,6 +104,7 @@ class DataEditingState {
   final List<Map<String, String>> columns;
   final String? primaryKeyColumn;
   final List<double> columnWidths;
+  final List<double> baseColumnWidths; // 구조보기 적용 전 원본 폭
   final List<double> minColumnWidths;
   final int? selectedColumnIndex;
   final int? selectedRowIndex;
@@ -128,6 +129,7 @@ class DataEditingState {
     this.columns = const [],
     this.primaryKeyColumn,
     this.columnWidths = const [],
+    this.baseColumnWidths = const [],
     this.minColumnWidths = const [],
     this.selectedColumnIndex,
     this.selectedRowIndex,
@@ -151,6 +153,7 @@ class DataEditingState {
     List<Map<String, String>>? columns,
     String? primaryKeyColumn,
     List<double>? columnWidths,
+    List<double>? baseColumnWidths,
     List<double>? minColumnWidths,
     int? selectedColumnIndex,
     int? selectedRowIndex,
@@ -173,6 +176,7 @@ class DataEditingState {
       columns: columns ?? this.columns,
       primaryKeyColumn: primaryKeyColumn ?? this.primaryKeyColumn,
       columnWidths: columnWidths ?? this.columnWidths,
+      baseColumnWidths: baseColumnWidths ?? this.baseColumnWidths,
       minColumnWidths: minColumnWidths ?? this.minColumnWidths,
       selectedColumnIndex: selectedColumnIndex ?? this.selectedColumnIndex,
       selectedRowIndex: selectedRowIndex ?? this.selectedRowIndex,
@@ -239,6 +243,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   }
 
   String get _prefsKey => 'cell_structures|$_serverAddress|$_database|$_table';
+  String get _columnWidthsPrefsKey => 'column_widths|$_serverAddress|$_database|$_table';
 
   Future<void> _loadCellStructures() async {
     try {
@@ -258,6 +263,40 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       final encoded = jsonEncode(
           state.cellStructures.map((k, v) => MapEntry(k, v.toJson())));
       await prefs.setString(_prefsKey, encoded);
+    } catch (_) {}
+  }
+
+  /// 저장된 비율을 현재 초기 계산 총폭에 맞춰 px로 복원
+  Future<void> _loadColumnWidths() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_columnWidthsPrefsKey);
+      if (raw == null) return;
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      final ratios = decoded.map((e) => (e as num).toDouble()).toList();
+      // 컬럼 수가 일치할 때만 복원
+      if (ratios.length != state.columnWidths.length) return;
+
+      // 현재 화면/폰트 기준으로 계산된 초기 총폭을 기준으로 비율 → px 변환
+      final currentTotal = state.columnWidths.reduce((a, b) => a + b);
+      final restored = <double>[];
+      for (int i = 0; i < ratios.length; i++) {
+        restored.add(math.max(ratios[i] * currentTotal, state.minColumnWidths[i]));
+      }
+      // 원본 폭과 표시 폭 모두 복원 (구조보기 적용 전 상태)
+      state = state.copyWith(columnWidths: restored, baseColumnWidths: List<double>.from(restored));
+    } catch (_) {}
+  }
+
+  /// baseColumnWidths(원본 폭)를 비율로 변환하여 저장 — 구조보기로 인한 0.0 폭 영향 없음
+  Future<void> _persistColumnWidths() async {
+    try {
+      final source = state.baseColumnWidths.isNotEmpty ? state.baseColumnWidths : state.columnWidths;
+      final total = source.reduce((a, b) => a + b);
+      if (total <= 0) return;
+      final ratios = source.map((w) => w / total).toList();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_columnWidthsPrefsKey, jsonEncode(ratios));
     } catch (_) {}
   }
 
@@ -292,9 +331,8 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   }
 
   void _applyAbsorbedColumnWidths(Map<String, CellStructure> structures) {
-    if (state.columnWidths.isEmpty) return;
+    if (state.baseColumnWidths.isEmpty) return;
     final absorbed = <String>{};
-    // mainColumnName -> CellStructure (구조 표시명 조회용)
     final structureByMain = <String, CellStructure>{};
     if (state.isDisplayMode) {
       for (final s in structures.values) {
@@ -302,24 +340,20 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         structureByMain[s.mainColumnName] = s;
       }
     }
-    final next = List<double>.from(state.columnWidths);
+    // 항상 baseColumnWidths(원본)를 기준으로 표시 폭 생성
+    final next = List<double>.from(state.baseColumnWidths);
     for (int i = 0; i < state.columns.length; i++) {
       final colName = state.columns[i]['name']!;
       // columnWidths[0] = row number, [i+1] = column i, last = actions
       if (absorbed.contains(colName)) {
         next[i + 1] = 0.0;
       } else {
-        // 구조 모드: effectiveDisplayName, 일반 모드: 실제 컬럼명 기준 최소 너비
         final headerName = state.isDisplayMode && structureByMain.containsKey(colName)
             ? structureByMain[colName]!.effectiveDisplayName
             : colName;
         final nameWidth = _getTextWidth(
               headerName, const TextStyle(fontWeight: FontWeight.bold)) + 34.0;
-        // 너비가 0이었으면 복원, 아니어도 컬럼명보다 좁으면 확장
-        next[i + 1] = math.max(
-          next[i + 1] == 0.0 ? state.minColumnWidths[i + 1] : next[i + 1],
-          nameWidth,
-        );
+        next[i + 1] = math.max(next[i + 1], nameWidth);
       }
     }
     state = state.copyWith(columnWidths: next);
@@ -364,14 +398,16 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       
       final mWidths = columns.map<double>((c) => _getTextWidth(c['name']!, const TextStyle(fontWeight: FontWeight.bold)) + 34.0).toList();
       final initialWidths = _calculateColumnWidths(columns, dataRows, mWidths);
-      initialWidths.insert(0, 60.0);
-      mWidths.insert(0, 60.0);
+      initialWidths.insert(0, 60.0);  // 행 번호 컬럼
+      mWidths.insert(0, 60.0);        // 행 번호 컬럼 최소폭
+      mWidths.add(100.0);             // 액션 컬럼 최소폭
       
       state = state.copyWith(
         columns: columns.map((c) => {'name': c['name'] as String, 'type': c['type'] as String}).toList(),
-        primaryKeyColumn: primaryKey, rows: dataRows, minColumnWidths: mWidths, columnWidths: initialWidths, isLoading: false, cellVersions: {},
+        primaryKeyColumn: primaryKey, rows: dataRows, minColumnWidths: mWidths, columnWidths: initialWidths, baseColumnWidths: List<double>.from(initialWidths), isLoading: false, cellVersions: {},
       );
-      // 로드 후 흡수된 컬럼 너비 적용
+      // 저장된 컬럼 너비 복원 후 흡수된 컬럼 너비 적용
+      await _loadColumnWidths();
       _applyAbsorbedColumnWidths(state.cellStructures);
     } catch (e) { state = state.copyWith(isLoading: false, error: e.toString()); }
   }
@@ -597,7 +633,18 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   void removeGroupByColumn(String c) => state = state.copyWith(groupByColumns: [...state.groupByColumns]..remove(c));
   void clearGroupBy() => state = state.copyWith(groupByColumns: []);
   void reorderGroupBy(int o, int n) { if (o == n) return; final next = [...state.groupByColumns]; final item = next.removeAt(o); next.insert(n, item); state = state.copyWith(groupByColumns: next); }
-  void updateColumnWidth(int i, double w) { final next = [...state.columnWidths]; next[i] = math.max(w, state.minColumnWidths[i]); state = state.copyWith(columnWidths: next); }
+  void updateColumnWidth(int i, double w) {
+    final newWidth = math.max(w, state.minColumnWidths[i]);
+    final next = [...state.columnWidths];
+    next[i] = newWidth;
+    // 원본 폭도 함께 갱신 (구조보기에서 흡수된 컬럼이 아닌 경우)
+    final base = [...state.baseColumnWidths];
+    if (i < base.length) {
+      base[i] = newWidth;
+    }
+    state = state.copyWith(columnWidths: next, baseColumnWidths: base);
+    _persistColumnWidths();
+  }
   List<Map<String, dynamic>> _createBlocksFromFilters() => _buildFilterBlockList();
 }
 

@@ -308,5 +308,6 @@
   "exportedFilePath": "Saved File Path:",
   "ok": "OK",
   "copyPath": "Copy Path",
-  "copySuccess": "Path copied to clipboard."
+  "copySuccess": "Path copied to clipboard.",
+  "openFileLocation": "Open File Location"
 }
