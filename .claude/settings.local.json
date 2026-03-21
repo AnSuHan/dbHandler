@@ -3,7 +3,9 @@
     "allow": [
       "Bash(cd:*)",
       "Bash(grep:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(flutter:*)",
+      "Bash(find /d/ForGitRepository/dbHandler/lib -type f -name *.dart)"
     ]
   }
 }

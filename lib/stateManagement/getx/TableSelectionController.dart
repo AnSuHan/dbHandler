@@ -1,16 +1,16 @@
 // ignore_for_file: file_names
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:postgres/postgres.dart';
 
-import '../../db/postgres_handler.dart';
+import '../../db/database_handler.dart';
+import '../../db/database_handler_factory.dart';
 import '../../l10n/LocalizationManager.dart';
 import '../../sqflite/models/server_model.dart';
 
 class TableSelectionController extends GetxController {
   final ServerModel server;
   final String database;
-  late final PostgresHandler _dbHandler;
+  late final DatabaseHandler _dbHandler;
 
   final tables = <Map<String, dynamic>>[].obs;
   final isLoading = true.obs;
@@ -22,7 +22,7 @@ class TableSelectionController extends GetxController {
     required this.server,
     required this.database,
   }) {
-    _dbHandler = PostgresHandler(server, databaseName: database);
+    _dbHandler = DatabaseHandlerFactory.createHandler(server, databaseName: database);
   }
 
   @override
@@ -86,8 +86,11 @@ class TableSelectionController extends GetxController {
 
 
   Future<void> createTable(String tableName) async {
+    final idType = server.type == 'MySQL'
+        ? 'INT AUTO_INCREMENT PRIMARY KEY'
+        : 'SERIAL PRIMARY KEY';
     await performTableOperation(
-          () => _dbHandler.createTable(tableName, {'id': 'SERIAL PRIMARY KEY'}),
+          () => _dbHandler.createTable(tableName, {'id': idType}),
       intl.getStringWithParams(((l, params) => l.tableCreationSuccess(params)), tableName),
       intl.getString((l) => l.tableCreationFailure),
     );

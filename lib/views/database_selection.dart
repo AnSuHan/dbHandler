@@ -1,5 +1,5 @@
 import 'package:db_handler/db/database_handler.dart';
-import 'package:db_handler/db/postgres_handler.dart';
+import 'package:db_handler/db/database_handler_factory.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/LocalizationManager.dart';
@@ -28,13 +28,7 @@ class _DatabaseSelectionScreenState extends State<DatabaseSelectionScreen> {
   }
 
   DatabaseHandler _getDbHandler() {
-    // In the future, you can add more database types here.
-    switch (widget.server.type) {
-      case 'PostgreSQL':
-        return PostgresHandler(widget.server);
-      default:
-        throw Exception('Unsupported database type: ${widget.server.type}');
-    }
+    return DatabaseHandlerFactory.createHandler(widget.server);
   }
 
   Future<void> _loadDatabases() async {

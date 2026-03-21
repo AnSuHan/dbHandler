@@ -43,6 +43,7 @@ class _CellStructureFromStringDialogState
 
   // 추론된 줄 목록 — 각 줄의 접두사/컬럼을 유지
   List<_LineState> _lines = [];
+  List<_LineState> _pendingDisposeLines = [];
   String? _mainColumn;
   String? _inferError;
 
@@ -60,6 +61,9 @@ class _CellStructureFromStringDialogState
     _outputCtrl.dispose();
     _displayNameCtrl.dispose();
     for (final l in _lines) {
+      l.prefixCtrl.dispose();
+    }
+    for (final l in _pendingDisposeLines) {
       l.prefixCtrl.dispose();
     }
     super.dispose();
@@ -121,13 +125,25 @@ class _CellStructureFromStringDialogState
     return _MatchResult(prefix: '', column: '', matched: false, raw: outputLine);
   }
 
+  void _deferDisposeLines() {
+    if (_lines.isNotEmpty) {
+      _pendingDisposeLines.addAll(_lines);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final l in _pendingDisposeLines) {
+          l.prefixCtrl.dispose();
+        }
+        _pendingDisposeLines = [];
+      });
+    }
+  }
+
   void _runInfer() {
     final inputText = _inputCtrl.text;
     final outputText = _outputCtrl.text;
 
     if (inputText.trim().isEmpty || outputText.trim().isEmpty) {
+      _deferDisposeLines();
       setState(() {
-        _disposeLines();
         _lines = [];
         _inferError = null;
       });
@@ -136,8 +152,8 @@ class _CellStructureFromStringDialogState
 
     final inputMap = _parseInput(inputText);
     if (inputMap.isEmpty) {
+      _deferDisposeLines();
       setState(() {
-        _disposeLines();
         _lines = [];
         _inferError = '입력 형식 오류: "컬럼 = 값" 또는 "컬럼: 값" 형식으로 입력하세요.';
       });
@@ -147,8 +163,8 @@ class _CellStructureFromStringDialogState
     final outputLines =
         outputText.split('\n').where((l) => l.isNotEmpty).toList();
     if (outputLines.isEmpty) {
+      _deferDisposeLines();
       setState(() {
-        _disposeLines();
         _lines = [];
         _inferError = null;
       });
@@ -176,8 +192,8 @@ class _CellStructureFromStringDialogState
 
     final unmatched = newLines.where((l) => !l.matched).length;
 
+    _deferDisposeLines();
     setState(() {
-      _disposeLines();
       _lines = newLines;
       _inferError = unmatched > 0
           ? '$unmatched개 줄의 컬럼을 찾지 못했습니다. 드롭다운으로 직접 지정하세요.'

@@ -104,7 +104,10 @@ class _CellStructureManagementDialogState
   // 문자열 편집기
   final _inputCtrl  = TextEditingController();
   final _outputCtrl = TextEditingController();
+  final _inputFocusNode = FocusNode();
+  final _outputFocusNode = FocusNode();
   List<_LineState> _stringLines = [];
+  List<_LineState> _pendingDisposeLines = [];  // dispose 타이밍 보정용
   String? _stringMainColumn;
   String? _stringInferError;
 
@@ -131,13 +134,31 @@ class _CellStructureManagementDialogState
     _displayNameCtrl.dispose();
     _inputCtrl.dispose();
     _outputCtrl.dispose();
+    _inputFocusNode.dispose();
+    _outputFocusNode.dispose();
     _disposeManualLines();
     _disposeStringLines();
+    _disposePendingLines();
     super.dispose();
   }
 
   void _disposeManualLines() {
     for (final e in _manualLines) e.dispose();
+  }
+
+  void _disposePendingLines() {
+    for (final l in _pendingDisposeLines) l.prefixCtrl.dispose();
+    _pendingDisposeLines = [];
+  }
+
+  /// 이전 _stringLines의 컨트롤러를 빌드 후에 dispose하도록 예약
+  void _deferDisposeStringLines() {
+    if (_stringLines.isNotEmpty) {
+      _pendingDisposeLines.addAll(_stringLines);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _disposePendingLines();
+      });
+    }
   }
 
   void _disposeStringLines() {
@@ -269,18 +290,21 @@ class _CellStructureManagementDialogState
     final outputText = _outputCtrl.text;
 
     if (inputText.trim().isEmpty || outputText.trim().isEmpty) {
-      setState(() { _disposeStringLines(); _stringLines = []; _stringInferError = null; });
+      _deferDisposeStringLines();
+      setState(() { _stringLines = []; _stringInferError = null; });
       return;
     }
     final inputMap = _parseInput(inputText);
     if (inputMap.isEmpty) {
-      setState(() { _disposeStringLines(); _stringLines = [];
+      _deferDisposeStringLines();
+      setState(() { _stringLines = [];
         _stringInferError = '"컬럼 = 값" 또는 "컬럼: 값" 형식으로 입력하세요.'; });
       return;
     }
     final outputLines = outputText.split('\n').where((l) => l.isNotEmpty).toList();
     if (outputLines.isEmpty) {
-      setState(() { _disposeStringLines(); _stringLines = []; _stringInferError = null; });
+      _deferDisposeStringLines();
+      setState(() { _stringLines = []; _stringInferError = null; });
       return;
     }
 
@@ -299,8 +323,8 @@ class _CellStructureManagementDialogState
     }
 
     final unmatched = newLines.where((l) => !l.matched).length;
+    _deferDisposeStringLines();
     setState(() {
-      _disposeStringLines();
       _stringLines = newLines;
       _stringInferError = unmatched > 0
           ? '$unmatched개 줄의 컬럼을 찾지 못했습니다. 드롭다운으로 직접 지정하세요.'
@@ -522,17 +546,25 @@ class _CellStructureManagementDialogState
                   Row(
                     children: [
                       if (hasDisplayName) ...[
-                        Text(structure.displayName!,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 14)),
+                        Flexible(
+                          child: Text(structure.displayName!,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1),
+                        ),
                         const SizedBox(width: 6),
                         Text('← $col',
                             style: TextStyle(
                                 fontSize: 11, color: Colors.grey.shade500)),
                       ] else
-                        Text(col,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 14)),
+                        Flexible(
+                          child: Text(col,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -599,7 +631,9 @@ class _CellStructureManagementDialogState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(col,
-                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1),
                   Text('구조 없음 — 탭하여 추가',
                       style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                 ],
@@ -751,6 +785,8 @@ class _CellStructureManagementDialogState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // floating label이 잘리지 않도록 상단 여백
+          const SizedBox(height: 8),
           // 표시 이름
           TextField(
             controller: _displayNameCtrl,
@@ -1099,6 +1135,7 @@ class _CellStructureManagementDialogState
               children: [
                 Expanded(child: _buildTextArea(
                   controller: _inputCtrl,
+                  focusNode: _inputFocusNode,
                   label: '① 샘플 값 입력',
                   hint: 'price = 100\nqty = 40',
                   helper: '컬럼명 = 샘플값  (또는 컬럼명: 샘플값)',
@@ -1115,6 +1152,7 @@ class _CellStructureManagementDialogState
                 ),
                 Expanded(child: _buildTextArea(
                   controller: _outputCtrl,
+                  focusNode: _outputFocusNode,
                   label: '② 원하는 출력 형태',
                   hint: '> 100\n40',
                   helper: '셀에 보여질 형식 그대로 입력',
@@ -1136,6 +1174,7 @@ class _CellStructureManagementDialogState
     required String hint,
     required String helper,
     required ValueChanged<String> onChanged,
+    FocusNode? focusNode,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1143,7 +1182,9 @@ class _CellStructureManagementDialogState
         Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
         const SizedBox(height: 4),
         TextField(
+          key: ObjectKey(controller),
           controller: controller,
+          focusNode: focusNode,
           maxLines: 5,
           onChanged: onChanged,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 12),

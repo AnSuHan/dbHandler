@@ -16,6 +16,12 @@ import 'gen/app_localizations.dart';
 import 'theme/app_theme.dart';
 
 void main() {
+  // Windows 키보드 이벤트 중복 발생 Flutter 프레임워크 버그 필터링
+  FlutterError.onError = (details) {
+    if (details.toString().contains('_pressedKeys.containsKey')) return;
+    FlutterError.presentError(details);
+  };
+
   // SettingsBloc 싱글턴 초기화 (앱 시작 시 미리 생성)
   final settingsBloc = SettingsBloc();
 

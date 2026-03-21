@@ -86,3 +86,8 @@ http://localhost:5432
 user: postgres
 password: 0000
 접속 명령: psql -U postgres -h 127.0.0.1
+---
+mysql 로컬
+
+user: root
+password: root123

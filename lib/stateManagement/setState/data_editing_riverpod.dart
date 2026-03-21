@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../db/database_handler.dart';
-import '../../db/postgres_handler.dart';
+import '../../db/database_handler_factory.dart';
 import '../../sqflite/models/server_model.dart';
 import 'cell_structure.dart';
 
@@ -602,8 +602,7 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 }
 
 final databaseHandlerProvider = Provider.family<DatabaseHandler, DatabaseHandlerParams>((ref, p) {
-  if (p.server.type == 'PostgreSQL') return PostgresHandler(p.server, databaseName: p.database);
-  throw Exception('Unsupported database type');
+  return DatabaseHandlerFactory.createHandler(p.server, databaseName: p.database);
 });
 
 class DatabaseHandlerParams { final ServerModel server; final String database; DatabaseHandlerParams({required this.server, required this.database}); }

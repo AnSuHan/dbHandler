@@ -29,7 +29,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     'SQLite',
     'MSSQL',
   ];
-  static const Set<String> _enabledDbTypes = {'PostgreSQL'};
+  static const Set<String> _enabledDbTypes = {'PostgreSQL', 'MySQL'};
   static const Map<String, String> _defaultPorts = {
     'PostgreSQL': '5432',
     'MySQL': '3306',
@@ -68,7 +68,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     final store = Provider.of<ServerStore>(context, listen: false);
 
     if (isTest && (server.username == null || server.username!.isEmpty)) {
-      usernameController.text = 'postgres';
+      usernameController.text = server.type == 'MySQL' ? 'root' : 'postgres';
       passwordController.text = '0000';
     }
 
@@ -651,8 +651,9 @@ class _ServerListWidget extends StatelessWidget {
 
                   if (!context.mounted || targetServer == null) return;
 
-                  // PostgreSQL 서버인 경우 DatabaseHandler 초기화
-                  if (targetServer.type.toLowerCase() == 'postgresql') {
+                  // 지원되는 DB 타입인 경우 DatabaseHandler 초기화
+                  final supportedTypes = {'postgresql', 'mysql'};
+                  if (supportedTypes.contains(targetServer.type.toLowerCase())) {
                     store.initializeDatabaseHandler();
                   }
 
