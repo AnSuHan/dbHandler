@@ -198,12 +198,16 @@ class EditableDataCell extends ConsumerWidget {
                 if (dataEditingParams.joinDefinition != null) {
                   final meta = state.joinColumnMeta[columnName];
                   if (meta == null) throw Exception('컬럼 메타 정보 없음: $columnName');
+                  final sourcePkColumn = meta['sourcePkColumn'] ?? state.primaryKeyColumn!;
+                  final sourcePkDisplayName = meta['sourcePkDisplayName'] ?? state.primaryKeyColumn!;
+                  final sourcePkValue = rowData[sourcePkDisplayName];
+                  if (sourcePkValue == null) throw Exception('PK 값 없음: $sourcePkDisplayName');
                   await dbHandler.updateJoinedCell(
                     meta['sourceTable']!,
                     meta['sourceColumn']!,
                     newValue.isEmpty ? null : newValue,
-                    state.primaryKeyColumn!,
-                    pkValue,
+                    sourcePkColumn,
+                    sourcePkValue,
                   );
                 } else {
                   await dbHandler.updateCell(

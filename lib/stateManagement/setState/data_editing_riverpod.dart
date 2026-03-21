@@ -67,6 +67,18 @@ class FilterCondition {
       'isNegated': isNegated,
     };
   }
+
+  factory FilterCondition.fromMap(Map<String, dynamic> map) {
+    return FilterCondition(
+      columnName: map['column'] as String? ?? '',
+      operator: map['operator'] as String? ?? '=',
+      value: map['value'],
+      logicalOperator: map['logicalOperator'] as String?,
+      openGroupCount: map['openGroupCount'] as int?,
+      closeGroupCount: map['closeGroupCount'] as int?,
+      isNegated: map['isNegated'] as bool? ?? false,
+    );
+  }
 }
 
 /// 정렬 조건 클래스
@@ -94,6 +106,13 @@ class SortCondition {
       'column': columnName,
       'ascending': ascending,
     };
+  }
+
+  factory SortCondition.fromMap(Map<String, dynamic> map) {
+    return SortCondition(
+      columnName: map['column'] as String? ?? '',
+      ascending: map['ascending'] as bool? ?? true,
+    );
   }
 }
 
@@ -507,13 +526,35 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
       // JOIN 뷰 컬럼 메타데이터 구성
       final joinMeta = <String, Map<String, String>>{};
       if (_joinDefinition != null) {
+        // 각 테이블의 PK 조회
+        final tablePks = <String, String>{};
+        for (final tableName in _joinDefinition!.allTables) {
+          final pk = await _dbHandler.getPrimaryKey(tableName);
+          if (pk != null) tablePks[tableName] = pk;
+        }
+
+        // 각 테이블 PK의 display name 결정 (컬럼 충돌 시 tableName.colName 형태로 aliasing됨)
+        final tablePkDisplayNames = <String, String>{};
+        for (final col in columns) {
+          final srcTable = col['sourceTable'] as String? ?? _joinDefinition!.mainTable;
+          final srcCol = col['sourceColumn'] as String? ?? col['name'];
+          final pk = tablePks[srcTable];
+          if (pk != null && srcCol == pk && !tablePkDisplayNames.containsKey(srcTable)) {
+            tablePkDisplayNames[srcTable] = col['name'] as String;
+          }
+        }
+
         for (final col in columns) {
           final displayName = col['name'] as String;
           final sourceTable = col['sourceTable'] as String? ?? _joinDefinition!.mainTable;
           final sourceColumn = col['sourceColumn'] as String? ?? displayName;
+          final sourcePkColumn = tablePks[sourceTable];
+          final sourcePkDisplayName = tablePkDisplayNames[sourceTable];
           joinMeta[displayName] = {
             'sourceTable': sourceTable,
             'sourceColumn': sourceColumn,
+            if (sourcePkColumn != null) 'sourcePkColumn': sourcePkColumn,
+            if (sourcePkDisplayName != null) 'sourcePkDisplayName': sourcePkDisplayName,
           };
         }
       }
@@ -738,6 +779,51 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
 
   Future<void> updateRowData(int r) async { try { await loadTableData(); } catch(_) {} }
   Future<void> performOperation(Future<void> Function() op, {int? updatedRowIndex}) async { try { await op(); } finally { await loadTableData(); } }
+
+  // ── 레이아웃 내보내기/가져오기 ───────────────────────────────
+
+  /// 일반모드 컬럼 폭 비율 반환 (내보내기용)
+  List<double>? get normalColumnWidthRatios =>
+      state.baseColumnWidths.isNotEmpty ? _widthsToRatios(state.baseColumnWidths) : null;
+
+  /// 구조모드 컬럼 폭 비율 반환 (내보내기용)
+  List<double>? get displayColumnWidthRatios =>
+      state.baseDisplayColumnWidths.isNotEmpty ? _widthsToRatios(state.baseDisplayColumnWidths) : null;
+
+  /// 현재 컬럼 순서 반환 (내보내기용)
+  List<String> get currentColumnOrder =>
+      state.columns.map((c) => c['name']!).toList();
+
+  /// 컬럼 폭 비율을 가져와 SharedPreferences에 저장 후 즉시 적용
+  Future<void> applyColumnWidthRatios({
+    List<double>? normalRatios,
+    List<double>? displayRatios,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (normalRatios != null) {
+        await prefs.setString(_columnWidthsPrefsKey, jsonEncode(normalRatios));
+      }
+      if (displayRatios != null) {
+        await prefs.setString(_displayColumnWidthsPrefsKey, jsonEncode(displayRatios));
+      }
+      await _loadColumnWidths();
+      _applyAbsorbedColumnWidths(state.cellStructures);
+    } catch (_) {}
+  }
+
+  /// 필터/정렬/그룹 상태를 가져온 값으로 교체
+  void applyFilterState({
+    List<FilterCondition>? filters,
+    List<SortCondition>? sorts,
+    List<String>? groups,
+  }) {
+    state = state.copyWith(
+      filters: filters ?? state.filters,
+      sorts: sorts ?? state.sorts,
+      groupByColumns: groups ?? state.groupByColumns,
+    );
+  }
 
   void updateFilterColumn(int i, String c) { final next = [...state.filters]; next[i] = next[i].copyWith(columnName: c); state = state.copyWith(filters: next); }
   void updateFilterOperator(int i, String o) { final next = [...state.filters]; next[i] = next[i].copyWith(operator: o); state = state.copyWith(filters: next); }

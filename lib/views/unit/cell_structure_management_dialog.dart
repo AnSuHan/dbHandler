@@ -650,11 +650,12 @@ class _CellStructureManagementDialogState
 
   // ── Export 선택 ───────────────────────────────────────────────
 
+  // 0: 현재 테이블, 1: 현재 서버, 2: 전체 서버
   Future<void> _showExportChoice(
     BuildContext context,
     Map<String, CellStructure> structures,
   ) async {
-    var isGlobal = false;
+    var exportScope = 0;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -664,10 +665,10 @@ class _CellStructureManagementDialogState
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              RadioListTile<bool>(
-                value: false,
-                groupValue: isGlobal,
-                onChanged: (v) => setS(() => isGlobal = v!),
+              RadioListTile<int>(
+                value: 0,
+                groupValue: exportScope,
+                onChanged: (v) => setS(() => exportScope = v!),
                 title: const Text('현재 테이블'),
                 subtitle: Text(
                     '${widget.dataEditingParams.table}  ·  '
@@ -676,10 +677,21 @@ class _CellStructureManagementDialogState
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1),
               ),
-              RadioListTile<bool>(
-                value: true,
-                groupValue: isGlobal,
-                onChanged: (v) => setS(() => isGlobal = v!),
+              RadioListTile<int>(
+                value: 1,
+                groupValue: exportScope,
+                onChanged: (v) => setS(() => exportScope = v!),
+                title: const Text('현재 서버'),
+                subtitle: Text(
+                    '${widget.dataEditingParams.server.address}  ·  이 서버의 모든 테이블 설정',
+                    style: const TextStyle(fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
+              ),
+              RadioListTile<int>(
+                value: 2,
+                groupValue: exportScope,
+                onChanged: (v) => setS(() => exportScope = v!),
                 title: const Text('전체 서버'),
                 subtitle: const Text('모든 서버·테이블의 설정을 하나의 파일로',
                     style: TextStyle(fontSize: 12)),
@@ -700,8 +712,10 @@ class _CellStructureManagementDialogState
     );
 
     if (confirmed != true || !context.mounted) return;
-    if (isGlobal) {
+    if (exportScope == 2) {
       await _globalExport(context);
+    } else if (exportScope == 1) {
+      await _serverExport(context);
     } else {
       await _export(context, structures);
     }
@@ -761,11 +775,40 @@ class _CellStructureManagementDialogState
         final proceed = await _showImportPreviewDialog(
             context, singleExport, unknownCols);
         if (proceed != true) return;
+
+        // 셀 구조 가져오기
         notifier.importCellStructures(singleExport.structures);
+
+        // 컬럼 폭 가져오기
+        if (singleExport.columnWidths != null ||
+            singleExport.displayColumnWidths != null) {
+          await notifier.applyColumnWidthRatios(
+            normalRatios: singleExport.columnWidths,
+            displayRatios: singleExport.displayColumnWidths,
+          );
+        }
+
+        // 필터/정렬/그룹 가져오기
+        if (singleExport.hasLayoutData) {
+          notifier.applyFilterState(
+            filters: singleExport.filters
+                ?.map((f) => FilterCondition.fromMap(f))
+                .toList(),
+            sorts: singleExport.sorts
+                ?.map((s) => SortCondition.fromMap(s))
+                .toList(),
+            groups: singleExport.groupByColumns,
+          );
+        }
+
         if (context.mounted) {
+          final parts = <String>['구조 ${singleExport.structures.length}개'];
+          if (singleExport.columnWidths != null) parts.add('컬럼 폭');
+          if (singleExport.filters?.isNotEmpty ?? false) {
+            parts.add('필터 ${singleExport.filters!.length}개');
+          }
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('${singleExport.structures.length}개 구조를 가져왔습니다.'),
+            content: Text('${parts.join(', ')} 가져왔습니다.'),
             backgroundColor: Colors.green,
           ));
         }
@@ -1339,9 +1382,43 @@ class _CellStructureManagementDialogState
       );
       return;
     }
-    final meta = await _showExportMetadataDialog(context, structures);
+
+    // 현재 레이아웃 설정 수집
+    final state = ref.read(dataEditingProvider(widget.dataEditingParams));
+    final notifier = ref.read(dataEditingProvider(widget.dataEditingParams).notifier);
+    final normalRatios = notifier.normalColumnWidthRatios;
+    final displayRatios = notifier.displayColumnWidthRatios;
+    final columnOrder = notifier.currentColumnOrder;
+    final filters = state.filters.isEmpty
+        ? null
+        : state.filters.map((f) => f.toMap()).toList();
+    final sorts = state.sorts.isEmpty
+        ? null
+        : state.sorts.map((s) => s.toMap()).toList();
+    final groups = state.groupByColumns.isEmpty
+        ? null
+        : List<String>.from(state.groupByColumns);
+
+    final meta = await _showExportMetadataDialog(
+      context, structures,
+      hasColumnWidths: normalRatios != null,
+      hasDisplayWidths: displayRatios != null,
+      filterCount: state.filters.length,
+      sortCount: state.sorts.length,
+      groupCount: state.groupByColumns.length,
+    );
     if (meta == null) return;
-    final export = CellStructureExport(metadata: meta, structures: structures);
+
+    final export = CellStructureExport(
+      metadata: meta,
+      structures: structures,
+      columnWidths: normalRatios,
+      displayColumnWidths: displayRatios,
+      columnOrder: columnOrder.isEmpty ? null : columnOrder,
+      filters: filters,
+      sorts: sorts,
+      groupByColumns: groups,
+    );
     try {
       final path = await FilePicker.platform.saveFile(
         dialogTitle: '셀 구조 내보내기',
@@ -1375,8 +1452,13 @@ class _CellStructureManagementDialogState
 
   Future<CellStructureMetadata?> _showExportMetadataDialog(
     BuildContext context,
-    Map<String, CellStructure> structures,
-  ) async {
+    Map<String, CellStructure> structures, {
+    bool hasColumnWidths = false,
+    bool hasDisplayWidths = false,
+    int filterCount = 0,
+    int sortCount = 0,
+    int groupCount = 0,
+  }) async {
     final nameCtrl    = TextEditingController();
     final descCtrl    = TextEditingController();
     final versionCtrl = TextEditingController(text: '1.0');
@@ -1438,6 +1520,23 @@ class _CellStructureManagementDialogState
                           ),
                         );
                       }),
+                      if (hasColumnWidths || hasDisplayWidths || filterCount > 0 || sortCount > 0 || groupCount > 0) ...[
+                        const SizedBox(height: 8),
+                        const Divider(height: 8),
+                        Text('레이아웃 설정',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                        const SizedBox(height: 4),
+                        if (hasColumnWidths)
+                          _exportInfoRow(Icons.straighten, '컬럼 폭 (일반모드): 포함'),
+                        if (hasDisplayWidths)
+                          _exportInfoRow(Icons.view_agenda_outlined, '컬럼 폭 (구조모드): 포함'),
+                        if (filterCount > 0)
+                          _exportInfoRow(Icons.filter_list, '필터 조건: $filterCount개'),
+                        if (sortCount > 0)
+                          _exportInfoRow(Icons.sort, '정렬 조건: $sortCount개'),
+                        if (groupCount > 0)
+                          _exportInfoRow(Icons.group_work_outlined, '그룹 기준: $groupCount개'),
+                      ],
                     ],
                   ),
                 ),
@@ -1468,6 +1567,19 @@ class _CellStructureManagementDialogState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _exportInfoRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: Colors.grey.shade500),
+          const SizedBox(width: 4),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
+        ],
       ),
     );
   }
@@ -1556,6 +1668,28 @@ class _CellStructureManagementDialogState
                     ),
                   ),
                 ],
+                // 레이아웃 설정 미리보기
+                if (export.hasLayoutData) ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 4),
+                  const SizedBox(height: 8),
+                  const Text('레이아웃 설정',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  if (export.columnWidths != null)
+                    _importInfoRow(context, Icons.straighten, '컬럼 폭 (일반모드): 적용됨'),
+                  if (export.displayColumnWidths != null)
+                    _importInfoRow(context, Icons.view_agenda_outlined, '컬럼 폭 (구조모드): 적용됨'),
+                  if (export.filters?.isNotEmpty ?? false)
+                    _importInfoRow(context, Icons.filter_list,
+                        '필터 조건: ${export.filters!.length}개 적용됨'),
+                  if (export.sorts?.isNotEmpty ?? false)
+                    _importInfoRow(context, Icons.sort,
+                        '정렬 조건: ${export.sorts!.length}개 적용됨'),
+                  if (export.groupByColumns?.isNotEmpty ?? false)
+                    _importInfoRow(context, Icons.group_work_outlined,
+                        '그룹 기준: ${export.groupByColumns!.length}개 적용됨'),
+                ],
               ],
             ),
           ),
@@ -1584,6 +1718,19 @@ class _CellStructureManagementDialogState
     );
   }
 
+  Widget _importInfoRow(BuildContext context, IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 6),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
+        ],
+      ),
+    );
+  }
+
   String _formatDate(String iso) {
     try {
       final dt = DateTime.parse(iso).toLocal();
@@ -1593,6 +1740,57 @@ class _CellStructureManagementDialogState
   }
 
   // ── 전체 서버 내보내기 ─────────────────────────────────────────
+
+  Future<void> _serverExport(BuildContext context) async {
+    final serverAddress = widget.dataEditingParams.server.address;
+    final allEntries = await CellStructureGlobalStore.readAll();
+    final serverEntries = allEntries.where((e) => e.server == serverAddress).toList();
+    if (serverEntries.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$serverAddress 서버에 저장된 설정이 없습니다.')),
+        );
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    final result = await _showGlobalExportDialog(context, serverEntries);
+    if (result == null) return;
+    final export = GlobalCellStructureExport(
+      metadata: result.metadata,
+      entries: result.entries,
+    );
+    try {
+      final safeName = serverAddress.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: '현재 서버 설정 내보내기',
+        fileName: 'cell_structures_$safeName.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (path == null) return;
+      await File(path).writeAsString(export.toJsonString(), encoding: utf8);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('저장됨: $path (${result.entries.length}개 항목)', maxLines: 2, overflow: TextOverflow.ellipsis),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: '파일 위치 열기',
+              textColor: Colors.white,
+              onPressed: () => _revealInFileManager(path),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('내보내기 실패: $e', maxLines: 3, overflow: TextOverflow.ellipsis), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   Future<void> _globalExport(BuildContext context) async {
     final allEntries = await CellStructureGlobalStore.readAll();
@@ -1729,8 +1927,17 @@ class _CellStructureManagementDialogState
                               style: const TextStyle(fontSize: 11),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1),
-                          secondary: Text('${e.structures.length}개',
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                          secondary: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('${e.structures.length}개 구조',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                              if (e.columnWidths != null)
+                                Text('폭 포함',
+                                    style: TextStyle(fontSize: 10, color: Colors.blue.shade400)),
+                            ],
+                          ),
                         );
                       },
                     ),
@@ -1885,9 +2092,17 @@ class _CellStructureManagementDialogState
                               style: const TextStyle(fontSize: 11),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1),
-                          secondary: Text('${e.structures.length}개',
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey.shade600)),
+                          secondary: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('${e.structures.length}개 구조',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                              if (e.columnWidths != null)
+                                Text('폭 포함',
+                                    style: TextStyle(fontSize: 10, color: Colors.blue.shade400)),
+                            ],
+                          ),
                         );
                       },
                     ),
@@ -1907,7 +2122,7 @@ class _CellStructureManagementDialogState
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            '기존 설정에 덮어씁니다. 다음에 해당 테이블을 열 때 적용됩니다.',
+                            '기존 설정에 덮어씁니다. 셀 구조·컬럼 폭은 다음에 해당 테이블을 열 때 적용됩니다.',
                             style: TextStyle(
                                 fontSize: 11, color: Colors.amber.shade900),
                           ),

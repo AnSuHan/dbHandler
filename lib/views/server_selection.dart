@@ -20,6 +20,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
+  final TextEditingController _defaultSchemaController = TextEditingController();
   String _selectedDbType = 'PostgreSQL';
 
   static const List<String> _dbTypes = [
@@ -52,6 +53,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     _nameController.dispose();
     _hostController.dispose();
     _portController.dispose();
+    _defaultSchemaController.dispose();
     super.dispose();
   }
 
@@ -165,6 +167,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
     final nameController = TextEditingController(text: server.name);
     final hostController = TextEditingController(text: server.address.split(':')[0]);
     final portController = TextEditingController(text: server.address.split(':')[1]);
+    final defaultSchemaController = TextEditingController(text: server.defaultSchema ?? '');
     String editSelectedType = _dbTypes.contains(server.type) ? server.type : 'PostgreSQL';
     final store = Provider.of<ServerStore>(context, listen: false);
 
@@ -238,6 +241,16 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                     }
                   },
                 ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: defaultSchemaController,
+                  decoration: const InputDecoration(
+                    labelText: '기본 스키마 (선택)',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.schema),
+                    hintText: '비워두면 전체 스키마 표시',
+                  ),
+                ),
               ],
             ),
           ),
@@ -248,6 +261,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                 final name = nameController.text.trim();
                 final host = hostController.text.trim();
                 final port = portController.text.trim();
+                final defaultSchema = defaultSchemaController.text.trim();
 
                 if (name.isEmpty || host.isEmpty || port.isEmpty) {
                   _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
@@ -255,8 +269,11 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                 }
 
                 final address = '$host:$port';
+                final schema = defaultSchema.isEmpty ? null : defaultSchema;
                 final isDuplicate = store.servers.any((s) =>
-                    s.address == address && s.id != server.id);
+                    s.address == address &&
+                    s.defaultSchema == schema &&
+                    s.id != server.id);
 
                 if (isDuplicate) {
                   _showSnackbar(intl.getString((l) => l.duplicateServer), color: Colors.red);
@@ -267,6 +284,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                   name: name,
                   address: address,
                   type: editSelectedType,
+                  defaultSchema: defaultSchema.isEmpty ? null : defaultSchema,
                 );
 
                 await store.updateServer(updatedServer, _showSnackbar);
@@ -476,6 +494,16 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                     },
                                   ),
                                   const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _defaultSchemaController,
+                                    decoration: const InputDecoration(
+                                      labelText: '기본 스키마 (선택)',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.schema),
+                                      hintText: '비워두면 전체 스키마 표시',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton.icon(
@@ -485,6 +513,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         final host = _hostController.text.trim();
                                         final port = _portController.text.trim();
                                         final type = _selectedDbType;
+                                        final defaultSchema = _defaultSchemaController.text.trim();
 
                                         if (name.isEmpty || host.isEmpty || port.isEmpty) {
                                           _showSnackbar(intl.getString((l) => l.requiredFields), color: Colors.red);
@@ -494,8 +523,10 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                         // 2. address 조합 및 중복 체크
                                         final address = '$host:$port';
 
-                                        // 2-1. 메모리(Store)에서 중복 체크
-                                        final isDuplicate = store.servers.any((s) => s.address == address);
+                                        // 2-1. 메모리(Store)에서 중복 체크 (address + defaultSchema 조합)
+                                        final schema = defaultSchema.isEmpty ? null : defaultSchema;
+                                        final isDuplicate = store.servers.any((s) =>
+                                            s.address == address && s.defaultSchema == schema);
                                         if (isDuplicate) {
                                           _showSnackbar(intl.getString((l) => l.duplicateServer), color: Colors.red);
                                           return;
@@ -512,6 +543,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                           password: null,
                                           keyFilePath: null,
                                           notes: null,
+                                          defaultSchema: defaultSchema.isEmpty ? null : defaultSchema,
                                           createdAt: DateTime.now(),
                                           updatedAt: DateTime.now(),
                                         );
@@ -525,6 +557,7 @@ class _ServerSelectionScreenState extends State<ServerSelectionScreen> {
                                             _nameController.clear();
                                             _hostController.clear();
                                             _portController.clear();
+                                            _defaultSchemaController.clear();
                                             setState(() => _selectedDbType = 'PostgreSQL');
                                             store.closeAddForm();
                                             store.setIsTestServer(false);
@@ -672,7 +705,9 @@ class _ServerListWidget extends StatelessWidget {
                   title: Text(server.name,
                       style: const TextStyle(
                           fontWeight: FontWeight.bold)),
-                  subtitle: Text(server.address),
+                  subtitle: Text(server.defaultSchema != null && server.defaultSchema!.isNotEmpty
+                      ? '${server.address}  •  ${server.defaultSchema}'
+                      : server.address),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

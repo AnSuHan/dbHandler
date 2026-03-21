@@ -8,6 +8,7 @@ class ServerModel {
   final String? password;
   final String? keyFilePath;
   final String? notes;
+  final String? defaultSchema;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -21,6 +22,7 @@ class ServerModel {
     this.password,
     this.keyFilePath,
     this.notes,
+    this.defaultSchema,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -38,6 +40,7 @@ class ServerModel {
       'password': password,
       'keyFilePath': keyFilePath,
       'notes': notes,
+      'defaultSchema': defaultSchema,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -55,6 +58,7 @@ class ServerModel {
       password: json['password'] as String?,
       keyFilePath: json['keyFilePath'] as String?,
       notes: json['notes'] as String?,
+      defaultSchema: json['defaultSchema'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -71,6 +75,7 @@ class ServerModel {
       'username': username,
       'password': password,
       'keyFilePath': keyFilePath,
+      'defaultSchema': defaultSchema,
     };
   }
 
@@ -85,6 +90,7 @@ class ServerModel {
     String? password,
     String? keyFilePath,
     String? notes,
+    Object? defaultSchema = _sentinel,
     DateTime? updatedAt,
     DateTime? createdAt,
   }) {
@@ -98,8 +104,13 @@ class ServerModel {
       password: password ?? this.password,
       keyFilePath: keyFilePath ?? this.keyFilePath,
       notes: notes ?? this.notes,
+      defaultSchema: identical(defaultSchema, _sentinel)
+          ? this.defaultSchema
+          : defaultSchema as String?,
       createdAt: createdAt ?? DateTime.now(),
       updatedAt: updatedAt ?? DateTime.now(),
     );
   }
 }
+
+const Object _sentinel = Object();

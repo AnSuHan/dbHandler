@@ -48,11 +48,12 @@ class ServerDao {
     return ServerModel.fromJson(maps.first);
   }
 
-  // 2. address로 서버 존재 여부 확인 (중복 체크용)
-  Future<bool> isServerExists(String address) async {
+  // 2. address + defaultSchema 조합으로 서버 존재 여부 확인 (중복 체크용)
+  Future<bool> isServerExists(String address, String? defaultSchema) async {
     if (PlatformCheck.isWeb) {
       final servers = await _webStorage.getAllServers();
-      return servers.any((s) => s.address == address);
+      return servers.any((s) =>
+          s.address == address && s.defaultSchema == defaultSchema);
     }
 
     final db = await _db.database;
@@ -60,8 +61,10 @@ class ServerDao {
 
     final List<Map<String, dynamic>> maps = await db.query(
       'servers',
-      where: 'address = ?',
-      whereArgs: [address],
+      where: defaultSchema == null
+          ? 'address = ? AND defaultSchema IS NULL'
+          : 'address = ? AND defaultSchema = ?',
+      whereArgs: defaultSchema == null ? [address] : [address, defaultSchema],
       limit: 1,
     );
     return maps.isNotEmpty;
@@ -70,9 +73,9 @@ class ServerDao {
   // 서버 추가 (중복 체크 포함)
   Future<int> insertServer(ServerModel server) async {
     // 2. 중복 체크
-    final exists = await isServerExists(server.address);
+    final exists = await isServerExists(server.address, server.defaultSchema);
     if (exists) {
-      throw Exception('동일한 주소의 서버가 이미 존재합니다: ${server.address}');
+      throw Exception('동일한 주소와 스키마의 서버가 이미 존재합니다: ${server.address}');
     }
 
     // 웹 플랫폼
@@ -190,13 +193,14 @@ class ServerDao {
     CREATE TABLE IF NOT EXISTS servers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      address TEXT NOT NULL UNIQUE,
+      address TEXT NOT NULL,
       type TEXT NOT NULL DEFAULT 'PostgreSQL',
       isConnected INTEGER NOT NULL DEFAULT 0,
       username TEXT,
       password TEXT,
       keyFilePath TEXT,
       notes TEXT,
+      defaultSchema TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );

@@ -12,12 +12,18 @@ class GlobalCellStructureEntry {
   final String database;
   final String table;
   final Map<String, CellStructure> structures;
+  /// 일반모드 컬럼 폭 비율 목록
+  final List<double>? columnWidths;
+  /// 구조모드 컬럼 폭 비율 목록
+  final List<double>? displayColumnWidths;
 
   const GlobalCellStructureEntry({
     required this.server,
     required this.database,
     required this.table,
     required this.structures,
+    this.columnWidths,
+    this.displayColumnWidths,
   });
 
   Map<String, dynamic> toJson() => {
@@ -25,6 +31,10 @@ class GlobalCellStructureEntry {
         'database': database,
         'table': table,
         'structures': structures.map((k, v) => MapEntry(k, v.toJson())),
+        if (columnWidths != null && columnWidths!.isNotEmpty)
+          'columnWidths': columnWidths,
+        if (displayColumnWidths != null && displayColumnWidths!.isNotEmpty)
+          'displayColumnWidths': displayColumnWidths,
       };
 
   factory GlobalCellStructureEntry.fromJson(Map<String, dynamic> j) {
@@ -36,7 +46,18 @@ class GlobalCellStructureEntry {
       structures: raw.map(
         (k, v) => MapEntry(k, CellStructure.fromJson(v as Map<String, dynamic>)),
       ),
+      columnWidths: _parseDoubleList(j['columnWidths']),
+      displayColumnWidths: _parseDoubleList(j['displayColumnWidths']),
     );
+  }
+
+  static List<double>? _parseDoubleList(dynamic raw) {
+    if (raw == null) return null;
+    try {
+      return (raw as List).map((e) => (e as num).toDouble()).toList();
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -79,11 +100,13 @@ class GlobalCellStructureExport {
   }
 }
 
-/// SharedPreferences 에서 모든 셀 구조 설정을 읽고 쓰는 유틸리티
+/// SharedPreferences 에서 모든 셀 구조 설정 + 컬럼 폭을 읽고 쓰는 유틸리티
 class CellStructureGlobalStore {
   static const _prefix = 'cell_structures|';
+  static const _widthsPrefix = 'column_widths|';
+  static const _displayWidthsPrefix = 'column_widths_display|';
 
-  /// SharedPreferences 의 모든 항목을 읽어 반환
+  /// SharedPreferences 의 모든 항목을 읽어 반환 (셀 구조 + 컬럼 폭 포함)
   static Future<List<GlobalCellStructureEntry>> readAll() async {
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys().where((k) => k.startsWith(_prefix)).toList()
@@ -103,11 +126,38 @@ class CellStructureGlobalStore {
           (k, v) =>
               MapEntry(k, CellStructure.fromJson(v as Map<String, dynamic>)),
         );
+
+        // 일반모드 컬럼 폭 읽기
+        List<double>? columnWidths;
+        final widthsRaw =
+            prefs.getString('$_widthsPrefix$server|$database|$table');
+        if (widthsRaw != null) {
+          try {
+            columnWidths = (jsonDecode(widthsRaw) as List)
+                .map((e) => (e as num).toDouble())
+                .toList();
+          } catch (_) {}
+        }
+
+        // 구조모드 컬럼 폭 읽기
+        List<double>? displayColumnWidths;
+        final displayWidthsRaw =
+            prefs.getString('$_displayWidthsPrefix$server|$database|$table');
+        if (displayWidthsRaw != null) {
+          try {
+            displayColumnWidths = (jsonDecode(displayWidthsRaw) as List)
+                .map((e) => (e as num).toDouble())
+                .toList();
+          } catch (_) {}
+        }
+
         entries.add(GlobalCellStructureEntry(
           server: server,
           database: database,
           table: table,
           structures: structures,
+          columnWidths: columnWidths,
+          displayColumnWidths: displayColumnWidths,
         ));
       } catch (_) {}
     }
@@ -132,6 +182,21 @@ class CellStructureGlobalStore {
       final encoded =
           jsonEncode(merged.map((k, v) => MapEntry(k, v.toJson())));
       await prefs.setString(key, encoded);
+
+      // 컬럼 폭 저장
+      if (entry.columnWidths != null && entry.columnWidths!.isNotEmpty) {
+        await prefs.setString(
+          '$_widthsPrefix${entry.server}|${entry.database}|${entry.table}',
+          jsonEncode(entry.columnWidths),
+        );
+      }
+      if (entry.displayColumnWidths != null &&
+          entry.displayColumnWidths!.isNotEmpty) {
+        await prefs.setString(
+          '$_displayWidthsPrefix${entry.server}|${entry.database}|${entry.table}',
+          jsonEncode(entry.displayColumnWidths),
+        );
+      }
     }
   }
 
@@ -144,6 +209,21 @@ class CellStructureGlobalStore {
       final encoded = jsonEncode(
           entry.structures.map((k, v) => MapEntry(k, v.toJson())));
       await prefs.setString(key, encoded);
+
+      // 컬럼 폭 저장
+      if (entry.columnWidths != null && entry.columnWidths!.isNotEmpty) {
+        await prefs.setString(
+          '$_widthsPrefix${entry.server}|${entry.database}|${entry.table}',
+          jsonEncode(entry.columnWidths),
+        );
+      }
+      if (entry.displayColumnWidths != null &&
+          entry.displayColumnWidths!.isNotEmpty) {
+        await prefs.setString(
+          '$_displayWidthsPrefix${entry.server}|${entry.database}|${entry.table}',
+          jsonEncode(entry.displayColumnWidths),
+        );
+      }
     }
   }
 }

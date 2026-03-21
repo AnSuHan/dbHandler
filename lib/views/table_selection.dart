@@ -147,8 +147,15 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final realTables = controller.tables;
-                final joinDefs = controller.joinDefinitions;
+                final realTables = controller.tables
+                    .where((t) =>
+                        !controller.hiddenRealTables.contains(t['name'] as String) &&
+                        !controller.hiddenSchemas.contains(t['schema'] as String? ?? 'public'))
+                    .toList();
+                final joinDefs = controller.joinDefinitions
+                    .where((j) =>
+                        !controller.hiddenJoinViews.contains(j.name))
+                    .toList();
 
                 if (realTables.isEmpty && joinDefs.isEmpty) {
                   return Center(
@@ -166,12 +173,11 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   itemCount: totalCount,
                   itemBuilder: (context, index) {
-                    // 실제 테이블 먼저, 그 다음 JOIN 뷰
                     if (index < realTables.length) {
-                      return _buildTableCard(index);
+                      return _buildTableCard(realTables[index]);
                     } else {
                       final joinIndex = index - realTables.length;
-                      return _buildJoinViewCard(joinIndex);
+                      return _buildJoinViewCard(joinIndex, joinDefs[joinIndex]);
                     }
                   },
                 );
@@ -183,169 +189,155 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
     );
   }
 
-  Widget _buildTableCard(int index) {
-    return Obx(() {
-      final table = controller.tables[index];
-      final tableName = table['name'] as String;
-      final tableSchema = table['schema'] as String? ?? 'public';
-      final columnCount = table['columns'] as int;
-      final rowCount = table['rows'];
+  Widget _buildTableCard(Map<String, dynamic> table) {
+    final tableName = table['name'] as String;
+    final tableSchema = table['schema'] as String? ?? 'public';
+    final columnCount = table['columns'] as int;
+    final rowCount = table['rows'];
 
-      return Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        elevation: 2,
-        child: InkWell(
-          onTap: () {
-            Navigator.pushNamed(
-              context,
-              '/data-editing',
-              arguments: {
-                'server': widget.server,
-                'database': widget.database,
-                'table': tableName,
-              },
-            );
-          },
-          child: ListTile(
-            leading: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.table_chart,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      child: InkWell(
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            '/data-editing',
+            arguments: {
+              'server': widget.server,
+              'database': widget.database,
+              'table': tableName,
+            },
+          );
+        },
+        child: ListTile(
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
             ),
-            title: Text(
-              tableName,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            subtitle: Text('${intl.getString((l) => l.column)}: $columnCount, ${intl.getString((l) => l.row)}: $rowCount'),
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (value) {
-                if (value == 'edit') {
-                  showEditTableDialog(context, controller, tableName, tableSchema);
-                } else if (value == 'delete') {
-                  showDeleteTableDialog(context, controller, tableName, tableSchema);
-                }
-              },
-              itemBuilder: (BuildContext context) => [
-                PopupMenuItem<String>(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit, size: 20),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(intl.getString((l) => l.edit), overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
-                ),
-                PopupMenuItem<String>(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.delete, size: 20, color: Colors.red),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
-                ),
-              ],
+            child: Icon(
+              Icons.table_chart,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
             ),
           ),
+          title: Text(
+            tableName,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text('${intl.getString((l) => l.column)}: $columnCount, ${intl.getString((l) => l.row)}: $rowCount'),
+          trailing: PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'edit') {
+                showEditTableDialog(context, controller, tableName, tableSchema);
+              } else if (value == 'delete') {
+                showDeleteTableDialog(context, controller, tableName, tableSchema);
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              PopupMenuItem<String>(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    const Icon(Icons.edit, size: 20),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text(intl.getString((l) => l.edit), overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    const Icon(Icons.delete, size: 20, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-    });
+      ),
+    );
   }
 
-  Widget _buildJoinViewCard(int joinIndex) {
-    return Obx(() {
-      if (joinIndex >= controller.joinDefinitions.length) return const SizedBox.shrink();
-      final joinDef = controller.joinDefinitions[joinIndex];
-
-      return Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        elevation: 2,
-        child: InkWell(
-          onTap: () {
-            Navigator.pushNamed(
-              context,
-              '/data-editing',
-              arguments: {
-                'server': widget.server,
-                'database': widget.database,
-                'table': joinDef.name,
-                'joinDefinition': joinDef,
-              },
-            );
-          },
-          child: ListTile(
-            leading: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.tertiaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.join_inner,
-                color: Theme.of(context).colorScheme.onTertiaryContainer,
-              ),
+  Widget _buildJoinViewCard(int joinIndex, JoinDefinition joinDef) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      child: InkWell(
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            '/data-editing',
+            arguments: {
+              'server': widget.server,
+              'database': widget.database,
+              'table': joinDef.name,
+              'joinDefinition': joinDef,
+            },
+          );
+        },
+        child: ListTile(
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(8),
             ),
-            title: Text(
-              joinDef.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            subtitle: Text(
-              joinDef.allTables.join(' + '),
-              style: const TextStyle(fontSize: 13),
-            ),
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (value) {
-                if (value == 'edit') {
-                  _showEditJoinViewDialog(joinIndex, joinDef);
-                } else if (value == 'delete') {
-                  _showDeleteJoinViewDialog(joinIndex, joinDef);
-                }
-              },
-              itemBuilder: (BuildContext context) => [
-                PopupMenuItem<String>(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit, size: 20),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(intl.getString((l) => l.edit), overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
-                ),
-                PopupMenuItem<String>(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.delete, size: 20, color: Colors.red),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
-                ),
-              ],
+            child: Icon(
+              Icons.join_inner,
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
             ),
           ),
+          title: Text(
+            joinDef.name,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            joinDef.allTables.join(' + '),
+            style: const TextStyle(fontSize: 13),
+          ),
+          trailing: PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'edit') {
+                _showEditJoinViewDialog(joinIndex, joinDef);
+              } else if (value == 'delete') {
+                _showDeleteJoinViewDialog(joinIndex, joinDef);
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              PopupMenuItem<String>(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    const Icon(Icons.edit, size: 20),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text(intl.getString((l) => l.edit), overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    const Icon(Icons.delete, size: 20, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text(intl.getString((l) => l.delete), style: const TextStyle(color: Colors.red), overflow: TextOverflow.ellipsis)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      );
-    });
+      ),
+    );
   }
 
   Future<void> _showCreateJoinViewDialog() async {

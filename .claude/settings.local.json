@@ -19,7 +19,9 @@
       "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -c \"SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN \\('pg_catalog','information_schema'\\) ORDER BY table_schema, table_name;\" 2>&1)",
       "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -c \"\\\\l\" 2>&1)",
       "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -d join -c \"SELECT * FROM first ORDER BY 1;\")",
-      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -d join -c \"SELECT * FROM second ORDER BY 1;\")"
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -d join -c \"SELECT * FROM second ORDER BY 1;\")",
+      "Bash(wc:*)",
+      "Bash(git log:*)"
     ]
   }
 }

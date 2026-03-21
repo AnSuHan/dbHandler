@@ -266,12 +266,16 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     if (widget.joinDefinition != null) {
                       final meta = state.joinColumnMeta[targetColumnName];
                       if (meta != null) {
+                        final sourcePkColumn = meta['sourcePkColumn'] ?? state.primaryKeyColumn!;
+                        final sourcePkDisplayName = meta['sourcePkDisplayName'] ?? state.primaryKeyColumn!;
+                        final sourcePkValue = state.rows[rowIdx][sourcePkDisplayName];
+                        if (sourcePkValue == null) continue;
                         await dbHandler.updateJoinedCell(
                           meta['sourceTable']!,
                           meta['sourceColumn']!,
                           newValue,
-                          state.primaryKeyColumn!,
-                          pkValue,
+                          sourcePkColumn,
+                          sourcePkValue,
                         );
                       }
                     } else {
@@ -325,12 +329,16 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     if (widget.joinDefinition != null) {
                       final meta = state.joinColumnMeta[targetColumnName];
                       if (meta != null) {
+                        final sourcePkColumn = meta['sourcePkColumn'] ?? state.primaryKeyColumn!;
+                        final sourcePkDisplayName = meta['sourcePkDisplayName'] ?? state.primaryKeyColumn!;
+                        final sourcePkValue = state.rows[targetRowIndex][sourcePkDisplayName];
+                        if (sourcePkValue == null) continue;
                         await dbHandler.updateJoinedCell(
                           meta['sourceTable']!,
                           meta['sourceColumn']!,
                           newValue,
-                          state.primaryKeyColumn!,
-                          pkValue,
+                          sourcePkColumn,
+                          sourcePkValue,
                         );
                       }
                     } else {
@@ -1059,12 +1067,16 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     for (final entry in values.entries) {
                       final meta = state.joinColumnMeta[entry.key];
                       if (meta != null) {
+                        final sourcePkColumn = meta['sourcePkColumn'] ?? pkColName;
+                        final sourcePkDisplayName = meta['sourcePkDisplayName'] ?? pkColName;
+                        final sourcePkValue = rowData[sourcePkDisplayName];
+                        if (sourcePkValue == null) continue;
                         await dbHandler.updateJoinedCell(
                           meta['sourceTable']!,
                           meta['sourceColumn']!,
                           entry.value,
-                          pkColName,
-                          pkValue,
+                          sourcePkColumn,
+                          sourcePkValue,
                         );
                       }
                     }
