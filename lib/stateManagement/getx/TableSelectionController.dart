@@ -309,8 +309,8 @@ class TableSelectionController extends GetxController {
         return {
           'name': table['name'] as String,
           'schema': table['table_schema'] as String? ?? 'public',
-          'columns': table['column_count'] as int,
-          'rows': table['row_count'], // 이미 핸들러에서 가져온 값을 즉시 사용
+          'columns': (table['column_count'] as num?)?.toInt() ?? 0,
+          'rows': (table['row_count'] as num?)?.toInt() ?? 0,
         };
       }).toList();
 

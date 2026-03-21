@@ -167,6 +167,17 @@ class PostgresHandler extends DatabaseHandler {
     _databasesCache.remove(_serverKey);
   }
 
+  // reltuples 등의 값을 안전하게 non-negative int로 변환
+  // PostgreSQL의 reltuples는 분석 전 -1을 반환할 수 있음
+  int _toNonNegativeInt(dynamic value) {
+    int result;
+    if (value is double) result = value.toInt();
+    else if (value is BigInt) result = value.toInt();
+    else if (value is int) result = value;
+    else result = 0;
+    return result < 0 ? 0 : result;
+  }
+
   // ========== 테이블 관리 메서드 ==========
 
   @override
@@ -180,14 +191,15 @@ class PostgresHandler extends DatabaseHandler {
       // reltuples를 사용하여 행 개수 근사값을 매우 빠르게 가져옴
       // 컬럼 수도 서브쿼리로 빠르게 가져옴
       final result = await conn.execute('''
-      SELECT 
-          n.nspname as table_schema, 
+      SELECT
+          n.nspname as table_schema,
           c.relname as table_name,
-          c.reltuples as row_count,
+          COALESCE(s.n_live_tup, GREATEST(c.reltuples::bigint, 0)) as row_count,
           (SELECT count(*) FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) as column_count
       FROM pg_catalog.pg_class c
       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relkind = 'r' 
+      LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+      WHERE c.relkind = 'r'
         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
       ORDER BY n.nspname, c.relname;
     ''');
@@ -198,12 +210,8 @@ class PostgresHandler extends DatabaseHandler {
         return {
           'table_schema': map['table_schema'],
           'name': map['table_name'],
-          'row_count': (map['row_count'] is double) 
-              ? (map['row_count'] as double).toInt() 
-              : map['row_count'],
-          'column_count': (map['column_count'] is BigInt) 
-              ? (map['column_count'] as BigInt).toInt() 
-              : map['column_count'],
+          'row_count': _toNonNegativeInt(map['row_count']),
+          'column_count': _toNonNegativeInt(map['column_count']),
         };
       }).toList();
     });

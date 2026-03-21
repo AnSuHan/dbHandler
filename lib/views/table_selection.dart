@@ -192,8 +192,8 @@ class _TableSelectionScreenState extends State<TableSelectionScreen> {
   Widget _buildTableCard(Map<String, dynamic> table) {
     final tableName = table['name'] as String;
     final tableSchema = table['schema'] as String? ?? 'public';
-    final columnCount = table['columns'] as int;
-    final rowCount = table['rows'];
+    final columnCount = (table['columns'] as num?)?.toInt() ?? 0;
+    final rowCount = (table['rows'] as num?)?.toInt() ?? 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
