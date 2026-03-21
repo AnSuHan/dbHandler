@@ -492,6 +492,10 @@ class MysqlHandler extends DatabaseHandler {
 
   // ========== JOIN 뷰 메서드 ==========
 
+  @override
+  List<JoinType> get supportedJoinTypes =>
+      [JoinType.inner, JoinType.left, JoinType.right]; // MySQL은 FULL OUTER JOIN 미지원
+
   Map<String, String> _buildAliases(JoinDefinition joinDef) {
     final aliases = <String, String>{};
     aliases[joinDef.mainTable] = 't0';
@@ -553,6 +557,28 @@ class MysqlHandler extends DatabaseHandler {
     });
   }
 
+  /// displayName → alias.`originalCol` 매핑 (WHERE/ORDER BY에서 사용)
+  Future<Map<String, String>> _buildMysqlColumnDisplayMap(
+      JoinDefinition joinDef, Map<String, String> aliases, MySQLConnectionPool pool) async {
+    final result = <String, String>{};
+    final seenNames = <String>{};
+    for (final tableName in joinDef.allTables) {
+      final rows = await pool.execute(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :table ORDER BY ORDINAL_POSITION",
+        {"db": databaseName!, "table": tableName},
+      );
+      final alias = aliases[tableName]!;
+      for (final row in rows.rows) {
+        final colName = row.colAt(0) as String;
+        final displayName = seenNames.contains(colName) ? '$tableName.$colName' : colName;
+        seenNames.add(colName);
+        result[displayName] = '$alias.`$colName`';
+      }
+    }
+    return result;
+  }
+
   Future<String> _buildMysqlSelectClause(JoinDefinition joinDef, Map<String, String> aliases, MySQLConnectionPool pool) async {
     final selectParts = <String>[];
     final seenNames = <String>{};
@@ -602,6 +628,8 @@ class MysqlHandler extends DatabaseHandler {
       final aliases = _buildAliases(joinDef);
       final selectClause = await _buildMysqlSelectClause(joinDef, aliases, pool);
       final joinClause = _buildJoinClause(joinDef, aliases);
+      // displayName → alias.`col` 매핑 (WHERE/ORDER BY에서 올바른 컬럼 참조를 위해)
+      final colMap = await _buildMysqlColumnDisplayMap(joinDef, aliases, pool);
       final substitutionValues = <String, dynamic>{};
 
       var query = 'SELECT $selectClause FROM $joinClause';
@@ -626,7 +654,8 @@ class MysqlHandler extends DatabaseHandler {
 
           String condition;
           final opUpper = operator.toUpperCase();
-          final quotedColumn = '`$column`';
+          // JOIN 뷰에서는 alias.`col` 형태로, 일반은 `col` 형태로
+          final quotedColumn = colMap[column] ?? '`$column`';
 
           if (opUpper == 'IS NULL' || opUpper == 'IS NOT NULL') {
             condition = '$quotedColumn $opUpper';
@@ -672,14 +701,14 @@ class MysqlHandler extends DatabaseHandler {
       final orderByColumns = <String>[];
       if (groupByColumns != null && groupByColumns.isNotEmpty) {
         for (final col in groupByColumns) {
-          orderByColumns.add('`$col` ASC');
+          orderByColumns.add('${colMap[col] ?? '`$col`'} ASC');
         }
       }
       if (sorts != null && sorts.isNotEmpty) {
         for (final sort in sorts) {
           final column = sort['column'] as String;
           final ascending = sort['ascending'] as bool;
-          final sortClause = '`$column` ${ascending ? 'ASC' : 'DESC'}';
+          final sortClause = '${colMap[column] ?? '`$column`'} ${ascending ? 'ASC' : 'DESC'}';
           if (groupByColumns != null && groupByColumns.contains(column)) continue;
           orderByColumns.add(sortClause);
         }

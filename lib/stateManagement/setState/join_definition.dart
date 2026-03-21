@@ -68,6 +68,19 @@ class JoinClause {
     leftTable: leftTable ?? this.leftTable,
     rightColumn: rightColumn ?? this.rightColumn,
   );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is JoinClause &&
+          targetTable == other.targetTable &&
+          joinType == other.joinType &&
+          leftColumn == other.leftColumn &&
+          leftTable == other.leftTable &&
+          rightColumn == other.rightColumn;
+
+  @override
+  int get hashCode => Object.hash(targetTable, joinType, leftColumn, leftTable, rightColumn);
 }
 
 /// JOIN 뷰 정의 - 여러 테이블을 결합하는 논리적 테이블
@@ -114,6 +127,21 @@ class JoinDefinition {
     mainTable: mainTable ?? this.mainTable,
     joins: joins ?? this.joins,
   );
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! JoinDefinition) return false;
+    if (name != other.name || mainTable != other.mainTable) return false;
+    if (joins.length != other.joins.length) return false;
+    for (int i = 0; i < joins.length; i++) {
+      if (joins[i] != other.joins[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(name, mainTable, Object.hashAll(joins));
 
   /// SharedPreferences 저장 키
   static String prefsKey(String serverAddress, String database) =>

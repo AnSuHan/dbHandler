@@ -51,6 +51,10 @@ abstract class DatabaseHandler {
   Future<int> getTableCount(String databaseName);
 
   // JOIN 뷰 메서드
+
+  /// DB가 지원하는 JOIN 타입 목록 (기본: 모두 지원)
+  List<JoinType> get supportedJoinTypes => JoinType.values;
+
   Future<List<Map<String, dynamic>>> getJoinedColumns(JoinDefinition joinDef);
   Future<List<Map<String, dynamic>>> getJoinedData(JoinDefinition joinDef);
   Future<List<Map<String, dynamic>>> getJoinedDataWithFilters(

@@ -195,13 +195,25 @@ class EditableDataCell extends ConsumerWidget {
 
               try {
                 // DB 업데이트
-                await dbHandler.updateCell(
-                  dataEditingParams.table,
-                  columnName,
-                  newValue.isEmpty ? null : newValue,
-                  state.primaryKeyColumn!,
-                  pkValue,
-                );
+                if (dataEditingParams.joinDefinition != null) {
+                  final meta = state.joinColumnMeta[columnName];
+                  if (meta == null) throw Exception('컬럼 메타 정보 없음: $columnName');
+                  await dbHandler.updateJoinedCell(
+                    meta['sourceTable']!,
+                    meta['sourceColumn']!,
+                    newValue.isEmpty ? null : newValue,
+                    state.primaryKeyColumn!,
+                    pkValue,
+                  );
+                } else {
+                  await dbHandler.updateCell(
+                    dataEditingParams.table,
+                    columnName,
+                    newValue.isEmpty ? null : newValue,
+                    state.primaryKeyColumn!,
+                    pkValue,
+                  );
+                }
                 
                 // 셀 값만 업데이트 (최소 단위 리빌드)
                 if (targetRowIndex != null && targetColIndex < state.columns.length) {

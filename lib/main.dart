@@ -139,7 +139,13 @@ class MyApp extends StatelessWidget {
                       final server = args['server'] as ServerModel;
                       final database = args['database'] as String;
                       final table = args['table'] as String;
-                      return DataEditingScreen(server: server, database: database, table: table);
+                      final joinDefinition = args['joinDefinition'];
+                      return DataEditingScreen(
+                        server: server,
+                        database: database,
+                        table: table,
+                        joinDefinition: joinDefinition,
+                      );
                     },
                   },
                 );

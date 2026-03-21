@@ -263,13 +263,26 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
 
                 if (isValueChanged) {
                   try {
-                    await dbHandler.updateCell(
-                      widget.table,
-                      targetColumnName,
-                      newValue,
-                      state.primaryKeyColumn!,
-                      pkValue,
-                    );
+                    if (widget.joinDefinition != null) {
+                      final meta = state.joinColumnMeta[targetColumnName];
+                      if (meta != null) {
+                        await dbHandler.updateJoinedCell(
+                          meta['sourceTable']!,
+                          meta['sourceColumn']!,
+                          newValue,
+                          state.primaryKeyColumn!,
+                          pkValue,
+                        );
+                      }
+                    } else {
+                      await dbHandler.updateCell(
+                        widget.table,
+                        targetColumnName,
+                        newValue,
+                        state.primaryKeyColumn!,
+                        pkValue,
+                      );
+                    }
                     cellUpdates.add({
                       'rowIndex': rowIdx,
                       'colIndex': colIdx,
@@ -309,13 +322,26 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
 
                 if (isValueChanged) {
                   try {
-                    await dbHandler.updateCell(
-                      widget.table,
-                      targetColumnName,
-                      newValue,
-                      state.primaryKeyColumn!,
-                      pkValue,
-                    );
+                    if (widget.joinDefinition != null) {
+                      final meta = state.joinColumnMeta[targetColumnName];
+                      if (meta != null) {
+                        await dbHandler.updateJoinedCell(
+                          meta['sourceTable']!,
+                          meta['sourceColumn']!,
+                          newValue,
+                          state.primaryKeyColumn!,
+                          pkValue,
+                        );
+                      }
+                    } else {
+                      await dbHandler.updateCell(
+                        widget.table,
+                        targetColumnName,
+                        newValue,
+                        state.primaryKeyColumn!,
+                        pkValue,
+                      );
+                    }
                     cellUpdates.add({
                       'rowIndex': targetRowIndex,
                       'colIndex': targetColIndex,
@@ -453,13 +479,13 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   tooltip: intl.getString((l) => l.refresh),
                   onPressed: () => notifier.loadTableData(),
                 ),
-                if (!isJoinView) ...[
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    tooltip: intl.getString((l) => l.addRow),
-                    onPressed: () => _showEditRowDialog(null, dataEditingParams),
-                  ),
-                ],
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: isJoinView
+                      ? '${intl.getString((l) => l.addRow)} (${widget.joinDefinition!.mainTable})'
+                      : intl.getString((l) => l.addRow),
+                  onPressed: () => _showEditRowDialog(null, dataEditingParams),
+                ),
                 if (!isJoinView)
                   IconButton(
                     icon: const Icon(Icons.add_box_outlined),
@@ -962,9 +988,15 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
     final isNewRow = rowData == null;
     final controllers = <String, TextEditingController>{};
     final pkColName = state.primaryKeyColumn;
+    final joinDef = widget.joinDefinition;
 
     for (var col in state.columns) {
       final colName = col['name']!;
+      // JOIN 뷰 새 행: mainTable 컬럼만 표시
+      if (isNewRow && joinDef != null) {
+        final meta = state.joinColumnMeta[colName];
+        if (meta == null || meta['sourceTable'] != joinDef.mainTable) continue;
+      }
       if (isNewRow && colName == pkColName && (col['type']!.contains('int') || col['type']!.contains('serial'))) {
         continue;
       }
@@ -1006,7 +1038,8 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               notifier.setLoading(true);
               try {
                 if (isNewRow) {
-                  await dbHandler.addRow(dataEditingParams.table, values);
+                  final addTable = widget.joinDefinition?.mainTable ?? dataEditingParams.table;
+                  await dbHandler.addRow(addTable, values);
                   await notifier.loadTableData();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1022,7 +1055,22 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                     return;
                   }
                   final pkValue = rowData[pkColName];
-                  await dbHandler.updateRow(dataEditingParams.table, values, pkColName, pkValue);
+                  if (widget.joinDefinition != null) {
+                    for (final entry in values.entries) {
+                      final meta = state.joinColumnMeta[entry.key];
+                      if (meta != null) {
+                        await dbHandler.updateJoinedCell(
+                          meta['sourceTable']!,
+                          meta['sourceColumn']!,
+                          entry.value,
+                          pkColName,
+                          pkValue,
+                        );
+                      }
+                    }
+                  } else {
+                    await dbHandler.updateRow(dataEditingParams.table, values, pkColName, pkValue);
+                  }
                   
                   // 행 인덱스 찾기
                   int? rowIndex;
@@ -1100,7 +1148,8 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
               
               notifier.setLoading(true);
               try {
-                await dbHandler.deleteRow(dataEditingParams.table, state.primaryKeyColumn!, pkValue);
+                final deleteTable = widget.joinDefinition?.mainTable ?? dataEditingParams.table;
+                await dbHandler.deleteRow(deleteTable, state.primaryKeyColumn!, pkValue);
                 await notifier.loadTableData();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1494,6 +1543,7 @@ class _HeaderColumnCell extends ConsumerWidget {
     );
 
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
+    final isJoinView = dataEditingParams.joinDefinition != null;
 
     return Stack(
       children: [
@@ -1530,7 +1580,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                   Offset.zero & overlay.size,
                 ),
                 items: [
-                  PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
+                  if (!isJoinView) PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
                   const PopupMenuItem(
                     value: 'configStructure',
                     child: Row(
@@ -1541,7 +1591,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  PopupMenuItem(
+                  if (!isJoinView) PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [
@@ -1579,7 +1629,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                   screenSize.height - tapPosition.dy,
                 ),
                 items: [
-                  PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
+                  if (!isJoinView) PopupMenuItem(value: 'edit', child: Text(intl.getString((i) => i.modify))),
                   const PopupMenuItem(
                     value: 'configStructure',
                     child: Row(
@@ -1590,7 +1640,7 @@ class _HeaderColumnCell extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  PopupMenuItem(
+                  if (!isJoinView) PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [

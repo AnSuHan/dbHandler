@@ -44,8 +44,8 @@ class _JoinTableDialogState extends State<_JoinTableDialog> {
   String? _mainTable;
   final List<_JoinClauseState> _joinClauses = [];
 
-  // 테이블별 컬럼 캐시
-  final Map<String, List<String>> _columnCache = {};
+  // 테이블별 컬럼 캐시: {name, type}
+  final Map<String, List<Map<String, String>>> _columnCache = {};
   bool _isLoadingColumns = false;
 
   @override
@@ -87,11 +87,49 @@ class _JoinTableDialogState extends State<_JoinTableDialog> {
     setState(() => _isLoadingColumns = true);
     try {
       final columns = await widget.dbHandler.getColumns(tableName);
-      _columnCache[tableName] = columns.map((c) => c['name'] as String).toList();
+      _columnCache[tableName] = columns
+          .map((c) => {'name': c['name'] as String, 'type': c['type'] as String})
+          .toList();
     } catch (_) {
       _columnCache[tableName] = [];
     }
     if (mounted) setState(() => _isLoadingColumns = false);
+  }
+
+  /// 두 컬럼의 타입이 호환 가능한지 확인
+  bool _areTypesCompatible(String? table1, String? col1, String? table2, String? col2) {
+    if (table1 == null || col1 == null || table2 == null || col2 == null) return true;
+    final cols1 = _columnCache[table1] ?? [];
+    final cols2 = _columnCache[table2] ?? [];
+    final type1 = cols1.firstWhere((c) => c['name'] == col1, orElse: () => {})['type'];
+    final type2 = cols2.firstWhere((c) => c['name'] == col2, orElse: () => {})['type'];
+    if (type1 == null || type2 == null) return true;
+    return _typeGroup(type1) == _typeGroup(type2);
+  }
+
+  /// 타입을 대분류로 묶기
+  String _typeGroup(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('int') || t.contains('serial') || t.contains('numeric') ||
+        t.contains('decimal') || t.contains('float') || t.contains('double') ||
+        t.contains('real') || t.contains('number')) return 'numeric';
+    if (t.contains('char') || t.contains('text') || t.contains('string') ||
+        t.contains('varchar') || t.contains('enum')) return 'text';
+    if (t.contains('bool')) return 'bool';
+    if (t.contains('date') || t.contains('time') || t.contains('timestamp')) return 'datetime';
+    return t;
+  }
+
+  List<String> _columnNames(String? tableName) {
+    if (tableName == null) return [];
+    return (_columnCache[tableName] ?? []).map((c) => c['name']!).toList();
+  }
+
+  String _columnType(String? tableName, String? colName) {
+    if (tableName == null || colName == null) return '';
+    final col = (_columnCache[tableName] ?? [])
+        .firstWhere((c) => c['name'] == colName, orElse: () => {});
+    return col['type'] ?? '';
   }
 
   /// 현재까지 참여하는 모든 테이블 이름
@@ -289,12 +327,10 @@ class _JoinTableDialogState extends State<_JoinTableDialog> {
         .where((t) => !usedTargets.contains(t) || t == jc.targetTable)
         .toList();
 
-    final leftColumns = jc.leftTable != null
-        ? (_columnCache[jc.leftTable] ?? [])
-        : <String>[];
-    final rightColumns = jc.targetTable != null
-        ? (_columnCache[jc.targetTable] ?? [])
-        : <String>[];
+    final leftColumns = _columnNames(jc.leftTable);
+    final rightColumns = _columnNames(jc.targetTable);
+    final typeMismatch = !_areTypesCompatible(
+        jc.leftTable, jc.leftColumn, jc.targetTable, jc.rightColumn);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -311,12 +347,19 @@ class _JoinTableDialogState extends State<_JoinTableDialog> {
                 // JOIN 타입 선택
                 DropdownButton<JoinType>(
                   value: jc.joinType,
-                  items: JoinType.values
-                      .map((t) => DropdownMenuItem(
-                            value: t,
-                            child: Text(t.label),
-                          ))
-                      .toList(),
+                  items: JoinType.values.map((t) {
+                    final supported = widget.dbHandler.supportedJoinTypes.contains(t);
+                    return DropdownMenuItem(
+                      value: t,
+                      enabled: supported,
+                      child: Text(
+                        supported ? t.label : '${t.label} (미지원)',
+                        style: TextStyle(
+                          color: supported ? null : Colors.grey,
+                        ),
+                      ),
+                    );
+                  }).toList(),
                   onChanged: (v) {
                     if (v != null) setState(() => jc.joinType = v);
                   },
@@ -388,9 +431,14 @@ class _JoinTableDialogState extends State<_JoinTableDialog> {
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    items: leftColumns
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
+                    items: leftColumns.map((c) {
+                      final t = _columnType(jc.leftTable, c);
+                      return DropdownMenuItem(
+                        value: c,
+                        child: Text(t.isNotEmpty ? '$c ($t)' : c,
+                            overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
                     onChanged: (v) => setState(() => jc.leftColumn = v),
                   ),
                 ),
@@ -422,14 +470,43 @@ class _JoinTableDialogState extends State<_JoinTableDialog> {
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    items: rightColumns
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
+                    items: rightColumns.map((c) {
+                      final t = _columnType(jc.targetTable, c);
+                      return DropdownMenuItem(
+                        value: c,
+                        child: Text(t.isNotEmpty ? '$c ($t)' : c,
+                            overflow: TextOverflow.ellipsis),
+                      );
+                    }).toList(),
                     onChanged: (v) => setState(() => jc.rightColumn = v),
                   ),
                 ),
               ],
             ),
+            if (typeMismatch) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.orange.shade400),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '타입 불일치: ${_columnType(jc.leftTable, jc.leftColumn)} ≠ ${_columnType(jc.targetTable, jc.rightColumn)}\n'
+                        'JOIN 결과가 비어있거나 오류가 발생할 수 있습니다.',
+                        style: TextStyle(color: Colors.orange.shade900, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

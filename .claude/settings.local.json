@@ -7,7 +7,19 @@
       "Bash(flutter:*)",
       "Bash(find /d/ForGitRepository/dbHandler/lib -type f -name *.dart)",
       "Bash(find /d/ForGitRepository/dbHandler/lib -name *shared_preferences* -o -name *preference*)",
-      "Bash(dart analyze:*)"
+      "Bash(dart analyze:*)",
+      "Bash(psql -U postgres -c \"SELECT * FROM join.first;\")",
+      "Bash(psql -U postgres -c \"SELECT * FROM join.second;\")",
+      "Bash(psql -U postgres -c \"\\\\d join.first\")",
+      "Bash(psql -U postgres -c \"\\\\d join.second\")",
+      "Bash(PGPASSWORD=postgres psql -U postgres -h localhost -p 5432 -c \"SELECT * FROM \"\"join\"\".first ORDER BY 1;\")",
+      "Bash(PGPASSWORD=postgres psql -U postgres -h localhost -p 5432 -c \"SELECT * FROM \"\"join\"\".second ORDER BY 1;\")",
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -c \"SELECT * FROM \"\"join\"\".first ORDER BY 1;\")",
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -c \"SELECT * FROM \"\"join\"\".second ORDER BY 1;\")",
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -c \"SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN \\('pg_catalog','information_schema'\\) ORDER BY table_schema, table_name;\" 2>&1)",
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -c \"\\\\l\" 2>&1)",
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -d join -c \"SELECT * FROM first ORDER BY 1;\")",
+      "Bash(PGPASSWORD=0000 psql -U postgres -h 127.0.0.1 -p 5432 -d join -c \"SELECT * FROM second ORDER BY 1;\")"
     ]
   }
 }

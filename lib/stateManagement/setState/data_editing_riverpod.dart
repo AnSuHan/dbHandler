@@ -790,6 +790,6 @@ class DataEditingParams {
   final ServerModel server; final String database; final String table;
   final JoinDefinition? joinDefinition;
   DataEditingParams({required this.server, required this.database, required this.table, this.joinDefinition});
-  @override bool operator ==(Object other) => identical(this, other) || other is DataEditingParams && runtimeType == other.runtimeType && server == other.server && database == other.database && table == other.table && joinDefinition?.name == (other as DataEditingParams).joinDefinition?.name;
-  @override int get hashCode => server.hashCode ^ database.hashCode ^ table.hashCode ^ (joinDefinition?.name.hashCode ?? 0);
+  @override bool operator ==(Object other) => identical(this, other) || other is DataEditingParams && runtimeType == other.runtimeType && server == other.server && database == other.database && table == other.table && joinDefinition == other.joinDefinition;
+  @override int get hashCode => server.hashCode ^ database.hashCode ^ table.hashCode ^ (joinDefinition?.hashCode ?? 0);
 }

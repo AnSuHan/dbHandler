@@ -572,6 +572,34 @@ class PostgresHandler extends DatabaseHandler {
     });
   }
 
+  /// displayName → alias."originalCol" 매핑 (WHERE/ORDER BY에서 사용)
+  Future<Map<String, String>> _buildColumnDisplayMap(
+      JoinDefinition joinDef, Map<String, String> aliases, Session conn) async {
+    final result = <String, String>{};
+    final seenNames = <String>{};
+    for (final tableName in joinDef.allTables) {
+      final rows = await conn.execute(
+        Sql.named('''
+          SELECT a.attname AS name
+          FROM pg_catalog.pg_attribute a
+          JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = @table AND a.attnum > 0 AND NOT a.attisdropped AND n.nspname = 'public'
+          ORDER BY a.attnum;
+        '''),
+        parameters: {'table': tableName},
+      );
+      final alias = aliases[tableName]!;
+      for (final row in rows) {
+        final colName = row.toColumnMap()['name'] as String;
+        final displayName = seenNames.contains(colName) ? '$tableName.$colName' : colName;
+        seenNames.add(colName);
+        result[displayName] = '$alias."$colName"';
+      }
+    }
+    return result;
+  }
+
   /// SELECT 절 생성 (컬럼 충돌 처리)
   Future<String> _buildSelectClause(JoinDefinition joinDef, Map<String, String> aliases, Session conn) async {
     final selectParts = <String>[];
@@ -629,6 +657,8 @@ class PostgresHandler extends DatabaseHandler {
       final aliases = _buildAliases(joinDef);
       final selectClause = await _buildSelectClause(joinDef, aliases, conn);
       final joinClause = _buildJoinClause(joinDef, aliases);
+      // displayName → alias."col" 매핑 (WHERE/ORDER BY에서 올바른 컬럼 참조를 위해)
+      final colMap = await _buildColumnDisplayMap(joinDef, aliases, conn);
       final substitutionValues = <String, dynamic>{};
 
       var query = 'SELECT $selectClause FROM $joinClause';
@@ -653,8 +683,8 @@ class PostgresHandler extends DatabaseHandler {
 
           String condition;
           final opUpper = operator.toUpperCase();
-          // 컬럼명에 "."이 있으면 별칭 처리된 것이므로 그대로 사용
-          final quotedColumn = '"$column"';
+          // JOIN 뷰에서는 alias."col" 형태로 참조 (displayName 기반 매핑 사용)
+          final quotedColumn = colMap[column] ?? '"$column"';
 
           if (opUpper == 'IS NULL' || opUpper == 'IS NOT NULL') {
             condition = '$quotedColumn $opUpper';
@@ -700,14 +730,14 @@ class PostgresHandler extends DatabaseHandler {
       final orderByColumns = <String>[];
       if (groupByColumns != null && groupByColumns.isNotEmpty) {
         for (final col in groupByColumns) {
-          orderByColumns.add('"$col" ASC');
+          orderByColumns.add('${colMap[col] ?? '"$col"'} ASC');
         }
       }
       if (sorts != null && sorts.isNotEmpty) {
         for (final sort in sorts) {
           final column = sort['column'] as String;
           final ascending = sort['ascending'] as bool;
-          final sortClause = '"$column" ${ascending ? 'ASC' : 'DESC'}';
+          final sortClause = '${colMap[column] ?? '"$column"'} ${ascending ? 'ASC' : 'DESC'}';
           if (groupByColumns != null && groupByColumns.contains(column)) continue;
           orderByColumns.add(sortClause);
         }
