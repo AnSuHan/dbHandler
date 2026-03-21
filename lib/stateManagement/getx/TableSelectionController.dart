@@ -1,11 +1,13 @@
 // ignore_for_file: file_names
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../db/database_handler.dart';
 import '../../db/database_handler_factory.dart';
 import '../../l10n/LocalizationManager.dart';
 import '../../sqflite/models/server_model.dart';
+import '../../stateManagement/setState/join_definition.dart';
 
 class TableSelectionController extends GetxController {
   final ServerModel server;
@@ -13,6 +15,7 @@ class TableSelectionController extends GetxController {
   late final DatabaseHandler _dbHandler;
 
   final tables = <Map<String, dynamic>>[].obs;
+  final joinDefinitions = <JoinDefinition>[].obs;
   final isLoading = true.obs;
 
   final successMessage = Rxn<String>();
@@ -25,10 +28,51 @@ class TableSelectionController extends GetxController {
     _dbHandler = DatabaseHandlerFactory.createHandler(server, databaseName: database);
   }
 
+  DatabaseHandler get dbHandler => _dbHandler;
+
   @override
   void onInit() {
     super.onInit();
     loadTables();
+    _loadJoinDefinitions();
+  }
+
+  // ========== JOIN 정의 관리 ==========
+
+  String get _joinPrefsKey => JoinDefinition.prefsKey(server.address, database);
+
+  Future<void> _loadJoinDefinitions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_joinPrefsKey);
+      joinDefinitions.value = JoinDefinition.fromPrefsString(raw);
+    } catch (_) {}
+  }
+
+  Future<void> _persistJoinDefinitions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_joinPrefsKey, JoinDefinition.toPrefsString(joinDefinitions));
+    } catch (_) {}
+  }
+
+  void addJoinDefinition(JoinDefinition def) {
+    joinDefinitions.add(def);
+    _persistJoinDefinitions();
+  }
+
+  void updateJoinDefinition(int index, JoinDefinition def) {
+    if (index >= 0 && index < joinDefinitions.length) {
+      joinDefinitions[index] = def;
+      _persistJoinDefinitions();
+    }
+  }
+
+  void removeJoinDefinition(int index) {
+    if (index >= 0 && index < joinDefinitions.length) {
+      joinDefinitions.removeAt(index);
+      _persistJoinDefinitions();
+    }
   }
 
   void refreshTables() {

@@ -6,7 +6,8 @@
       "Bash(flutter analyze:*)",
       "Bash(flutter:*)",
       "Bash(find /d/ForGitRepository/dbHandler/lib -type f -name *.dart)",
-      "Bash(find /d/ForGitRepository/dbHandler/lib -name *shared_preferences* -o -name *preference*)"
+      "Bash(find /d/ForGitRepository/dbHandler/lib -name *shared_preferences* -o -name *preference*)",
+      "Bash(dart analyze:*)"
     ]
   }
 }

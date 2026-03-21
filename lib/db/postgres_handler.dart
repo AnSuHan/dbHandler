@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:postgres/postgres.dart';
 import 'package:db_handler/sqflite/models/server_model.dart';
+import 'package:db_handler/stateManagement/setState/join_definition.dart';
 import 'database_handler.dart';
 
 class PostgresHandler extends DatabaseHandler {
@@ -496,7 +497,246 @@ class PostgresHandler extends DatabaseHandler {
     });
   }
 
-// ========== 트랜잭션 메서드 ==========
+// ========== JOIN 뷰 메서드 ==========
+
+  /// 테이블 별칭 생성: t0, t1, t2, ...
+  Map<String, String> _buildAliases(JoinDefinition joinDef) {
+    final aliases = <String, String>{};
+    aliases[joinDef.mainTable] = 't0';
+    for (int i = 0; i < joinDef.joins.length; i++) {
+      final t = joinDef.joins[i].targetTable;
+      if (!aliases.containsKey(t)) {
+        aliases[t] = 't${aliases.length}';
+      }
+    }
+    return aliases;
+  }
+
+  /// FROM + JOIN 절 생성
+  String _buildJoinClause(JoinDefinition joinDef, Map<String, String> aliases) {
+    final sb = StringBuffer();
+    sb.write('"${joinDef.mainTable}" ${aliases[joinDef.mainTable]}');
+    for (final j in joinDef.joins) {
+      final leftAlias = aliases[j.leftTable]!;
+      final rightAlias = aliases[j.targetTable]!;
+      sb.write(' ${j.joinType.sql} "${j.targetTable}" $rightAlias');
+      sb.write(' ON $leftAlias."${j.leftColumn}" = $rightAlias."${j.rightColumn}"');
+    }
+    return sb.toString();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getJoinedColumns(JoinDefinition joinDef) {
+    return _withConnection(databaseName!, (conn) async {
+      final aliases = _buildAliases(joinDef);
+      // 각 테이블의 컬럼 정보를 조회하여 테이블명.컬럼명 형태로 반환
+      final columns = <Map<String, dynamic>>[];
+      final seenNames = <String>{};
+
+      for (final tableName in joinDef.allTables) {
+        final result = await conn.execute(
+          Sql.named('''
+            SELECT a.attname AS name,
+                   pg_catalog.format_type(a.atttypid, a.atttypmod) AS type
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = @table
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+              AND n.nspname = 'public'
+            ORDER BY a.attnum;
+          '''),
+          parameters: {'table': tableName},
+        );
+
+        for (final row in result) {
+          final map = row.toColumnMap();
+          final colName = map['name'] as String;
+          // 이름 충돌 시 테이블명.컬럼명 사용
+          final alias = aliases[tableName]!;
+          final displayName = seenNames.contains(colName)
+              ? '$tableName.$colName'
+              : colName;
+          seenNames.add(colName);
+          columns.add({
+            'name': displayName,
+            'type': map['type'] as String,
+            'sourceTable': tableName,
+            'sourceColumn': colName,
+            'alias': alias,
+          });
+        }
+      }
+      return columns;
+    });
+  }
+
+  /// SELECT 절 생성 (컬럼 충돌 처리)
+  Future<String> _buildSelectClause(JoinDefinition joinDef, Map<String, String> aliases, Session conn) async {
+    final selectParts = <String>[];
+    final seenNames = <String>{};
+
+    for (final tableName in joinDef.allTables) {
+      final result = await conn.execute(
+        Sql.named('''
+          SELECT a.attname AS name
+          FROM pg_catalog.pg_attribute a
+          JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = @table
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname = 'public'
+          ORDER BY a.attnum;
+        '''),
+        parameters: {'table': tableName},
+      );
+
+      final alias = aliases[tableName]!;
+      for (final row in result) {
+        final colName = row.toColumnMap()['name'] as String;
+        final displayName = seenNames.contains(colName)
+            ? '$tableName.$colName'
+            : colName;
+        seenNames.add(colName);
+        selectParts.add('$alias."$colName" AS "$displayName"');
+      }
+    }
+    return selectParts.join(', ');
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getJoinedData(JoinDefinition joinDef) {
+    return _withConnection(databaseName!, (conn) async {
+      final aliases = _buildAliases(joinDef);
+      final selectClause = await _buildSelectClause(joinDef, aliases, conn);
+      final joinClause = _buildJoinClause(joinDef, aliases);
+      final query = 'SELECT $selectClause FROM $joinClause';
+      final result = await conn.execute(query);
+      return result.map((row) => row.toColumnMap()).toList();
+    });
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getJoinedDataWithFilters(
+      JoinDefinition joinDef, {
+        List<Map<String, dynamic>>? filters,
+        List<Map<String, dynamic>>? sorts,
+        List<String>? groupByColumns,
+      }) {
+    return _withConnection(databaseName!, (conn) async {
+      final aliases = _buildAliases(joinDef);
+      final selectClause = await _buildSelectClause(joinDef, aliases, conn);
+      final joinClause = _buildJoinClause(joinDef, aliases);
+      final substitutionValues = <String, dynamic>{};
+
+      var query = 'SELECT $selectClause FROM $joinClause';
+
+      // WHERE 절 생성
+      if (filters != null && filters.isNotEmpty) {
+        final whereClauses = <String>[];
+        int paramIndex = 0;
+
+        for (int i = 0; i < filters.length; i++) {
+          final filter = filters[i];
+          final column = filter['column'] as String;
+          final operator = filter['operator'] as String;
+          final value = filter['value'];
+          final logicalOperator = filter['logicalOperator'] as String?;
+          final isNegated = filter['isNegated'] as bool? ?? false;
+          final openGroupCount = filter['openGroupCount'] as int? ?? 0;
+          final closeGroupCount = filter['closeGroupCount'] as int? ?? 0;
+
+          for (int p = 0; p < openGroupCount; p++) whereClauses.add('(');
+          if (isNegated) { whereClauses.add('NOT'); whereClauses.add('('); }
+
+          String condition;
+          final opUpper = operator.toUpperCase();
+          // 컬럼명에 "."이 있으면 별칭 처리된 것이므로 그대로 사용
+          final quotedColumn = '"$column"';
+
+          if (opUpper == 'IS NULL' || opUpper == 'IS NOT NULL') {
+            condition = '$quotedColumn $opUpper';
+          } else if (opUpper == 'IN' || opUpper == 'NOT IN') {
+            if (value is List && value.isNotEmpty) {
+              final pNames = [];
+              for (var v in value) {
+                final pName = 'param$paramIndex';
+                pNames.add('@$pName');
+                substitutionValues[pName] = v;
+                paramIndex++;
+              }
+              condition = '$quotedColumn $opUpper (${pNames.join(', ')})';
+            } else {
+              condition = '$quotedColumn ${opUpper == 'IN' ? '=' : '!='} @param$paramIndex';
+              substitutionValues['param$paramIndex'] = value;
+              paramIndex++;
+            }
+          } else if (opUpper == 'LIKE') {
+            condition = '$quotedColumn LIKE @param$paramIndex';
+            substitutionValues['param$paramIndex'] = value;
+            paramIndex++;
+          } else {
+            condition = '$quotedColumn $operator @param$paramIndex';
+            substitutionValues['param$paramIndex'] = value;
+            paramIndex++;
+          }
+          whereClauses.add(condition);
+
+          if (isNegated) whereClauses.add(')');
+          for (int p = 0; p < closeGroupCount; p++) whereClauses.add(')');
+          if (i < filters.length - 1) {
+            whereClauses.add((logicalOperator ?? 'AND').toUpperCase());
+          }
+        }
+
+        if (whereClauses.isNotEmpty) {
+          query += ' WHERE ${whereClauses.join(' ')}';
+        }
+      }
+
+      // ORDER BY 절 생성
+      final orderByColumns = <String>[];
+      if (groupByColumns != null && groupByColumns.isNotEmpty) {
+        for (final col in groupByColumns) {
+          orderByColumns.add('"$col" ASC');
+        }
+      }
+      if (sorts != null && sorts.isNotEmpty) {
+        for (final sort in sorts) {
+          final column = sort['column'] as String;
+          final ascending = sort['ascending'] as bool;
+          final sortClause = '"$column" ${ascending ? 'ASC' : 'DESC'}';
+          if (groupByColumns != null && groupByColumns.contains(column)) continue;
+          orderByColumns.add(sortClause);
+        }
+      }
+      if (orderByColumns.isNotEmpty) {
+        query += ' ORDER BY ${orderByColumns.join(', ')}';
+      }
+
+      final results = substitutionValues.isEmpty
+          ? await conn.execute(query)
+          : await conn.execute(Sql.named(query), parameters: substitutionValues);
+      return results.map((row) => row.toColumnMap()).toList();
+    });
+  }
+
+  @override
+  Future<void> updateJoinedCell(
+      String sourceTable, String sourceColumn, dynamic newValue,
+      String pkColumn, dynamic pkValue) {
+    return _withConnection(databaseName!, (conn) async {
+      final query = 'UPDATE "$sourceTable" SET "$sourceColumn" = @newValue WHERE "$pkColumn" = @pkValue';
+      await conn.execute(
+          Sql.named(query),
+          parameters: {'newValue': newValue, 'pkValue': pkValue}
+      );
+    });
+  }
+
+  // ========== 트랜잭션 메서드 ==========
   @override
   Future<void> runInTransaction(Future<void> Function() operation) async {
     if (databaseName == null) {

@@ -9,6 +9,7 @@ import '../../db/database_handler.dart';
 import '../../db/database_handler_factory.dart';
 import '../../sqflite/models/server_model.dart';
 import 'cell_structure.dart';
+import 'join_definition.dart';
 
 /// 필터 조건 클래스
 class FilterCondition {
@@ -104,7 +105,8 @@ class DataEditingState {
   final List<Map<String, String>> columns;
   final String? primaryKeyColumn;
   final List<double> columnWidths;
-  final List<double> baseColumnWidths; // 구조보기 적용 전 원본 폭
+  final List<double> baseColumnWidths;        // 일반모드 원본 폭
+  final List<double> baseDisplayColumnWidths; // 구조모드 원본 폭
   final List<double> minColumnWidths;
   final int? selectedColumnIndex;
   final int? selectedRowIndex;
@@ -116,6 +118,9 @@ class DataEditingState {
   final List<String> groupByColumns;
   final Map<String, CellStructure> cellStructures;
   final bool isDisplayMode;
+  final bool isJoinView;
+  /// JOIN 뷰 컬럼 메타데이터: displayName → {sourceTable, sourceColumn}
+  final Map<String, Map<String, String>> joinColumnMeta;
 
   // UI 호환성을 위한 게터들 (기존 코드에서 참조됨)
   final List<Map<String, dynamic>>? filterBlocks;
@@ -130,6 +135,7 @@ class DataEditingState {
     this.primaryKeyColumn,
     this.columnWidths = const [],
     this.baseColumnWidths = const [],
+    this.baseDisplayColumnWidths = const [],
     this.minColumnWidths = const [],
     this.selectedColumnIndex,
     this.selectedRowIndex,
@@ -141,6 +147,8 @@ class DataEditingState {
     this.groupByColumns = const [],
     this.cellStructures = const {},
     this.isDisplayMode = false,
+    this.isJoinView = false,
+    this.joinColumnMeta = const {},
     this.filterBlocks,
     this.filterParenthesis,
     this.filterOperators,
@@ -154,6 +162,7 @@ class DataEditingState {
     String? primaryKeyColumn,
     List<double>? columnWidths,
     List<double>? baseColumnWidths,
+    List<double>? baseDisplayColumnWidths,
     List<double>? minColumnWidths,
     int? selectedColumnIndex,
     int? selectedRowIndex,
@@ -165,6 +174,8 @@ class DataEditingState {
     List<String>? groupByColumns,
     Map<String, CellStructure>? cellStructures,
     bool? isDisplayMode,
+    bool? isJoinView,
+    Map<String, Map<String, String>>? joinColumnMeta,
     List<Map<String, dynamic>>? filterBlocks,
     List<bool>? filterParenthesis,
     List<String>? filterOperators,
@@ -177,6 +188,7 @@ class DataEditingState {
       primaryKeyColumn: primaryKeyColumn ?? this.primaryKeyColumn,
       columnWidths: columnWidths ?? this.columnWidths,
       baseColumnWidths: baseColumnWidths ?? this.baseColumnWidths,
+      baseDisplayColumnWidths: baseDisplayColumnWidths ?? this.baseDisplayColumnWidths,
       minColumnWidths: minColumnWidths ?? this.minColumnWidths,
       selectedColumnIndex: selectedColumnIndex ?? this.selectedColumnIndex,
       selectedRowIndex: selectedRowIndex ?? this.selectedRowIndex,
@@ -188,6 +200,8 @@ class DataEditingState {
       groupByColumns: groupByColumns ?? this.groupByColumns,
       cellStructures: cellStructures ?? this.cellStructures,
       isDisplayMode: isDisplayMode ?? this.isDisplayMode,
+      isJoinView: isJoinView ?? this.isJoinView,
+      joinColumnMeta: joinColumnMeta ?? this.joinColumnMeta,
       filterBlocks: filterBlocks ?? this.filterBlocks,
       filterParenthesis: filterParenthesis ?? this.filterParenthesis,
       filterOperators: filterOperators ?? this.filterOperators,
@@ -236,14 +250,20 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   final String _table;
   final String _serverAddress;
   final String _database;
+  final JoinDefinition? _joinDefinition;
 
-  DataEditingNotifier(this._dbHandler, this._table, this._serverAddress, this._database)
-      : super(const DataEditingState()) {
+  DataEditingNotifier(this._dbHandler, this._table, this._serverAddress, this._database, {JoinDefinition? joinDefinition})
+      : _joinDefinition = joinDefinition,
+        super(DataEditingState(isJoinView: joinDefinition != null)) {
     _loadCellStructures().then((_) => loadTableData());
   }
 
-  String get _prefsKey => 'cell_structures|$_serverAddress|$_database|$_table';
-  String get _columnWidthsPrefsKey => 'column_widths|$_serverAddress|$_database|$_table';
+  bool get isJoinView => _joinDefinition != null;
+  String get _effectiveName => _joinDefinition?.name ?? _table;
+
+  String get _prefsKey => 'cell_structures|$_serverAddress|$_database|$_effectiveName';
+  String get _columnWidthsPrefsKey => 'column_widths|$_serverAddress|$_database|$_effectiveName';
+  String get _displayColumnWidthsPrefsKey => 'column_widths_display|$_serverAddress|$_database|$_effectiveName';
 
   Future<void> _loadCellStructures() async {
     try {
@@ -266,37 +286,68 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     } catch (_) {}
   }
 
-  /// 저장된 비율을 현재 초기 계산 총폭에 맞춰 px로 복원
+  /// 비율 리스트를 현재 초기 계산 총폭에 맞춰 px 리스트로 변환
+  List<double>? _ratiosToWidths(List<double> ratios) {
+    if (ratios.length != state.columnWidths.length) return null;
+    final currentTotal = state.columnWidths.reduce((a, b) => a + b);
+    return [
+      for (int i = 0; i < ratios.length; i++)
+        math.max(ratios[i] * currentTotal, state.minColumnWidths[i])
+    ];
+  }
+
+  /// px 리스트를 비율 리스트로 변환
+  List<double>? _widthsToRatios(List<double> widths) {
+    if (widths.isEmpty) return null;
+    final total = widths.reduce((a, b) => a + b);
+    if (total <= 0) return null;
+    return widths.map((w) => w / total).toList();
+  }
+
+  /// 저장된 일반모드 + 구조모드 비율을 복원
   Future<void> _loadColumnWidths() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_columnWidthsPrefsKey);
-      if (raw == null) return;
-      final decoded = jsonDecode(raw) as List<dynamic>;
-      final ratios = decoded.map((e) => (e as num).toDouble()).toList();
-      // 컬럼 수가 일치할 때만 복원
-      if (ratios.length != state.columnWidths.length) return;
 
-      // 현재 화면/폰트 기준으로 계산된 초기 총폭을 기준으로 비율 → px 변환
-      final currentTotal = state.columnWidths.reduce((a, b) => a + b);
-      final restored = <double>[];
-      for (int i = 0; i < ratios.length; i++) {
-        restored.add(math.max(ratios[i] * currentTotal, state.minColumnWidths[i]));
+      // 일반모드 폭 복원
+      final normalRaw = prefs.getString(_columnWidthsPrefsKey);
+      if (normalRaw != null) {
+        final ratios = (jsonDecode(normalRaw) as List).map((e) => (e as num).toDouble()).toList();
+        final restored = _ratiosToWidths(ratios);
+        if (restored != null) {
+          state = state.copyWith(columnWidths: restored, baseColumnWidths: List<double>.from(restored));
+        }
       }
-      // 원본 폭과 표시 폭 모두 복원 (구조보기 적용 전 상태)
-      state = state.copyWith(columnWidths: restored, baseColumnWidths: List<double>.from(restored));
+
+      // 구조모드 폭 복원
+      final displayRaw = prefs.getString(_displayColumnWidthsPrefsKey);
+      if (displayRaw != null) {
+        final ratios = (jsonDecode(displayRaw) as List).map((e) => (e as num).toDouble()).toList();
+        final restored = _ratiosToWidths(ratios);
+        if (restored != null) {
+          state = state.copyWith(baseDisplayColumnWidths: restored);
+        }
+      }
     } catch (_) {}
   }
 
-  /// baseColumnWidths(원본 폭)를 비율로 변환하여 저장 — 구조보기로 인한 0.0 폭 영향 없음
-  Future<void> _persistColumnWidths() async {
+  /// 일반모드 원본 폭을 비율로 저장
+  Future<void> _persistNormalColumnWidths() async {
     try {
-      final source = state.baseColumnWidths.isNotEmpty ? state.baseColumnWidths : state.columnWidths;
-      final total = source.reduce((a, b) => a + b);
-      if (total <= 0) return;
-      final ratios = source.map((w) => w / total).toList();
+      final ratios = _widthsToRatios(state.baseColumnWidths);
+      if (ratios == null) return;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_columnWidthsPrefsKey, jsonEncode(ratios));
+    } catch (_) {}
+  }
+
+  /// 구조모드 원본 폭을 비율로 저장
+  Future<void> _persistDisplayColumnWidths() async {
+    try {
+      final ratios = _widthsToRatios(state.baseDisplayColumnWidths);
+      if (ratios == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_displayColumnWidthsPrefsKey, jsonEncode(ratios));
     } catch (_) {}
   }
 
@@ -318,7 +369,30 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   }
 
   void toggleDisplayMode() {
-    state = state.copyWith(isDisplayMode: !state.isDisplayMode);
+    final enteringDisplay = !state.isDisplayMode;
+
+    if (enteringDisplay) {
+      // 일반 → 구조: 현재 폭을 일반모드 원본으로 저장
+      _persistNormalColumnWidths();
+      state = state.copyWith(
+        isDisplayMode: true,
+        baseColumnWidths: List<double>.from(state.columnWidths),
+      );
+      // 저장된 구조모드 폭이 있으면 적용
+      if (state.baseDisplayColumnWidths.isNotEmpty &&
+          state.baseDisplayColumnWidths.length == state.columnWidths.length) {
+        state = state.copyWith(columnWidths: List<double>.from(state.baseDisplayColumnWidths));
+      }
+    } else {
+      // 구조 → 일반: 현재 원본폭을 구조모드로 저장
+      _persistDisplayColumnWidths();
+      state = state.copyWith(isDisplayMode: false);
+      // 일반모드 원본폭 복원
+      if (state.baseColumnWidths.isNotEmpty &&
+          state.baseColumnWidths.length == state.columnWidths.length) {
+        state = state.copyWith(columnWidths: List<double>.from(state.baseColumnWidths));
+      }
+    }
     _applyAbsorbedColumnWidths(state.cellStructures);
   }
 
@@ -340,8 +414,13 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
         structureByMain[s.mainColumnName] = s;
       }
     }
-    // 항상 baseColumnWidths(원본)를 기준으로 표시 폭 생성
-    final next = List<double>.from(state.baseColumnWidths);
+    // 모드에 따라 올바른 원본 폭 사용
+    final source = state.isDisplayMode &&
+            state.baseDisplayColumnWidths.isNotEmpty &&
+            state.baseDisplayColumnWidths.length == state.baseColumnWidths.length
+        ? state.baseDisplayColumnWidths
+        : state.baseColumnWidths;
+    final next = List<double>.from(source);
     for (int i = 0; i < state.columns.length; i++) {
       final colName = state.columns[i]['name']!;
       // columnWidths[0] = row number, [i+1] = column i, last = actions
@@ -389,22 +468,61 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
   Future<void> loadTableData() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final columns = await _dbHandler.getColumns(_table);
-      final primaryKey = await _dbHandler.getPrimaryKey(_table);
+      final List<Map<String, dynamic>> columns;
+      final String? primaryKey;
       final List<Map<String, dynamic>> dataRows;
-      if (state.filters.isNotEmpty || state.sorts.isNotEmpty || state.groupByColumns.isNotEmpty) {
-        dataRows = await _dbHandler.getDataWithFilters(_table, filters: state.filters.map((f) => f.toMap()).toList(), sorts: state.sorts.map((s) => s.toMap()).toList(), groupByColumns: state.groupByColumns.isNotEmpty ? state.groupByColumns : null);
-      } else dataRows = await _dbHandler.getData(_table);
-      
+
+      if (_joinDefinition != null) {
+        // JOIN 뷰: 조인 쿼리로 데이터 로드
+        columns = await _dbHandler.getJoinedColumns(_joinDefinition!);
+        // 메인 테이블의 PK를 사용하여 셀 편집 지원
+        primaryKey = await _dbHandler.getPrimaryKey(_joinDefinition!.mainTable);
+        if (state.filters.isNotEmpty || state.sorts.isNotEmpty || state.groupByColumns.isNotEmpty) {
+          dataRows = await _dbHandler.getJoinedDataWithFilters(
+            _joinDefinition!,
+            filters: state.filters.map((f) => f.toMap()).toList(),
+            sorts: state.sorts.map((s) => s.toMap()).toList(),
+            groupByColumns: state.groupByColumns.isNotEmpty ? state.groupByColumns : null,
+          );
+        } else {
+          dataRows = await _dbHandler.getJoinedData(_joinDefinition!);
+        }
+      } else {
+        // 일반 테이블
+        columns = await _dbHandler.getColumns(_table);
+        primaryKey = await _dbHandler.getPrimaryKey(_table);
+        if (state.filters.isNotEmpty || state.sorts.isNotEmpty || state.groupByColumns.isNotEmpty) {
+          dataRows = await _dbHandler.getDataWithFilters(_table, filters: state.filters.map((f) => f.toMap()).toList(), sorts: state.sorts.map((s) => s.toMap()).toList(), groupByColumns: state.groupByColumns.isNotEmpty ? state.groupByColumns : null);
+        } else {
+          dataRows = await _dbHandler.getData(_table);
+        }
+      }
+
       final mWidths = columns.map<double>((c) => _getTextWidth(c['name']!, const TextStyle(fontWeight: FontWeight.bold)) + 34.0).toList();
       final initialWidths = _calculateColumnWidths(columns, dataRows, mWidths);
       initialWidths.insert(0, 60.0);  // 행 번호 컬럼
       mWidths.insert(0, 60.0);        // 행 번호 컬럼 최소폭
       mWidths.add(100.0);             // 액션 컬럼 최소폭
-      
+
+      // JOIN 뷰 컬럼 메타데이터 구성
+      final joinMeta = <String, Map<String, String>>{};
+      if (_joinDefinition != null) {
+        for (final col in columns) {
+          final displayName = col['name'] as String;
+          final sourceTable = col['sourceTable'] as String? ?? _joinDefinition!.mainTable;
+          final sourceColumn = col['sourceColumn'] as String? ?? displayName;
+          joinMeta[displayName] = {
+            'sourceTable': sourceTable,
+            'sourceColumn': sourceColumn,
+          };
+        }
+      }
+
       state = state.copyWith(
         columns: columns.map((c) => {'name': c['name'] as String, 'type': c['type'] as String}).toList(),
         primaryKeyColumn: primaryKey, rows: dataRows, minColumnWidths: mWidths, columnWidths: initialWidths, baseColumnWidths: List<double>.from(initialWidths), isLoading: false, cellVersions: {},
+        isJoinView: _joinDefinition != null,
+        joinColumnMeta: joinMeta,
       );
       // 저장된 컬럼 너비 복원 후 흡수된 컬럼 너비 적용
       await _loadColumnWidths();
@@ -637,13 +755,22 @@ class DataEditingNotifier extends StateNotifier<DataEditingState> {
     final newWidth = math.max(w, state.minColumnWidths[i]);
     final next = [...state.columnWidths];
     next[i] = newWidth;
-    // 원본 폭도 함께 갱신 (구조보기에서 흡수된 컬럼이 아닌 경우)
-    final base = [...state.baseColumnWidths];
-    if (i < base.length) {
-      base[i] = newWidth;
+
+    if (state.isDisplayMode) {
+      // 구조모드: baseDisplayColumnWidths 갱신
+      final base = [...state.baseDisplayColumnWidths.isEmpty
+          ? state.baseColumnWidths
+          : state.baseDisplayColumnWidths];
+      if (i < base.length) base[i] = newWidth;
+      state = state.copyWith(columnWidths: next, baseDisplayColumnWidths: base);
+      _persistDisplayColumnWidths();
+    } else {
+      // 일반모드: baseColumnWidths 갱신
+      final base = [...state.baseColumnWidths];
+      if (i < base.length) base[i] = newWidth;
+      state = state.copyWith(columnWidths: next, baseColumnWidths: base);
+      _persistNormalColumnWidths();
     }
-    state = state.copyWith(columnWidths: next, baseColumnWidths: base);
-    _persistColumnWidths();
   }
   List<Map<String, dynamic>> _createBlocksFromFilters() => _buildFilterBlockList();
 }
@@ -656,12 +783,13 @@ class DatabaseHandlerParams { final ServerModel server; final String database; D
 
 final dataEditingProvider = StateNotifierProvider.family<DataEditingNotifier, DataEditingState, DataEditingParams>((ref, p) {
   final db = ref.watch(databaseHandlerProvider(DatabaseHandlerParams(server: p.server, database: p.database)));
-  return DataEditingNotifier(db, p.table, p.server.address, p.database);
+  return DataEditingNotifier(db, p.table, p.server.address, p.database, joinDefinition: p.joinDefinition);
 });
 
 class DataEditingParams {
   final ServerModel server; final String database; final String table;
-  DataEditingParams({required this.server, required this.database, required this.table});
-  @override bool operator ==(Object other) => identical(this, other) || other is DataEditingParams && runtimeType == other.runtimeType && server == other.server && database == other.database && table == other.table;
-  @override int get hashCode => server.hashCode ^ database.hashCode ^ table.hashCode;
+  final JoinDefinition? joinDefinition;
+  DataEditingParams({required this.server, required this.database, required this.table, this.joinDefinition});
+  @override bool operator ==(Object other) => identical(this, other) || other is DataEditingParams && runtimeType == other.runtimeType && server == other.server && database == other.database && table == other.table && joinDefinition?.name == (other as DataEditingParams).joinDefinition?.name;
+  @override int get hashCode => server.hashCode ^ database.hashCode ^ table.hashCode ^ (joinDefinition?.name.hashCode ?? 0);
 }

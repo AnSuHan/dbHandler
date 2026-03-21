@@ -159,6 +159,7 @@ class SettingsBloc {
   // ========== SharedPreferences 접두사 상수 ==========
   static const String _prefixCellStructures = 'cell_structures|';
   static const String _prefixColumnWidths = 'column_widths|';
+  static const String _prefixColumnWidthsDisplay = 'column_widths_display|';
 
   // ========== 백업 및 복구 ==========
 
@@ -192,8 +193,9 @@ class SettingsBloc {
       'columnOrders': _columnOrders,
       // 셀 구조 (테이블별)
       'cellStructures': _collectPrefixedEntries(_prefixCellStructures),
-      // 컬럼 폭 (테이블별)
+      // 컬럼 폭 (테이블별 - 일반 + 구조모드)
       'columnWidths': _collectPrefixedEntries(_prefixColumnWidths),
+      'columnWidthsDisplay': _collectPrefixedEntries(_prefixColumnWidthsDisplay),
     };
 
     return {
@@ -333,9 +335,17 @@ class SettingsBloc {
       }
     }
 
-    // 9. 컬럼 폭 (테이블별 SharedPreferences 키 단위로 복원)
+    // 9. 컬럼 폭 - 일반모드 (테이블별 SharedPreferences 키 단위로 복원)
     if (data['columnWidths'] != null) {
       final entries = data['columnWidths'] as Map<String, dynamic>;
+      for (final entry in entries.entries) {
+        await _prefs?.setString(entry.key, jsonEncode(entry.value));
+      }
+    }
+
+    // 10. 컬럼 폭 - 구조모드 (테이블별 SharedPreferences 키 단위로 복원)
+    if (data['columnWidthsDisplay'] != null) {
+      final entries = data['columnWidthsDisplay'] as Map<String, dynamic>;
       for (final entry in entries.entries) {
         await _prefs?.setString(entry.key, jsonEncode(entry.value));
       }

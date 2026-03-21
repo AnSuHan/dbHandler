@@ -7,6 +7,7 @@ import '../l10n/LocalizationManager.dart';
 import '../sqflite/models/server_model.dart';
 import '../sqflite/platform_check.dart';
 import '../stateManagement/setState/data_editing_riverpod.dart';
+import '../stateManagement/setState/join_definition.dart';
 import 'unit/cell_structure_management_dialog.dart';
 import 'unit/data_cell.dart';
 import 'unit/filter_sort_group_panel.dart';
@@ -21,12 +22,14 @@ class DataEditingScreen extends ConsumerStatefulWidget {
   final ServerModel server;
   final String database;
   final String table;
+  final JoinDefinition? joinDefinition;
 
   const DataEditingScreen({
     super.key,
     required this.server,
     required this.database,
     required this.table,
+    this.joinDefinition,
   });
 
   @override
@@ -79,6 +82,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       server: widget.server,
       database: widget.database,
       table: widget.table,
+      joinDefinition: widget.joinDefinition,
     )).notifier);
 
     try {
@@ -103,6 +107,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       server: widget.server,
       database: widget.database,
       table: widget.table,
+      joinDefinition: widget.joinDefinition,
     );
     final state = ref.read(dataEditingProvider(dataEditingParams));
     
@@ -168,6 +173,7 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       server: widget.server,
       database: widget.database,
       table: widget.table,
+      joinDefinition: widget.joinDefinition,
     );
     final state = ref.read(dataEditingProvider(dataEditingParams));
     final dbHandler = ref.read(databaseHandlerProvider(DatabaseHandlerParams(
@@ -375,9 +381,11 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
       server: widget.server,
       database: widget.database,
       table: widget.table,
+      joinDefinition: widget.joinDefinition,
     );
     final notifier = ref.read(dataEditingProvider(dataEditingParams).notifier);
-    
+    final isJoinView = widget.joinDefinition != null;
+
     return Shortcuts(
       shortcuts: <LogicalKeySet, Intent>{
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyC): CopyIntent(),
@@ -401,9 +409,22 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
           autofocus: true,
           child: Scaffold(
             appBar: AppBar(
-              title: Text(
-                '${widget.table} - ${intl.getString((l) => l.dataEditing)}',
-                overflow: TextOverflow.ellipsis,
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isJoinView) ...[
+                    const Icon(Icons.join_inner, size: 20),
+                    const SizedBox(width: 8),
+                  ],
+                  Flexible(
+                    child: Text(
+                      isJoinView
+                          ? '${widget.joinDefinition!.name} - ${intl.getString((l) => l.dataEditing)}'
+                          : '${widget.table} - ${intl.getString((l) => l.dataEditing)}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
               elevation: 0,
               actions: [
@@ -432,16 +453,19 @@ class _DataEditingScreenState extends ConsumerState<DataEditingScreen> {
                   tooltip: intl.getString((l) => l.refresh),
                   onPressed: () => notifier.loadTableData(),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: intl.getString((l) => l.addRow),
-                  onPressed: () => _showEditRowDialog(null, dataEditingParams),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_box_outlined),
-                  tooltip: intl.getString((l) => l.addColumn),
-                  onPressed: () => _showAddColumnDialog(dataEditingParams),
-                ),
+                if (!isJoinView) ...[
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    tooltip: intl.getString((l) => l.addRow),
+                    onPressed: () => _showEditRowDialog(null, dataEditingParams),
+                  ),
+                ],
+                if (!isJoinView)
+                  IconButton(
+                    icon: const Icon(Icons.add_box_outlined),
+                    tooltip: intl.getString((l) => l.addColumn),
+                    onPressed: () => _showAddColumnDialog(dataEditingParams),
+                  ),
                 _AppBarMenu(dataEditingParams: dataEditingParams),
               ],
             ),

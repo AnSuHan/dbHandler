@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:mysql_client/mysql_client.dart';
 import 'package:db_handler/sqflite/models/server_model.dart';
+import 'package:db_handler/stateManagement/setState/join_definition.dart';
 import 'database_handler.dart';
 
 class MysqlHandler extends DatabaseHandler {
@@ -486,6 +487,221 @@ class MysqlHandler extends DatabaseHandler {
     return _withConnection(databaseName!, (pool) async {
       final query = 'DELETE FROM `$tableName` WHERE `$pkColumn` = :pkValue';
       await pool.execute(query, {'pkValue': pkValue});
+    });
+  }
+
+  // ========== JOIN 뷰 메서드 ==========
+
+  Map<String, String> _buildAliases(JoinDefinition joinDef) {
+    final aliases = <String, String>{};
+    aliases[joinDef.mainTable] = 't0';
+    for (int i = 0; i < joinDef.joins.length; i++) {
+      final t = joinDef.joins[i].targetTable;
+      if (!aliases.containsKey(t)) {
+        aliases[t] = 't${aliases.length}';
+      }
+    }
+    return aliases;
+  }
+
+  String _buildJoinClause(JoinDefinition joinDef, Map<String, String> aliases) {
+    final sb = StringBuffer();
+    sb.write('`${joinDef.mainTable}` ${aliases[joinDef.mainTable]}');
+    for (final j in joinDef.joins) {
+      final leftAlias = aliases[j.leftTable]!;
+      final rightAlias = aliases[j.targetTable]!;
+      sb.write(' ${j.joinType.sql} `${j.targetTable}` $rightAlias');
+      sb.write(' ON $leftAlias.`${j.leftColumn}` = $rightAlias.`${j.rightColumn}`');
+    }
+    return sb.toString();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getJoinedColumns(JoinDefinition joinDef) {
+    return _withConnection(databaseName!, (pool) async {
+      final columns = <Map<String, dynamic>>[];
+      final seenNames = <String>{};
+      final aliases = _buildAliases(joinDef);
+
+      for (final tableName in joinDef.allTables) {
+        final result = await pool.execute(
+          "SELECT COLUMN_NAME, COLUMN_TYPE "
+          "FROM information_schema.COLUMNS "
+          "WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :table "
+          "ORDER BY ORDINAL_POSITION",
+          {"db": databaseName!, "table": tableName},
+        );
+
+        final alias = aliases[tableName]!;
+        for (final row in result.rows) {
+          final map = row.assoc();
+          final colName = map['COLUMN_NAME'] as String;
+          final displayName = seenNames.contains(colName)
+              ? '$tableName.$colName'
+              : colName;
+          seenNames.add(colName);
+          columns.add({
+            'name': displayName,
+            'type': map['COLUMN_TYPE'] as String,
+            'sourceTable': tableName,
+            'sourceColumn': colName,
+            'alias': alias,
+          });
+        }
+      }
+      return columns;
+    });
+  }
+
+  Future<String> _buildMysqlSelectClause(JoinDefinition joinDef, Map<String, String> aliases, MySQLConnectionPool pool) async {
+    final selectParts = <String>[];
+    final seenNames = <String>{};
+
+    for (final tableName in joinDef.allTables) {
+      final result = await pool.execute(
+        "SELECT COLUMN_NAME "
+        "FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :table "
+        "ORDER BY ORDINAL_POSITION",
+        {"db": databaseName!, "table": tableName},
+      );
+
+      final alias = aliases[tableName]!;
+      for (final row in result.rows) {
+        final colName = row.colAt(0) as String;
+        final displayName = seenNames.contains(colName)
+            ? '$tableName.$colName'
+            : colName;
+        seenNames.add(colName);
+        selectParts.add('$alias.`$colName` AS `$displayName`');
+      }
+    }
+    return selectParts.join(', ');
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getJoinedData(JoinDefinition joinDef) {
+    return _withConnection(databaseName!, (pool) async {
+      final aliases = _buildAliases(joinDef);
+      final selectClause = await _buildMysqlSelectClause(joinDef, aliases, pool);
+      final joinClause = _buildJoinClause(joinDef, aliases);
+      final query = 'SELECT $selectClause FROM $joinClause';
+      final result = await pool.execute(query);
+      return result.rows.map((row) => row.assoc()).toList().cast<Map<String, dynamic>>();
+    });
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getJoinedDataWithFilters(
+      JoinDefinition joinDef, {
+        List<Map<String, dynamic>>? filters,
+        List<Map<String, dynamic>>? sorts,
+        List<String>? groupByColumns,
+      }) {
+    return _withConnection(databaseName!, (pool) async {
+      final aliases = _buildAliases(joinDef);
+      final selectClause = await _buildMysqlSelectClause(joinDef, aliases, pool);
+      final joinClause = _buildJoinClause(joinDef, aliases);
+      final substitutionValues = <String, dynamic>{};
+
+      var query = 'SELECT $selectClause FROM $joinClause';
+
+      // WHERE 절 생성
+      if (filters != null && filters.isNotEmpty) {
+        final whereClauses = <String>[];
+        int paramIndex = 0;
+
+        for (int i = 0; i < filters.length; i++) {
+          final filter = filters[i];
+          final column = filter['column'] as String;
+          final operator = filter['operator'] as String;
+          final value = filter['value'];
+          final logicalOperator = filter['logicalOperator'] as String?;
+          final isNegated = filter['isNegated'] as bool? ?? false;
+          final openGroupCount = filter['openGroupCount'] as int? ?? 0;
+          final closeGroupCount = filter['closeGroupCount'] as int? ?? 0;
+
+          for (int p = 0; p < openGroupCount; p++) whereClauses.add('(');
+          if (isNegated) { whereClauses.add('NOT'); whereClauses.add('('); }
+
+          String condition;
+          final opUpper = operator.toUpperCase();
+          final quotedColumn = '`$column`';
+
+          if (opUpper == 'IS NULL' || opUpper == 'IS NOT NULL') {
+            condition = '$quotedColumn $opUpper';
+          } else if (opUpper == 'IN' || opUpper == 'NOT IN') {
+            if (value is List && value.isNotEmpty) {
+              final pNames = [];
+              for (var v in value) {
+                final pName = 'param$paramIndex';
+                pNames.add(':$pName');
+                substitutionValues[pName] = v;
+                paramIndex++;
+              }
+              condition = '$quotedColumn $opUpper (${pNames.join(', ')})';
+            } else {
+              condition = '$quotedColumn ${opUpper == 'IN' ? '=' : '!='} :param$paramIndex';
+              substitutionValues['param$paramIndex'] = value;
+              paramIndex++;
+            }
+          } else if (opUpper == 'LIKE') {
+            condition = '$quotedColumn LIKE :param$paramIndex';
+            substitutionValues['param$paramIndex'] = value;
+            paramIndex++;
+          } else {
+            condition = '$quotedColumn $operator :param$paramIndex';
+            substitutionValues['param$paramIndex'] = value;
+            paramIndex++;
+          }
+          whereClauses.add(condition);
+
+          if (isNegated) whereClauses.add(')');
+          for (int p = 0; p < closeGroupCount; p++) whereClauses.add(')');
+          if (i < filters.length - 1) {
+            whereClauses.add((logicalOperator ?? 'AND').toUpperCase());
+          }
+        }
+
+        if (whereClauses.isNotEmpty) {
+          query += ' WHERE ${whereClauses.join(' ')}';
+        }
+      }
+
+      // ORDER BY 절 생성
+      final orderByColumns = <String>[];
+      if (groupByColumns != null && groupByColumns.isNotEmpty) {
+        for (final col in groupByColumns) {
+          orderByColumns.add('`$col` ASC');
+        }
+      }
+      if (sorts != null && sorts.isNotEmpty) {
+        for (final sort in sorts) {
+          final column = sort['column'] as String;
+          final ascending = sort['ascending'] as bool;
+          final sortClause = '`$column` ${ascending ? 'ASC' : 'DESC'}';
+          if (groupByColumns != null && groupByColumns.contains(column)) continue;
+          orderByColumns.add(sortClause);
+        }
+      }
+      if (orderByColumns.isNotEmpty) {
+        query += ' ORDER BY ${orderByColumns.join(', ')}';
+      }
+
+      final results = substitutionValues.isEmpty
+          ? await pool.execute(query)
+          : await pool.execute(query, substitutionValues);
+      return results.rows.map((row) => row.assoc()).toList().cast<Map<String, dynamic>>();
+    });
+  }
+
+  @override
+  Future<void> updateJoinedCell(
+      String sourceTable, String sourceColumn, dynamic newValue,
+      String pkColumn, dynamic pkValue) {
+    return _withConnection(databaseName!, (pool) async {
+      final query = 'UPDATE `$sourceTable` SET `$sourceColumn` = :newValue WHERE `$pkColumn` = :pkValue';
+      await pool.execute(query, {'newValue': newValue, 'pkValue': pkValue});
     });
   }
 

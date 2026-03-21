@@ -1,5 +1,6 @@
 // lib/db/database_handler.dart
 import 'package:db_handler/sqflite/models/server_model.dart';
+import 'package:db_handler/stateManagement/setState/join_definition.dart';
 
 abstract class DatabaseHandler {
   // 서버 관리 메서드
@@ -48,4 +49,19 @@ abstract class DatabaseHandler {
 
   // 특정 데이터베이스의 테이블 개수 조회
   Future<int> getTableCount(String databaseName);
+
+  // JOIN 뷰 메서드
+  Future<List<Map<String, dynamic>>> getJoinedColumns(JoinDefinition joinDef);
+  Future<List<Map<String, dynamic>>> getJoinedData(JoinDefinition joinDef);
+  Future<List<Map<String, dynamic>>> getJoinedDataWithFilters(
+      JoinDefinition joinDef, {
+        List<Map<String, dynamic>>? filters,
+        List<Map<String, dynamic>>? sorts,
+        List<String>? groupByColumns,
+      });
+
+  /// JOIN 뷰에서 셀 수정: 원본 테이블에 대해 UPDATE 실행
+  Future<void> updateJoinedCell(
+      String sourceTable, String sourceColumn, dynamic newValue,
+      String pkColumn, dynamic pkValue);
 }
